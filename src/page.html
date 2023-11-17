@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		
+		<title>Translation Memory</title>
+		<link rel="icon" type="image/svg+xml" href="/icon/language.svg">
+
+		<style>
+			html {
+				--color-background: #ffffff;
+				--color-background-popup: var(--color-background);
+				--color-background-field: #f1f3f4;
+				--color-background-field-focused: #e8eaed;
+				--color-border: var(--color-background-field-focused);
+				--color-border-popup: var(--color-background-field-focused);
+				--color-text: #222222;
+				--color-text-unfocused: #6f7070;
+				--shadow: 0 3px 5px 3px rgba(15, 11, 11, 0.1);
+
+				/* Dark mode for testing */
+				/* --color-background: #000000;
+				--color-background-popup: #222222;
+				--color-background-field: #222222;
+				--color-background-field-focused: #333333;
+				--color-border: #222222;
+				--color-border-popup: #444444;
+				--color-text: #ffffff;
+				--color-text-unfocused: #eeeeee;
+				--shadow: none; */
+			}
+			body {
+				margin: 0;
+				
+				background-color: var(--color-background);
+				color: var(--color-text);
+				font-family: Arial, Helvetica, sans-serif;
+			}
+			header {
+				position: sticky;
+				top: 0;
+
+				background-color: var(--color-background);
+
+				transition: 200ms box-shadow ease-in-out;
+			}
+			header.floating {
+				box-shadow: var(--shadow);
+			}
+
+			#filters {
+				display: flex;
+				flex-direction: row;
+				gap: 1rem;
+				padding: 0.5rem 10vw 0.5rem 1rem;
+			}
+			#search {
+				flex-grow: 1;
+				padding: 0.75rem;
+
+				background-color: var(--color-background-field);
+				border-radius: 0.5rem;
+				cursor: text;
+
+				transition: background-color 100ms;
+			}
+			#search:is(:hover, :focus-within) {
+				background-color: var(--color-background-field-focused);
+			}
+			#searchIcon {
+				position: relative;
+				top: 0.05rem;
+				width: 1rem;
+				height: 1rem;
+				margin-right: 0.2rem;
+
+				color: var(--color-text);
+
+				-webkit-user-select: none;
+				user-select: none;
+			}
+			#searchField {
+				width: calc(100% - 2rem);
+
+				border: none;
+				outline: none;
+				font-size: 1rem !important;
+
+				background-color: transparent;
+				caret-color: var(--color-text);
+				color: var(--color-text);
+
+				transition: background-color 100ms;
+			}
+			#searchField::placeholder {
+				color: var(--color-text-unfocused);
+			}
+			#languagesAndScopesButton {
+				padding: 0.75rem;
+
+				border: none;
+				outline: none;
+				font-size: 1rem !important;
+
+				border-radius: 0.5rem;
+				color: var(--color-text);
+				background-color: var(--color-background-field);
+				cursor: pointer;
+
+				transition: all 100ms;
+			}
+			#languagesAndScopesButton::after {
+				content: '🞃';
+
+				position: relative;
+				bottom: 0.1rem;
+				padding-left: 0.5rem;
+
+				color: var(--color-text-unfocused);
+			}
+			#languagesAndScopesButton:hover {
+				background-color: var(--color-background-field-focused);
+			}
+
+			header, .translation:not(:last-child) {
+				border-bottom: 1px solid var(--color-border);
+			}
+			#titles {
+				display: flex;
+				flex-direction: row;
+
+				font-weight: bold;
+			}
+			#translations {
+				margin: 0;
+				padding: 0;
+				overflow: auto;
+				height: calc(100vh - 7rem - 1px);
+			}
+			.translation {
+				display: flex;
+				flex-direction: row;
+			}
+			.translation:hover {
+				background-color: var(--color-background-field);
+			}
+			.originalText, .translationText, #originalsTitle, #translationsTitle {
+				width: 45vw;
+				margin: 0;
+				padding: 1rem;
+				overflow-wrap: break-word;
+			}
+
+			#languagesAndScopesDialog {
+				display: flex;
+				flex-direction: column;
+				gap: 0.5rem;
+				position: absolute;
+				padding: 0.75rem;
+
+				background-color: var(--color-background-popup);
+				border-radius: 0.5rem;
+				box-shadow: var(--shadow);
+				opacity: 1;
+
+				transition: all 100ms;
+			}
+			.open > #languagesAndScopesDialog {
+				border-radius: 0 0.5rem 0.5rem 0.5rem;
+			}
+			:not(.open) > #languagesAndScopesDialog {
+				visibility: hidden;
+				opacity: 0;
+				cursor: default;
+			}
+			.open > #languagesAndScopesButton {
+				border-radius: 0.5rem 0.5rem 0 0;
+
+				background-color: var(--color-background-field-focused);
+			}
+			#languagesAndScopesMain {
+				display: flex;
+				flex-direction: row;
+			}
+			#languagesAndScopesButtons {
+				display: flex;
+				flex-direction: row;
+			}
+			#languagesAndScopesButtons > button {
+				width: 100%;
+				border: none;
+				outline: none;
+				font-size: 1rem !important;
+
+				color: white;
+				background-color: #0060df;
+				cursor: pointer;
+
+				transition: all 100ms;
+			}
+			#languagesAndScopesButtons > button:first-child {
+				border-top-left-radius: 1rem;
+				border-bottom-left-radius: 1rem;
+				padding-left: 0.75rem;
+			}
+			#languagesAndScopesButtons > button:last-child {
+				border-top-right-radius: 1rem;
+				border-bottom-right-radius: 1rem;
+				padding-right: 0.75rem;
+			}
+			#languagesAndScopesButtons > button:hover {
+				background-color: #2374ff;
+			}
+			#languagesAndScopesButtons > button:active {
+				background-color: #3e90ff;
+			}
+			#languages, #scopes {
+				margin: 0;
+				padding: 0;
+
+				list-style: none;
+			}
+			#languages {
+				border-right: var(--color-border-popup) 1px solid;
+				margin: 0 1rem 0 0;
+				padding: 0 1rem 0 0;
+			}
+			:is(#languages, #scopes) > li {
+				display: flex;
+				flex-direction: row;
+				gap: 0.5rem;
+				align-items: center;
+			}
+			:is(#languages, #scopes) > li:not(:last-child) {
+				margin-bottom: 0.5rem;
+			}
+			:is(#languages, #scopes) > li > input {
+				width: 1.2rem;
+				height: 1.2rem;
+				margin: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+			<div id="filters">
+				<div id="search">
+					<img id="searchIcon" src="/icon/search.svg">
+					<input id="searchField" type="text" placeholder="Search">
+				</div>
+				<div id="languagesAndScopes">
+					<button id="languagesAndScopesButton">Languages & Scopes</button>
+					<div id="languagesAndScopesDialog">
+						<div id="languagesAndScopesMain">
+							<ul id="languages"></ul>
+							<ul id="scopes"></ul>
+						</div>
+						<div id="languagesAndScopesButtons">
+							<button id="downloadNeededButton">Download needed</button>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div id="titles">
+				<p id="originalsTitle">Original</p>
+				<p id="translationsTitle">Translation</p>
+			</div>
+		</header>
+
+		<ul id="translations"></ul>
+
+		<script>
+			const header = document.getElementsByTagName("header")[0];
+			const search = document.getElementById("search");
+			const searchField = document.getElementById("searchField");
+
+			const languagesAndScopes = document.getElementById("languagesAndScopes");
+			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
+			const languages = document.getElementById("languages");
+			const scopes = document.getElementById("scopes");
+			const downloadNeededButton = document.getElementById("downloadNeededButton");
+
+			const originalsTitle = document.getElementById("originalsTitle");
+			const translationsTitle = document.getElementById("translationsTitle");
+
+			const translations = document.getElementById("translations");
+
+			/**
+			 * @define { <id>: { name: string, downloaded: bool, groupName?: string } }
+			 */
+			let scopeNames = {};
+
+			/**
+			 * @define { <name>: bool }
+			 */
+			let languageFilters = {};
+
+			/**
+			 * @define { <name>: bool }
+			 */
+			let scopeFilters = {};
+
+			setTranslations({
+				"windowTitle": "Omsetjingsminne",
+				"searchPlaceholder": "Søk",
+				"originalsTitle": "Opprinneleg",
+				"translationsTitle": "Omsetjing",
+				"languagesAndScopesButtonText": "Mål og vidd",
+			});
+
+			populateMetadata();
+			populateTranslations();
+
+			// Add listeners to elements
+			
+			translations.onscroll = e => {
+				if (e.target.scrollTop === 0) {
+					header.classList.remove("floating");
+				} else {
+					header.classList.add("floating");
+				}
+			};
+
+			searchField.oninput = populateTranslations;
+
+			search.onclick = e => {
+				if (e.target == searchField) return;
+				searchField.focus();
+				searchField.setSelectionRange(searchField.value.length, searchField.value.length + 1);
+			};
+
+			window.onmousedown = e => {
+				if (!languagesAndScopes.contains(e.target)) {
+					languagesAndScopes.classList.remove("open");
+				};
+			};
+			languagesAndScopesButton.onclick = e => {
+				if (languagesAndScopes.classList.contains("open")) {
+					languagesAndScopes.classList.remove("open");
+				} else {
+					languagesAndScopes.classList.add("open");
+				}
+			};
+
+			downloadNeededButton.onclick = e => {
+				let body = {
+					"languages": Object.keys(languageFilters),
+					"scopes": Object.entries(scopeNames).filter(([k, { downloaded }]) => !downloaded).map(([k]) => k),
+				};
+				let httpRequest = new XMLHttpRequest();
+				httpRequest.open("POST", "http://127.0.0.1:2013/update", true);
+				httpRequest.onreadystatechange = e => {
+					if (httpRequest.readyState === XMLHttpRequest.DONE) {
+						if (httpRequest.status === 204) {
+							populateMetadata();
+							populateTranslations();
+						} else {
+							console.error(e);
+						}
+					}
+				};
+				httpRequest.setRequestHeader("Content-Type", "application/json")
+				httpRequest.send(JSON.stringify(body));
+			};
+
+			// Functions
+
+			function populateMetadata() {
+				let httpRequest = new XMLHttpRequest();
+				httpRequest.open("GET", "http://127.0.0.1:2013/metadata", false);
+				httpRequest.onreadystatechange = e => {
+					if (httpRequest.readyState === XMLHttpRequest.DONE) {
+						if (httpRequest.status === 200) {
+							const metadata = JSON.parse(httpRequest.responseText);
+
+							for (let scope of metadata.scopes) {
+								if (scope.id) {
+									scopeNames[scope.id] = { "name": scope.name, "downloaded": scope.downloaded };
+									scopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
+								} else {
+									for (let s of scope.scopes) {
+										scopeNames[s.id] = { "name": s.name, "downloaded": s.downloaded, "groupName": scope.name };
+										scopeFilters[s.id] = scopeFilters[s.id] ?? true;
+									}
+								}
+							}
+
+							scopes.replaceChildren();
+							for (let scope of metadata.scopes.toSorted((a, b) => a.name > b.name)) {
+								let li = document.createElement("li");
+								let input = document.createElement("input");
+								input.type = "checkbox";
+								input.checked = scope.id ? scopeFilters[scope.id] : scope.scopes.reduce((prev, curr) => prev || curr);
+								input.oninput = () => {
+									if (scope.id) {
+										scopeFilters[scope.id] = input.checked;
+									} else {
+										for (let s of scope.scopes) {
+											scopeFilters[s.id] = input.checked;
+										}
+									}
+									populateTranslations();
+								};
+								li.appendChild(input);
+								let span = document.createElement("span");
+								span.appendChild(document.createTextNode(scope.name));
+								li.appendChild(span);
+								scopes.appendChild(li);
+							}
+
+							languages.replaceChildren();
+							for (let lang of metadata.languages.toSorted()) {
+								let li = document.createElement("li");
+								let input = document.createElement("input");
+								input.type = "checkbox";
+								languageFilters[lang] = languageFilters[lang] ?? true;
+								input.checked = languageFilters[lang];
+								input.oninput = () => {
+									languageFilters[lang] = input.checked;
+									populateTranslations();
+								};
+								li.appendChild(input);
+								let span = document.createElement("span");
+								span.appendChild(document.createTextNode(lang));
+								li.appendChild(span);
+								languages.appendChild(li);
+							}
+						} else {
+							console.error(e);
+						}
+					}
+				};
+				httpRequest.send();				
+			}
+
+			/**
+			 * @typedef Translation
+			 * @type {object}
+			 * @property original {string} - original string
+			 * @property translation {string} - translated string
+			 * @property comment {string} - comment describing the context regarding the translation
+			 */
+			
+			/**
+			 * Request 
+			 */
+			function populateTranslations() {
+				let httpRequest = new XMLHttpRequest();
+				httpRequest.open("GET", `http://127.0.0.1:2013/query?regex=${searchField.value}&limit=500&scopes=${Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k).join()}&languages=${Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k).join()}`, true);
+				httpRequest.onreadystatechange = (e) => {
+					if (httpRequest.readyState === XMLHttpRequest.DONE) {
+						if (httpRequest.status === 200) {
+							const t = JSON.parse(httpRequest.responseText);
+							translations.innerHTML = generateTranslationList(t);
+							window.scrollTo(0, 0);
+						} else {
+							console.error(e);
+						}
+					}
+				};
+				httpRequest.send();
+			}
+
+			/**
+			 * Returns a bunch of list items that display the translations.
+			 * 
+			 * @param t {[Translation]} - list of translations to use
+			 */
+			function generateTranslationList(t) {
+				let regex = null;
+				try {
+					regex = new RegExp(searchField.value, "gi");
+				} catch (e) {
+					console.warn(e);
+				}
+
+				let html = "";
+				for (let translation of t) {
+					const scope = scopeNames[translation.scope];
+					html += `
+					<li class="translation" title="${translation.language} - ${scope?.name ? scope.name : translation.scope}${scope?.groupName ? ` (${scope.groupName})` : ""}\n${translation.comment ? translation.comment : ""}">
+						<p class="originalText">${regex ? embolden(regex, translation.original) : translation.original}</p>
+						<p class="translationText">${regex ? embolden(regex, translation.translation) : translation.translation}</p>
+					</li>
+					`;
+				}
+				return html;
+			}
+
+			/**
+			 * Returns `text` with `<b>` tags around `regex` matches.
+			 * 
+			 * @param regex {RegExp} - regex to match against `text`
+			 */
+			function embolden(regex, text) {
+				let output = "";
+				let lastIndex = 0;
+				for (let match of text.matchAll(regex)) {
+					output += text.substring(lastIndex, match.index);
+					output += "<b>";
+					output += match[0];
+					output += "</b>";
+
+					lastIndex = match.index + match[0].length;
+				}
+				output += text.substring(lastIndex, text.length);
+				return output;
+			}
+
+			/**
+			 * Update the GUI with the provided `translations`.
+			 * 
+			 * @param translations {{
+			 * 	"windowTitle": string,
+			 * 	"searchPlaceholder": string,
+			 * 	"originalsTitle": string,
+			 * 	"translationsTitle": string,
+			 * }}
+			 */
+			function setTranslations(translations) {
+				document.title = translations.windowTitle ?? document.error("Missing translation: windowTitle");
+				searchField.placeholder = translations.searchPlaceholder ?? document.error("Missing translation: searchPlaceholder");
+				languagesAndScopesButton.innerText = translations.languagesAndScopesButtonText ?? document.error("Missing translation: languagesAndScopesButtonText");
+				originalsTitle.innerText = translations.originalsTitle ?? document.error("Missing translation: originalTitle");
+				translationsTitle.innerText = translations.translationsTitle ?? document.error("Missing translation: translationsTitle");
+			}
+		</script>
+	</body>
+</html>
