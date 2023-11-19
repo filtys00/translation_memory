@@ -323,7 +323,16 @@
 				}
 			};
 
-			searchField.oninput = populateTranslations;
+			let lastUpdated = Date.now();
+			searchField.oninput = e => {
+				const now = Date.now();
+				lastUpdated = now;
+				setTimeout(() => {
+					if (lastUpdated === now) {
+						populateTranslations();
+					}
+				}, 250);
+			};
 
 			search.onclick = e => {
 				if (e.target == searchField) return;
