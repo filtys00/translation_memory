@@ -23,7 +23,10 @@ use tokio::sync::Mutex;
 use translation_memory::TranslationStore;
 use unic_langid::LanguageIdentifier;
 
+#[cfg(debug_assertions)]
 const CACHE_PATH: &str = "translations.json";
+#[cfg(not(debug_assertions))]
+const CACHE_PATH: &str = "translations.bin";
 
 #[tokio::main]
 async fn main() {
@@ -63,6 +66,7 @@ async fn web_server(store: TranslationStore) {
 
     let app = Router::new()
         .route("/", get(main_page))
+        .route("/debug", get(debug_api))
         .route("/query", get(query_api))
         .route("/metadata", get(metadata_api))
         .route("/update", post(update_api))
@@ -93,6 +97,18 @@ async fn main_page() -> Html<String> {
 async fn main_page() -> Html<&'static str> {
     debug!("Request for '/'");
     Html(include_str!("page.html"))
+}
+
+async fn debug_api(
+    State(store): State<Arc<Mutex<TranslationStore>>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    debug!("Request for '/debug'");
+
+    let store = store.lock().await;
+
+    serde_json::to_value(&*store)
+        .map(Json)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
 }
 
 async fn query_api(
