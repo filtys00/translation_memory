@@ -117,7 +117,7 @@ async fn parse_resources(
             Err(e) => bail!("{e}"),
             Ok(Event::Eof) => break,
             Ok(Event::Comment(e)) => {
-                comment = Some(String::from_utf8_lossy(&e).to_string());
+                comment = Some(String::from_utf8_lossy(&e).trim().to_string());
             }
             Ok(Event::Start(e)) if e.name().as_ref() == b"string" => {
                 if e.attributes()
