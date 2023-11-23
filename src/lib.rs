@@ -104,7 +104,7 @@ impl TranslationStore {
             let client = client.clone();
             let lang_ids = lang_ids.clone();
 
-            join_set.spawn(async move { (id, provider.generate(lang_ids, &client).await) });
+            join_set.spawn(async move { (id, provider.generate(lang_ids, client).await) });
         }
 
         let mut errors = HashMap::new();

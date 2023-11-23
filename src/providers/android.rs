@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
@@ -52,14 +52,14 @@ where
     async fn generate(
         &self,
         lang_ids: Vec<LanguageIdentifier>,
-        client: &Client,
+        client: Arc<Client>,
     ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let mut translations_all = HashMap::new();
 
-        let resources_en = parse_resources("default", self.default_url, client).await?;
+        let resources_en = parse_resources("default", self.default_url, &client).await?;
 
         'outer: for lang_id in lang_ids {
-            let Ok(resources) = parse_resources(&lang_id, &(self.url)(&lang_id), client).await
+            let Ok(resources) = parse_resources(&lang_id, &(self.url)(&lang_id), &client).await
             else {
                 translations_all.insert(lang_id, None);
                 continue;

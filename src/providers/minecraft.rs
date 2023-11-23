@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Cursor};
+use std::{collections::HashMap, io::Cursor, sync::Arc};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -25,7 +25,7 @@ impl TranslationProvider for MinecraftProvider {
     async fn generate(
         &self,
         lang_ids: Vec<LanguageIdentifier>,
-        client: &Client,
+        client: Arc<Client>,
     ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let manifest: Manifest = client
             .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")

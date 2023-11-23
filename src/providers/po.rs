@@ -1,38 +1,44 @@
+pub mod gnome;
+pub mod kde;
+
 use std::{
-    borrow::Cow,
     collections::HashMap,
     env,
     fs::{self, File},
+    future::Future,
     io::{BufWriter, Write},
+    sync::Arc,
 };
 
-use anyhow::{anyhow, bail};
+use anyhow::anyhow;
 use async_trait::async_trait;
+use log::{debug, error};
 use polib::po_file::{self};
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
+use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
 use crate::{Translation, TranslationProvider};
 
-pub struct PoHttpProvider<F>
+pub struct PoProvider<F, U>
 where
-    F: Fn(&LanguageIdentifier) -> String + Send + Sync,
+    F: Fn(LanguageIdentifier, Arc<Client>) -> U + Copy + Send + Sync + 'static,
+    U: Future<Output = anyhow::Result<Vec<String>>> + Send + Sync,
 {
-    pub id: Cow<'static, str>,
+    pub id: &'static str,
     pub name: &'static str,
-    pub group_name: Option<&'static str>,
-    pub check_url: Cow<'static, str>,
-    pub url: F,
-    pub remove_char: char,
+    pub urls: F,
+    pub remove_char: Option<char>,
 }
 
 #[async_trait]
-impl<F> TranslationProvider for PoHttpProvider<F>
+impl<F, U> TranslationProvider for PoProvider<F, U>
 where
-    F: Fn(&LanguageIdentifier) -> String + Send + Sync,
+    F: Fn(LanguageIdentifier, Arc<Client>) -> U + Copy + Send + Sync + 'static,
+    U: Future<Output = anyhow::Result<Vec<String>>> + Send + Sync,
 {
     fn id(&self) -> &str {
-        &self.id
+        self.id
     }
 
     fn name(&self) -> &str {
@@ -40,66 +46,123 @@ where
     }
 
     fn group_name(&self) -> Option<&str> {
-        self.group_name
+        None
     }
 
     async fn generate(
         &self,
         lang_ids: Vec<LanguageIdentifier>,
-        client: &Client,
-    ) -> anyhow::Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>> {
+        client: Arc<Client>,
+    ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let mut translations = HashMap::new();
 
+        let mut join_set: JoinSet<anyhow::Result<(LanguageIdentifier, Vec<Translation>)>> =
+            JoinSet::new();
+
         for lang_id in lang_ids {
-            let url = (self.url)(&lang_id);
-            let response = client.get(&url).send().await?;
-            if response.status() == StatusCode::NOT_FOUND {
-                translations.insert(lang_id, None);
-                continue;
-            }
-            let path = env::temp_dir().join(format!(
-                "{}_{}_{lang_id}.po",
-                env!("CARGO_PKG_NAME"),
-                self.id,
-            ));
-            let file =
-                File::create(&path).map_err(|e| anyhow!("Could not create file {path:?}: {e}"))?;
-            let mut writer = BufWriter::new(file);
-            writer
-                .write_all(&response.bytes().await?)
-                .map_err(|e| anyhow!("Could not write to file {path:?}: {e}"))?;
-            let po = po_file::parse(&path)?;
-            fs::remove_file(&path).map_err(|e| anyhow!("Could not delete file {path:?}: {e}"))?;
+            let id = self.id;
+            let urls = self.urls;
+            let remove_char = self.remove_char;
+            let client = client.clone();
 
-            let mut t = Vec::with_capacity(po.count());
-            for message in po.messages() {
-                if !message.is_translated() {
-                    continue;
+            join_set.spawn(async move {
+                let urls = urls(lang_id.clone(), client.clone()).await?;
+
+                debug!(
+                    "Got {} translation URLs for '{lang_id}' from '{id}'",
+                    urls.len(),
+                );
+
+                let mut translations = Vec::new();
+
+                let mut join_set = JoinSet::new();
+                for url in urls {
+                    let client = client.clone();
+                    join_set.spawn(generate_single(url, remove_char, client));
                 }
-                let Ok(msgstr) = message.msgstr() else {
-                    continue;
-                };
-                t.push(Translation {
-                    original: message.msgid().replace(self.remove_char, ""),
-                    translation: msgstr.replace(self.remove_char, ""),
-                    comment: if message.comments().is_empty() {
-                        None
-                    } else {
-                        Some(message.comments().to_string())
-                    },
-                });
-            }
 
+                while let Some(result) = join_set.join_next().await {
+                    let mut result = match result {
+                        Ok(Ok(result)) => result,
+                        Ok(Err(e)) => {
+                            error!("Could not get translation file: {e}");
+                            continue;
+                        }
+                        Err(e) => {
+                            error!("Could not request translation file: {e}");
+                            continue;
+                        }
+                    };
+                    translations.append(&mut result);
+                }
+
+                Ok((lang_id, translations))
+            });
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            let (lang_id, t) = result??;
             translations.insert(lang_id, Some(t));
         }
 
-        if translations.is_empty() {
-            let response = client.head(&*self.check_url).send().await?;
-            if response.status() != StatusCode::OK {
-                bail!("Invalid url");
-            }
-        }
+        join_set.abort_all();
 
         Ok(translations)
     }
+}
+
+async fn generate_single(
+    url: String,
+    remove_char: Option<char>,
+    client: Arc<Client>,
+) -> anyhow::Result<Vec<Translation>> {
+    let response = client.get(&url).send().await?;
+    let path = env::temp_dir().join(format!(
+        "{}_{}.po",
+        env!("CARGO_PKG_NAME"),
+        url.split('/').skip(3).fold(String::new(), |mut acc, part| {
+            acc.push('_');
+            acc.push_str(part);
+            acc
+        })
+    ));
+
+    let file = File::create(&path).map_err(|e| anyhow!("Could not create file {path:?}: {e}"))?;
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(&response.bytes().await?)
+        .map_err(|e| anyhow!("Could not write to file {path:?}: {e}"))?;
+    let po = po_file::parse(&path)?;
+    fs::remove_file(&path).map_err(|e| anyhow!("Could not delete file {path:?}: {e}"))?;
+
+    let mut translations = Vec::with_capacity(po.count());
+    for message in po.messages() {
+        if !message.is_translated() {
+            continue;
+        }
+        let msgstr = match message.msgstr() {
+            Ok(msgstr) => msgstr,
+            Err(_) => {
+                continue;
+            }
+        };
+        translations.push(Translation {
+            original: if let Some(remove_char) = remove_char {
+                message.msgid().replace(remove_char, "")
+            } else {
+                message.msgid().to_string()
+            },
+            translation: if let Some(remove_char) = remove_char {
+                msgstr.replace(remove_char, "")
+            } else {
+                msgstr.to_string()
+            },
+            comment: if message.comments().is_empty() {
+                None
+            } else {
+                Some(message.comments().trim().to_string())
+            },
+        });
+    }
+    Ok(translations)
 }
