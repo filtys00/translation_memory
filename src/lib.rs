@@ -79,7 +79,15 @@ impl TranslationStore {
         lang_ids: Vec<LanguageIdentifier>,
         ids: Vec<String>,
     ) -> Result<HashMap<String, Option<String>>, anyhow::Error> {
-        let client = Arc::new(Client::new());
+        let client = Arc::new(
+            Client::builder()
+                .user_agent(concat!(
+                    env!("CARGO_PKG_NAME"),
+                    "/",
+                    env!("CARGO_PKG_VERSION"),
+                ))
+                .build()?,
+        );
 
         let mut join_set = JoinSet::new();
 
