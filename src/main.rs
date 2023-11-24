@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write as _},
@@ -120,7 +121,37 @@ async fn query_api(
     State(store): State<Arc<Mutex<TranslationStore>>>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    debug!("Request for '/query': {params:?}");
+    let scopes: Option<Vec<&str>> = params
+        .get("scopes")
+        .map(|scopes| scopes.split(',').collect());
+
+    debug!(
+        "Request for '/query': {{ regex: {}, languages: {}, scopes: {}, limit: {} }}",
+        params
+            .get("regex")
+            .map(|v| Cow::Owned(format!("\"{v}\"")))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("languages")
+            .map(|v| Cow::Owned(format!("\"{v}\"")))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("scopes")
+            .map(|v| {
+                let scopes = scopes.as_ref().map(|s| s.len()).unwrap_or(0);
+
+                Cow::Owned(if scopes > 3 {
+                    format!("<{scopes}>")
+                } else {
+                    format!("\"{v}\"")
+                })
+            })
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("limit")
+            .map(|v| Cow::Borrowed(v.as_str()))
+            .unwrap_or(Cow::Borrowed("undefined")),
+    );
 
     let regex = if let Some(regex) = params.get("regex") {
         Some(
@@ -130,10 +161,6 @@ async fn query_api(
     } else {
         None
     };
-
-    let scopes: Option<Vec<&str>> = params
-        .get("scopes")
-        .map(|scopes| scopes.split(',').collect());
 
     let langs: Option<Vec<LanguageIdentifier>> = if let Some(langs) = params.get("languages") {
         let mut langs_parsed = Vec::new();
@@ -271,7 +298,24 @@ async fn update_api(
     State(store): State<Arc<Mutex<TranslationStore>>>,
     Json(payload): Json<UpdatePayload>,
 ) -> Result<Json<HashMap<String, Option<String>>>, (StatusCode, String)> {
-    debug!("Request for '/update': {payload:?}");
+    debug!(
+        "Request for '/update':\
+        \n{{\
+        \n    languages: [{}],\
+        \n    scopes: [{}\
+        \n    ]\
+        \n}}",
+        payload
+            .languages
+            .iter()
+            .map(|lang| format!("\"{lang}\""))
+            .reduce(|a, b| a + ", " + &b)
+            .unwrap_or_default(),
+        payload.scopes.iter().fold(String::new(), |acc, scope| acc
+            + "\n        \""
+            + scope
+            + "\","),
+    );
 
     let mut store = store.lock().await;
 
