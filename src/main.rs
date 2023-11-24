@@ -72,6 +72,7 @@ async fn web_server(store: TranslationStore) {
         .route("/update", post(update_api))
         .route("/icon/search.svg", get(search_icon))
         .route("/icon/language.svg", get(language_icon))
+        .route("/favicon.ico", get(language_icon))
         .with_state(store);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 2013));
