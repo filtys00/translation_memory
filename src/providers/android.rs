@@ -90,18 +90,18 @@ async fn parse_resources(
 ) -> Result<HashMap<String, (String, Option<String>)>, anyhow::Error> {
     let response = client.get(url).send().await?;
     if response.status() == StatusCode::NOT_FOUND {
-        bail!("Translation '{lang_id}' does not exist\n    {url}",);
+        bail!("Translation '{lang_id}' does not exist\n{url}",);
     }
     if response.status() != StatusCode::OK {
         bail!(
-            "Translation '{lang_id}' returned error code '{}'\n    {url}",
+            "Translation '{lang_id}' returned error code '{}'\n{url}",
             response.status()
         );
     }
     let bytes = response.bytes().await?;
     let bytes = BASE64.decode(&bytes).map_err(|e| {
         anyhow!(
-            "Invalid base64 in '{lang_id}' translation: {e}\n    {url}\n{}",
+            "Invalid base64 in '{lang_id}' translation: {e}\n{url}\n{}",
             String::from_utf8_lossy(&bytes)
         )
     })?;
