@@ -1,4 +1,5 @@
 mod android;
+mod browser_extension;
 mod minecraft;
 mod po;
 
@@ -14,8 +15,12 @@ use reqwest::Client;
 use unic_langid::LanguageIdentifier;
 
 pub use self::{
-    android::AndroidHttpProvider, minecraft::MinecraftProvider, po::gnome::graphql_gnome,
-    po::kde::graphql_kde, po::PoProvider,
+    android::AndroidHttpProvider,
+    browser_extension::BrowserExtensionProvider,
+    minecraft::MinecraftProvider,
+    po::gnome::graphql_gnome,
+    po::kde::graphql_kde,
+    po::PoProvider,
 };
 use super::Translation;
 
@@ -71,6 +76,28 @@ macro_rules! android {
     };
 }
 
+macro_rules! browser_extension {
+    ($name:literal, github => $repo:literal, $folder:literal) => {
+        Arc::new(BrowserExtensionProvider {
+            id: concat!("github/", $repo, "/", $folder),
+            name: $name,
+            group_name: Some("Browser extension"),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://github.com/",
+                        $repo,
+                        "/raw/",
+                        $folder,
+                        "/{}/messages.json",
+                    ),
+                    lang_id.language.as_str()
+                )
+            },
+        })
+    };
+}
+
 #[rustfmt::skip]
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
@@ -87,6 +114,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             urls: graphql_kde,
             remove_char: Some('&'),
         }),
+
+        browser_extension!("Tampermonkey",        github => "Tampermonkey/tampermonkey",   "master/i18n"),
+        browser_extension!("Tree Style Tab",      github => "piroor/treestyletab",         "trunk/webextensions/_locales"),
+        browser_extension!("Tab Session Manager", github => "sienori/Tab-Session-Manager", "master/src/_locales"),
 
         android!("", "bootable/recovery",                         "tools/recovery_l10n/res"),
         android!("", "development",                               "apps/Fallback/res"),
