@@ -7,6 +7,7 @@ use base64::{
     engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
     Engine,
 };
+use log::error;
 use quick_xml::{events::Event, Reader};
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
@@ -21,19 +22,20 @@ const BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new(),
 );
 
-pub struct AndroidHttpProvider<F>
+pub struct AndroidProvider<F>
 where
     F: Fn(&LanguageIdentifier) -> String + Send + Sync,
 {
     pub id: &'static str,
     pub name: &'static str,
     pub group_name: Option<&'static str>,
+    pub decode_as_base64: bool,
     pub default_url: &'static str,
     pub url: F,
 }
 
 #[async_trait]
-impl<F> TranslationProvider for AndroidHttpProvider<F>
+impl<F> TranslationProvider for AndroidProvider<F>
 where
     F: Fn(&LanguageIdentifier) -> String + Send + Sync,
 {
@@ -56,13 +58,32 @@ where
     ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let mut translations_all = HashMap::new();
 
-        let resources_en = parse_resources("default", self.default_url, &client).await?;
+        let resources_en =
+            get_resources("default", self.default_url, &client, self.decode_as_base64)
+                .await?
+                .ok_or_else(|| {
+                    anyhow!("Default translation were not found\n{}", self.default_url)
+                })?;
 
         'outer: for lang_id in lang_ids {
-            let Ok(resources) = parse_resources(&lang_id, &(self.url)(&lang_id), &client).await
-            else {
-                translations_all.insert(lang_id, None);
-                continue;
+            let resources = match get_resources(
+                &lang_id,
+                &(self.url)(&lang_id),
+                &client,
+                self.decode_as_base64,
+            )
+            .await
+            {
+                Ok(Some(resources)) => resources,
+                Ok(None) => {
+                    translations_all.insert(lang_id, None);
+                    continue;
+                }
+                Err(e) => {
+                    error!("{e}");
+                    translations_all.insert(lang_id, None);
+                    continue;
+                }
             };
             let mut translations = Vec::with_capacity(resources.len());
             for (name, (text, _)) in resources {
@@ -83,32 +104,40 @@ where
     }
 }
 
-async fn parse_resources(
+async fn get_resources(
     lang_id: impl Display,
     url: &str,
     client: &Client,
-) -> Result<HashMap<String, (String, Option<String>)>, anyhow::Error> {
+    decode_as_base64: bool,
+) -> Result<Option<HashMap<String, (String, Option<String>)>>, anyhow::Error> {
     let response = client.get(url).send().await?;
-    if response.status() == StatusCode::NOT_FOUND {
-        bail!("Translation '{lang_id}' does not exist\n{url}",);
+    match response.status() {
+        StatusCode::OK => {}
+        StatusCode::NOT_FOUND => return Ok(None),
+        status_code => bail!("Translation '{lang_id}' returned error code '{status_code}'\n{url}",),
     }
-    if response.status() != StatusCode::OK {
-        bail!(
-            "Translation '{lang_id}' returned error code '{}'\n{url}",
-            response.status()
-        );
-    }
-    let bytes = response.bytes().await?;
-    let bytes = BASE64.decode(&bytes).map_err(|e| {
-        anyhow!(
-            "Invalid base64 in '{lang_id}' translation: {e}\n{url}\n{}",
-            String::from_utf8_lossy(&bytes)
-        )
-    })?;
 
+    let bytes = response.bytes().await?;
+    let bytes = if decode_as_base64 {
+        BASE64.decode(&bytes).map_err(|e| {
+            anyhow!(
+                "Invalid base64 in '{lang_id}' translation: {e}\n{url}\n{}",
+                String::from_utf8_lossy(&bytes)
+            )
+        })?
+    } else {
+        bytes.to_vec()
+    };
+
+    parse_resources(bytes.as_slice()).map(Some)
+}
+
+fn parse_resources(
+    bytes: &[u8],
+) -> Result<HashMap<String, (String, Option<String>)>, anyhow::Error> {
     let mut resources = HashMap::new();
 
-    let mut reader = Reader::from_reader(bytes.as_slice());
+    let mut reader = Reader::from_reader(bytes);
     let mut comment: Option<String> = None;
     let mut name: Option<String> = None;
     let mut text = String::new();
