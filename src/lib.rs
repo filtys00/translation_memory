@@ -79,6 +79,10 @@ impl TranslationStore {
         lang_ids: Vec<LanguageIdentifier>,
         ids: Vec<String>,
     ) -> Result<HashMap<String, Option<String>>, anyhow::Error> {
+        if lang_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
         let client = Arc::new(
             Client::builder()
                 .user_agent(concat!(
