@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail};
-use log::error;
+use log::{debug, error};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
@@ -125,6 +125,16 @@ impl TranslationStore {
                     continue;
                 }
             };
+
+            debug!(
+                "Generated '{id}': up to {} translations for each language",
+                t.iter()
+                    .filter_map(|(_, t)| t.as_ref())
+                    .map(|t| t.len())
+                    .max()
+                    .unwrap_or(0)
+            );
+
             errors.insert(id.clone(), None);
             self.translations.insert(id, t);
         }
