@@ -136,6 +136,10 @@ impl TranslationStore {
         &self.providers
     }
 
+    pub fn provider(&self, id: &str) -> Option<&Arc<dyn TranslationProvider + Send + Sync>> {
+        self.providers.iter().find(|provider| provider.id() == id)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
         self.translations
             .iter()

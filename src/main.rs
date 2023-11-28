@@ -21,7 +21,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::Mutex;
-use translation_memory::TranslationStore;
+use translation_memory::{Translation, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
 #[cfg(debug_assertions)]
@@ -107,14 +107,219 @@ async fn main_page() -> Html<&'static str> {
 
 async fn debug_api(
     State(store): State<Arc<Mutex<TranslationStore>>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    debug!("Request for '/debug'");
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<String>)> {
+    debug!(
+        "Request for '/debug': {{ scope: {}, group: {}, language: {}, list: {}, count: {} }}",
+        params
+            .get("scope")
+            .map(|scope| Cow::Owned(format!("\"{scope}\"")))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("group")
+            .map(|group| Cow::Owned(format!("\"{group}\"")))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("language")
+            .map(|language| Cow::Owned(format!("\"{language}\"")))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("list")
+            .map(|list| Cow::Borrowed(list.as_str()))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("count")
+            .map(|count| Cow::Borrowed(count.as_str()))
+            .unwrap_or(Cow::Borrowed("undefined")),
+    );
 
     let store = store.lock().await;
 
-    serde_json::to_value(&*store)
-        .map(Json)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+    let count = params
+        .get("count")
+        .map(|count| count.parse::<bool>())
+        .transpose()
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(e.to_string())))?
+        .unwrap_or(false);
+    let list = params
+        .get("list")
+        .map(|list| list.parse::<bool>())
+        .transpose()
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(e.to_string())))?
+        .unwrap_or(false);
+    let scope = params.get("scope");
+    let group = params.get("group").map(|group| {
+        if group == "null" {
+            None
+        } else {
+            Some(group.as_str())
+        }
+    });
+    let language = params
+        .get("language")
+        .map(|lang| lang.parse::<LanguageIdentifier>())
+        .transpose()
+        .map_err(|e| (StatusCode::BAD_REQUEST, Json(e.to_string())))?;
+
+    if list | count {
+        let translations: Vec<&Translation> = match (scope, group, language) {
+            (None, None, None) => store
+                .translations
+                .iter()
+                .flat_map(|(_, translations)| translations.iter())
+                .filter_map(|(_, translations)| translations.as_ref())
+                .flatten()
+                .collect(),
+            (Some(scope), _, None) => {
+                let Some(translations) = store.translations.get(scope) else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(String::from("scope not found")),
+                    ));
+                };
+                translations
+                    .iter()
+                    .filter_map(|(_, translation)| translation.as_ref())
+                    .flatten()
+                    .collect()
+            }
+            (None, None, Some(language)) => store
+                .translations
+                .iter()
+                .filter_map(|(_, translations)| translations.get(&language)?.as_ref())
+                .flatten()
+                .collect(),
+            (Some(scope), _, Some(language)) => {
+                let Some(translations) = store.translations.get(scope) else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(String::from("scope not found")),
+                    ));
+                };
+                let Some(Some(translations)) = translations.get(&language) else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(String::from("language not found")),
+                    ));
+                };
+                translations.iter().collect()
+            }
+            (None, Some(group), None) => store
+                .translations
+                .iter()
+                .filter(|(scope, _)| {
+                    store
+                        .provider(scope)
+                        .map_or(false, |provider| provider.group_name() == group)
+                })
+                .flat_map(|(_, translations)| {
+                    translations
+                        .values()
+                        .filter_map(|translations| translations.as_ref())
+                })
+                .flatten()
+                .collect(),
+            (None, Some(group), Some(language)) => store
+                .translations
+                .iter()
+                .filter(|(scope, _)| {
+                    store
+                        .provider(scope)
+                        .map_or(false, |provider| provider.group_name() == group)
+                })
+                .filter_map(|(_, translations)| translations.get(&language))
+                .flatten()
+                .flatten()
+                .collect(),
+        };
+
+        let value = if count {
+            serde_json::to_value(translations.len())
+        } else {
+            serde_json::to_value(translations)
+        };
+
+        value
+            .map(Json)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())))
+    } else {
+        let value = match (scope, group, language) {
+            (None, None, None) => serde_json::to_value(&*store),
+            (Some(scope), _, None) => {
+                let Some(translations) = store.translations.get(scope) else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(String::from("scope not found")),
+                    ));
+                };
+
+                serde_json::to_value(translations)
+            }
+            (Some(scope), _, Some(language)) => {
+                let Some(translations) = store.translations.get(scope) else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(String::from("scope not found")),
+                    ));
+                };
+                let Some(Some(translations)) = translations.get(&language) else {
+                    return Err((
+                        StatusCode::BAD_REQUEST,
+                        Json(String::from("language not found")),
+                    ));
+                };
+
+                serde_json::to_value(translations)
+            }
+            (None, None, Some(language)) => {
+                let translations: HashMap<_, _> = store
+                    .translations
+                    .iter()
+                    .filter_map(|(scope, translations)| {
+                        translations
+                            .get(&language)
+                            .map(|language| (scope, language))
+                    })
+                    .collect();
+
+                serde_json::to_value(translations)
+            }
+            (None, Some(group), None) => {
+                let translations: HashMap<_, _> = store
+                    .translations
+                    .iter()
+                    .filter(|(scope, _)| {
+                        store
+                            .provider(scope)
+                            .map_or(false, |provider| provider.group_name() == group)
+                    })
+                    .collect();
+
+                serde_json::to_value(translations)
+            }
+            (None, Some(group), Some(language)) => {
+                let translations: HashMap<_, _> = store
+                    .translations
+                    .iter()
+                    .filter_map(|(scope, translations)| {
+                        if store.provider(scope)?.group_name() == group {
+                            return None;
+                        }
+                        translations
+                            .get(&language)?
+                            .as_ref()
+                            .map(|translation| (scope, translation))
+                    })
+                    .collect();
+
+                serde_json::to_value(translations)
+            }
+        };
+
+        value
+            .map(Json)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())))
+    }
 }
 
 async fn query_api(
