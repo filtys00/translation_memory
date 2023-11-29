@@ -1,7 +1,7 @@
 mod providers;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     fs::File,
     io::{BufReader, BufWriter},
@@ -152,6 +152,14 @@ impl TranslationStore {
 
     pub fn provider(&self, id: &str) -> Option<&Arc<dyn TranslationProvider + Send + Sync>> {
         self.providers.iter().find(|provider| provider.id() == id)
+    }
+
+    pub fn languages(&self) -> HashSet<&LanguageIdentifier> {
+        self.translations
+            .iter()
+            .flat_map(|(_, t)| t.iter())
+            .map(|(lang_id, _)| lang_id)
+            .collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {

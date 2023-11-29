@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::{Read, Write as _},
     net::SocketAddr,
@@ -39,6 +39,14 @@ struct Args {
     /// Write trace logs for a specific target. Example: `--log providers::android`
     #[arg(long = "log", value_delimiter = ',')]
     logs: Vec<String>,
+
+    /// Generate one or more providers
+    #[arg(long, value_delimiter = ',')]
+    generate: Vec<String>,
+
+    /// Languages to generate for
+    #[arg(long, value_delimiter = ',', requires = "generate")]
+    language: Vec<LanguageIdentifier>,
 }
 
 #[tokio::main]
@@ -82,12 +90,27 @@ async fn main() {
         })
         .init();
 
-    let store = if Path::new(CACHE_PATH).exists() {
+    let mut store = if Path::new(CACHE_PATH).exists() {
         info!("Reading caches translations from '{CACHE_PATH}'...");
         TranslationStore::from_file(CACHE_PATH).unwrap()
     } else {
         TranslationStore::default()
     };
+
+    if !args.generate.is_empty() {
+        let lang_ids = if args.language.is_empty() {
+            store.languages().into_iter().cloned().collect()
+        } else {
+            args.language
+        };
+        if let Err(e) = store.generate(lang_ids, args.generate).await {
+            error!("{e}");
+        }
+        if let Err(e) = store.write_to(CACHE_PATH) {
+            error!("{e}");
+        }
+        return;
+    }
 
     info!("Starting web server...");
     web_server(store).await
@@ -507,16 +530,9 @@ async fn metadata_api(
         })
         .collect();
 
-    let lang_ids: HashSet<&LanguageIdentifier> = store
-        .translations
-        .iter()
-        .flat_map(|(_, t)| t.iter())
-        .map(|(lang_id, _)| lang_id)
-        .collect();
-
     Ok(Json(json!({
         "scopes": scopes,
-        "languages": lang_ids,
+        "languages": store.languages(),
     })))
 }
 
