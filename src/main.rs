@@ -39,19 +39,19 @@ async fn main() {
             dimmed_style.set_color(Color::Black);
             dimmed_style.set_intense(true);
 
-            write!(buf, "{}", dimmed_style.value('['))?;
-            write!(buf, "{}", buf.default_styled_level(record.level()))?;
-            if let Some(module_path) = record.module_path() {
-                write!(buf, " {module_path}")?;
-            }
-            write!(buf, "{} ", dimmed_style.value(']'))?;
-
-            let args = if let Level::Warn | Level::Info = record.level() {
-                record.args().to_string().replace('\n', "\n      ")
-            } else {
-                record.args().to_string().replace('\n', "\n       ")
-            };
-            writeln!(buf, "{args}")
+            writeln!(
+                buf,
+                "{}{} {}{} {}",
+                dimmed_style.value('['),
+                buf.default_styled_level(record.level()),
+                record.target(),
+                dimmed_style.value(']'),
+                if let Level::Warn | Level::Info = record.level() {
+                    record.args().to_string().replace('\n', "\n      ")
+                } else {
+                    record.args().to_string().replace('\n', "\n       ")
+                }
+            )
         })
         .init();
 
