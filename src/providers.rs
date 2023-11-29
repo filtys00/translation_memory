@@ -1,6 +1,7 @@
 mod android;
 mod browser_extension;
 mod minecraft;
+mod mozilla;
 mod po;
 
 use std::{
@@ -16,7 +17,8 @@ use unic_langid::LanguageIdentifier;
 
 pub use self::{
     android::AndroidProvider, browser_extension::BrowserExtensionProvider,
-    minecraft::MinecraftProvider, po::gnome::graphql_gnome, po::kde::graphql_kde, po::PoProvider,
+    minecraft::MinecraftProvider, mozilla::MozillaProvider, po::gnome::graphql_gnome,
+    po::kde::graphql_kde, po::PoProvider,
 };
 use super::Translation;
 
@@ -129,6 +131,7 @@ macro_rules! browser_extension {
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
         Arc::new(MinecraftProvider),
+        Arc::new(MozillaProvider),
         Arc::new(PoProvider {
             id: "gnome",
             name: "GNOME",
