@@ -33,7 +33,7 @@ const CACHE_PATH: &str = "translations.bin";
 async fn main() {
     env_logger::builder()
         .default_format()
-        .filter_module("translation_memory", LevelFilter::max())
+        .filter_module(env!("CARGO_PKG_NAME"), LevelFilter::max())
         .format(|buf, record| {
             let mut dimmed_style = buf.style();
             dimmed_style.set_color(Color::Black);
