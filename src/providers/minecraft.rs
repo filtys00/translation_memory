@@ -2,7 +2,7 @@ use std::{collections::HashMap, io::Cursor, sync::Arc};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use log::warn;
+use log::trace;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
@@ -93,7 +93,7 @@ impl TranslationProvider for MinecraftProvider {
             let mut t = Vec::with_capacity(assets.len());
             for (key, value) in assets {
                 let Some(original) = assets_en.get(&key) else {
-                    warn!("Translation key '{key}' were found in '{lang_id}' translation but not in default translation");
+                    trace!("Translation key '{key}' were found in '{lang_id}' translation but not in default translation");
                     continue;
                 };
 

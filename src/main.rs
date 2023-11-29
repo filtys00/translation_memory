@@ -15,6 +15,7 @@ use axum::{
     routing::{get, post},
     Json, Router, Server,
 };
+use clap::Parser;
 use env_logger::fmt::Color;
 use log::{debug, error, info, Level, LevelFilter};
 use regex::Regex;
@@ -29,11 +30,37 @@ const CACHE_PATH: &str = "translations.json";
 #[cfg(not(debug_assertions))]
 const CACHE_PATH: &str = "translations.bin";
 
+#[derive(Debug, Parser)]
+struct Args {
+    /// Write all trace logs
+    #[arg(long, default_value_t = false)]
+    verbose: bool,
+
+    /// Write trace logs for a specific target. Example: `--log providers::android`
+    #[arg(long = "log", value_delimiter = ',')]
+    logs: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() {
-    env_logger::builder()
-        .default_format()
-        .filter_module(env!("CARGO_PKG_NAME"), LevelFilter::max())
+    let args = Args::parse();
+
+    let mut builder = env_logger::builder();
+    builder.filter_module(
+        env!("CARGO_PKG_NAME"),
+        if args.verbose {
+            LevelFilter::max()
+        } else {
+            LevelFilter::Debug
+        },
+    );
+    for log in args.logs {
+        builder.filter_module(
+            &format!("{}::{log}", env!("CARGO_PKG_NAME")),
+            LevelFilter::max(),
+        );
+    }
+    builder
         .format(|buf, record| {
             let mut dimmed_style = buf.style();
             dimmed_style.set_color(Color::Black);
