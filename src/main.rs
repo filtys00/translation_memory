@@ -40,6 +40,10 @@ struct Args {
     #[arg(long = "log", value_delimiter = ',')]
     logs: Vec<String>,
 
+    /// Don't open the system web browser when the web server starts
+    #[arg(long, conflicts_with = "generate")]
+    no_browser: bool,
+
     /// Generate one or more providers
     #[arg(long, value_delimiter = ',')]
     generate: Vec<String>,
@@ -112,6 +116,11 @@ async fn main() {
         return;
     }
 
+    if !args.no_browser {
+        info!("Opening web browser...");
+        webbrowser::open("http://127.0.0.1:2013/").unwrap();
+    }
+
     info!("Starting web server...");
     web_server(store).await
 }
@@ -131,8 +140,6 @@ async fn web_server(store: TranslationStore) {
         .with_state(store);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 2013));
-    info!("Opening web browser...");
-    webbrowser::open("http://127.0.0.1:2013/").unwrap();
     Server::bind(&addr)
         .serve(app.into_make_service())
         .await
