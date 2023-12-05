@@ -7,7 +7,6 @@ use base64::{
     engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
     Engine,
 };
-use log::error;
 use quick_xml::{events::Event, Reader};
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
@@ -66,24 +65,16 @@ where
                 })?;
 
         'outer: for lang_id in lang_ids {
-            let resources = match get_resources(
+            let Some(resources) = get_resources(
                 &lang_id,
                 &(self.url)(&lang_id),
                 &client,
                 self.decode_as_base64,
             )
-            .await
-            {
-                Ok(Some(resources)) => resources,
-                Ok(None) => {
-                    translations_all.insert(lang_id, None);
-                    continue;
-                }
-                Err(e) => {
-                    error!("{e}");
-                    translations_all.insert(lang_id, None);
-                    continue;
-                }
+            .await?
+            else {
+                translations_all.insert(lang_id, None);
+                continue;
             };
             let mut translations = Vec::with_capacity(resources.len());
             for (name, (text, _)) in resources {
