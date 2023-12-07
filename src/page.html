@@ -240,6 +240,33 @@
 				height: 1.2rem;
 				margin: 0;
 			}
+
+			#languagesAndScopes:not(.loading) #loadingSpinner {
+				visibility: hidden;
+				opacity: 0;
+			}
+			#loadingSpinner {
+				position: absolute;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				width: calc(100% - 1.5rem + 1px);
+				height: calc(100% - 1.5rem + 1px);
+
+				background-color: color-mix(in srgb, var(--color-background-popup) 75%, transparent);
+				opacity: 1;
+
+				transition: all 100ms;
+			}
+			#loadingSpinner > img {
+				height: 50%;
+
+				animation: loading 2s linear infinite;
+			}
+			@keyframes loading {
+				0% { transform: rotate(0deg); }
+				100% { transform: rotate(360deg); }
+			}
 		</style>
 	</head>
 	<body>
@@ -258,6 +285,9 @@
 						</div>
 						<div id="languagesAndScopesButtons">
 							<button id="downloadNeededButton">Download needed</button>
+						</div>
+						<div id="loadingSpinner">
+							<img src="/icon/loading.svg">
 						</div>
 					</div>
 				</div>
@@ -352,6 +382,7 @@
 			};
 
 			downloadNeededButton.onclick = e => {
+				languagesAndScopes.classList.add("loading");
 				let body = {
 					"languages": Object.keys(languageFilters),
 					"scopes": Object.entries(scopeNames).filter(([k, { downloaded }]) => !downloaded).map(([k]) => k),
@@ -366,6 +397,7 @@
 						} else {
 							console.error(e);
 						}
+						languagesAndScopes.classList.remove("loading");
 					}
 				};
 				httpRequest.setRequestHeader("Content-Type", "application/json")
