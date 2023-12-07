@@ -362,7 +362,7 @@
 				httpRequest.open("POST", "http://127.0.0.1:2013/update", true);
 				httpRequest.onreadystatechange = e => {
 					if (httpRequest.readyState === XMLHttpRequest.DONE) {
-						if (httpRequest.status === 204) {
+						if (httpRequest.status === 200) {
 							populateMetadata();
 							populateTranslations();
 						} else {
