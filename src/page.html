@@ -302,13 +302,11 @@
 			 */
 			let scopeFilters = {};
 
-			setTranslations({
-				"windowTitle": "Omsetjingsminne",
-				"searchPlaceholder": "Søk",
-				"originalsTitle": "Opprinneleg",
-				"translationsTitle": "Omsetjing",
-				"languagesAndScopesButtonText": "Mål og vidd",
-			});
+			document.title = "Omsetjingsminne";
+			searchField.placeholder = "Søk";
+			languagesAndScopesButton.innerText = "Mål og vidd";
+			originalsTitle.innerText = "Opprinneleg";
+			translationsTitle.innerText = "Omsetjing";
 
 			populateMetadata();
 			populateTranslations();
@@ -516,24 +514,6 @@
 				}
 				output += text.substring(lastIndex, text.length);
 				return output;
-			}
-
-			/**
-			 * Update the GUI with the provided `translations`.
-			 * 
-			 * @param translations {{
-			 * 	"windowTitle": string,
-			 * 	"searchPlaceholder": string,
-			 * 	"originalsTitle": string,
-			 * 	"translationsTitle": string,
-			 * }}
-			 */
-			function setTranslations(translations) {
-				document.title = translations.windowTitle ?? document.error("Missing translation: windowTitle");
-				searchField.placeholder = translations.searchPlaceholder ?? document.error("Missing translation: searchPlaceholder");
-				languagesAndScopesButton.innerText = translations.languagesAndScopesButtonText ?? document.error("Missing translation: languagesAndScopesButtonText");
-				originalsTitle.innerText = translations.originalsTitle ?? document.error("Missing translation: originalTitle");
-				translationsTitle.innerText = translations.translationsTitle ?? document.error("Missing translation: translationsTitle");
 			}
 		</script>
 	</body>
