@@ -369,11 +369,15 @@
 			};
 
 			window.onmousedown = e => {
+				if (languagesAndScopes.classList.contains("loading")) { return; }
+
 				if (!languagesAndScopes.contains(e.target)) {
 					languagesAndScopes.classList.remove("open");
 				};
 			};
 			languagesAndScopesButton.onclick = e => {
+				if (languagesAndScopes.classList.contains("loading")) { return; }
+
 				if (languagesAndScopes.classList.contains("open")) {
 					languagesAndScopes.classList.remove("open");
 				} else {
