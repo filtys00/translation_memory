@@ -361,6 +361,10 @@
 					}
 				}, 250);
 			};
+			searchField.onkeypress = e => {
+				if (e.key !== "Enter") { return; }
+				refreshTranslations();
+			}
 
 			search.onclick = e => {
 				if (e.target == searchField) return;
