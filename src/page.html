@@ -284,7 +284,7 @@
 							<ul id="scopes"></ul>
 						</div>
 						<div id="languagesAndScopesButtons">
-							<button id="downloadNeededButton">Download needed</button>
+							<button id="downloadMissingButton">Download missing</button>
 						</div>
 						<div id="loadingSpinner">
 							<img src="/icon/loading.svg">
@@ -310,7 +310,7 @@
 			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
 			const languageList = document.getElementById("languages");
 			const scopeList = document.getElementById("scopes");
-			const downloadNeededButton = document.getElementById("downloadNeededButton");
+			const downloadMissingButton = document.getElementById("downloadMissingButton");
 
 			const originalsTitle = document.getElementById("originalsTitle");
 			const translationsTitle = document.getElementById("translationsTitle");
@@ -337,6 +337,7 @@
 			languagesAndScopesButton.innerText = "Mål og vidd";
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
+			downloadMissingButton.innerText = "Last ned manglande";
 
 			refreshMetadata();
 			refreshTranslations();
@@ -389,7 +390,7 @@
 				}
 			};
 
-			downloadNeededButton.onclick = e => {
+			downloadMissingButton.onclick = e => {
 				languagesAndScopes.classList.add("loading");
 				let body = {
 					"languages": Object.keys(languageFilters),
