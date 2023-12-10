@@ -78,6 +78,7 @@ impl TranslationStore {
         &mut self,
         lang_ids: Vec<LanguageIdentifier>,
         ids: Vec<String>,
+        remove_failed: bool,
     ) -> Result<HashMap<String, Option<String>>, anyhow::Error> {
         if lang_ids.is_empty() {
             return Ok(HashMap::new());
@@ -125,6 +126,9 @@ impl TranslationStore {
                 Ok(t) => t,
                 Err(e) => {
                     error!("Could not generate '{id}': {e}");
+                    if remove_failed {
+                        self.translations.remove(&id);
+                    }
                     errors.insert(id, Some(e.to_string()));
                     continue;
                 }

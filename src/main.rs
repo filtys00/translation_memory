@@ -107,7 +107,7 @@ async fn main() {
         } else {
             args.language
         };
-        if let Err(e) = store.generate(lang_ids, args.generate).await {
+        if let Err(e) = store.generate(lang_ids, args.generate, false).await {
             error!("{e}");
         }
         if let Err(e) = store.write_to(CACHE_PATH) {
@@ -548,7 +548,11 @@ async fn metadata_api(
 #[derive(Debug, Deserialize, Serialize)]
 struct UpdatePayload {
     languages: Vec<LanguageIdentifier>,
+
     scopes: Vec<String>,
+
+    #[serde(rename = "removeFailed", default)]
+    remove_failed: bool,
 }
 
 async fn update_api(
@@ -560,7 +564,8 @@ async fn update_api(
         \n{{\
         \n    languages: [{}],\
         \n    scopes: [{}\
-        \n    ]\
+        \n    ],\
+        \n    removeFailed: {}\
         \n}}",
         payload
             .languages
@@ -572,11 +577,15 @@ async fn update_api(
             + "\n        \""
             + scope
             + "\","),
+        payload.remove_failed,
     );
 
     let mut store = store.lock().await;
 
-    let errors = match store.generate(payload.languages, payload.scopes).await {
+    let errors = match store
+        .generate(payload.languages, payload.scopes, payload.remove_failed)
+        .await
+    {
         Err(e) => {
             error!("Could not generate: {e}");
             return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
