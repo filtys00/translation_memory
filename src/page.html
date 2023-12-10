@@ -152,93 +152,80 @@
 				overflow-wrap: break-word;
 			}
 
-			#languagesAndScopesDialog {
-				display: flex;
-				flex-direction: column;
-				gap: 0.5rem;
-				position: absolute;
-				padding: 0.75rem;
-
-				background-color: var(--color-background-popup);
-				border-radius: 0.5rem;
-				box-shadow: var(--shadow);
-				opacity: 1;
-
-				transition: all 100ms;
-			}
-			.open > #languagesAndScopesDialog {
-				border-radius: 0 0.5rem 0.5rem 0.5rem;
-			}
-			:not(.open) > #languagesAndScopesDialog {
-				visibility: hidden;
-				opacity: 0;
-				cursor: default;
-			}
 			.open > #languagesAndScopesButton {
 				border-radius: 0.5rem 0.5rem 0 0;
 
 				background-color: var(--color-background-field-focused);
 			}
-			#languagesAndScopesMain {
+			#languagesAndScopesDialog {
+				position: absolute;
+				right: 3vw;
 				display: flex;
 				flex-direction: row;
-			}
-			#languagesAndScopesButtons {
-				display: flex;
-				flex-direction: row;
-			}
-			#languagesAndScopesButtons > button {
-				width: 100%;
-				border: none;
-				outline: none;
-				font-size: 1rem !important;
+				width: max-content;
+				padding: 0.75rem;
+				border-radius: 0.5rem;
 
-				color: white;
-				background-color: #0060df;
-				cursor: pointer;
+				background-color: var(--color-background-popup);
+				box-shadow: var(--shadow);
+				opacity: 1;
 
 				transition: all 100ms;
 			}
-			#languagesAndScopesButtons > button:first-child {
-				border-top-left-radius: 1rem;
-				border-bottom-left-radius: 1rem;
-				padding-left: 0.75rem;
+			:not(.open) > #languagesAndScopesDialog {
+				visibility: hidden;
+				opacity: 0;
 			}
-			#languagesAndScopesButtons > button:last-child {
-				border-top-right-radius: 1rem;
-				border-bottom-right-radius: 1rem;
-				padding-right: 0.75rem;
+			#languagesAndScopesDialog > div {
+				display: flex;
+				flex-direction: column;
+				gap: 0.5rem;
 			}
-			#languagesAndScopesButtons > button:hover {
-				background-color: #2374ff;
-			}
-			#languagesAndScopesButtons > button:active {
-				background-color: #3e90ff;
+			#languagesAndScopesDialog > div:first-child {
+				padding: 0 1rem 0 0;
+				border-right: var(--color-border-popup) 1px solid;
+				margin: 0 1rem 0 0;
 			}
 			#languages, #scopes {
-				margin: 0;
 				padding: 0;
+				margin: 0;
 
 				list-style: none;
 			}
-			#languages {
-				border-right: var(--color-border-popup) 1px solid;
-				margin: 0 1rem 0 0;
-				padding: 0 1rem 0 0;
-			}
-			:is(#languages, #scopes) > li {
+			#languages > li, #scopes > li {
 				display: flex;
 				flex-direction: row;
-				gap: 0.5rem;
 				align-items: center;
+				gap: 0.5rem;
 			}
-			:is(#languages, #scopes) > li:not(:last-child) {
+			#languagesAndScopes li:not(:last-child) {
 				margin-bottom: 0.5rem;
 			}
-			:is(#languages, #scopes) > li > input {
+			#languagesAndScopes li > input {
 				width: 1.2rem;
 				height: 1.2rem;
 				margin: 0;
+			}
+			#languagesAndScopes:not(.editLanguages) #newLanguageField,
+			#languagesAndScopes:not(.editLanguages) #cancelChangesButton,
+			#languagesAndScopes:not(.editLanguages) #saveChangesButton,
+			#languagesAndScopes:not(.editLanguages) .deleteLanguageButton,
+			.editLanguages #languages > li > input[type="checkbox"],
+			.editLanguages #editLanguagesButton
+			{
+				display: none;
+			}
+			#newLanguageField {
+				width: 3rem;
+				margin-left: 1.7rem;
+
+				font-size: 1rem;
+			}
+			#languagesAndScopes:not(.editLanguages) #languages, #newLanguageField, #scopes {
+				margin-bottom: auto;
+			}
+			#editLanguagesButton, #cancelChangesButton, #downloadMissingButton {
+				margin-top: 1rem;
 			}
 
 			#languagesAndScopes:not(.loading) #loadingSpinner {
@@ -267,6 +254,53 @@
 				0% { transform: rotate(0deg); }
 				100% { transform: rotate(360deg); }
 			}
+
+			.smallButton {
+				font-size: 1rem !important;
+				width: 100%;
+				padding: 1px 0.75rem;
+				border: none;
+				border-radius: 1rem;
+				outline: none;
+
+				color: white;
+				background-color: #0060df;
+
+				transition: all 100ms;
+			}
+			.smallButton:hover {
+				background-color: #2374ff;
+			}
+			.smallButton:active {
+				background-color: #3e90ff;
+			}
+			.smallButton:disabled {
+				background-color: #c7c7ce;
+			}
+			.deleteLanguageButton {
+				width: 1.2rem;
+				height: 1.2rem;
+				padding: 0.1rem;
+				border: none;
+				border-radius: 50%;
+				outline: none;
+
+				transition: all 100ms;
+			}
+			:is(.deleteLanguageButton, .smallButton.destructive) {
+				color: white;
+				background-color: #ff0000;
+			}
+			:is(.deleteLanguageButton, .smallButton.destructive):hover {
+				background-color: #f10000;
+			}
+			:is(.deleteLanguageButton, .smallButton.destructive):active {
+				background-color: #e80000;
+			}
+			.deleteLanguageButton > img {
+				width: 1rem;
+				height: 1rem;
+			}
 		</style>
 	</head>
 	<body>
@@ -279,12 +313,16 @@
 				<div id="languagesAndScopes">
 					<button id="languagesAndScopesButton">Languages & Scopes</button>
 					<div id="languagesAndScopesDialog">
-						<div id="languagesAndScopesMain">
+						<div>
 							<ul id="languages"></ul>
-							<ul id="scopes"></ul>
+							<input id="newLanguageField" type="text">
+							<button class="smallButton" id="editLanguagesButton">Edit languages</button>
+							<button class="smallButton destructive" id="cancelChangesButton">Cancel</button>
+							<button class="smallButton" id="saveChangesButton">Save languages</button>
 						</div>
-						<div id="languagesAndScopesButtons">
-							<button id="downloadMissingButton">Download missing</button>
+						<div>
+							<ul id="scopes"></ul>
+							<button class="smallButton" id="downloadMissingButton">Download missing</button>
 						</div>
 						<div id="loadingSpinner">
 							<img src="/icon/loading.svg">
@@ -310,6 +348,10 @@
 			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
 			const languageList = document.getElementById("languages");
 			const scopeList = document.getElementById("scopes");
+			const editLanguagesButton = document.getElementById("editLanguagesButton");
+			const newLanguageField = document.getElementById("newLanguageField");
+			const cancelChangesButton = document.getElementById("cancelChangesButton");
+			const saveChangesButton = document.getElementById("saveChangesButton");
 			const downloadMissingButton = document.getElementById("downloadMissingButton");
 
 			const originalsTitle = document.getElementById("originalsTitle");
@@ -332,11 +374,24 @@
 			 */
 			let scopeFilters = {};
 
+			/**
+			 * @define [ string ]
+			 */
+			let languages = [];
+			
+			/**
+			 * @define [ string ]
+			 */
+			let newLanguages = [];
+
 			document.title = "Omsetjingsminne";
 			searchField.placeholder = "Søk";
 			languagesAndScopesButton.innerText = "Mål og vidd";
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
+			editLanguagesButton.innerText = "Endra mål";
+			cancelChangesButton.innerText = "Avbryt";
+			saveChangesButton.innerText = "Lagra mål";
 			downloadMissingButton.innerText = "Last ned manglande";
 
 			refreshMetadata();
@@ -374,14 +429,18 @@
 			};
 
 			window.onmousedown = e => {
-				if (languagesAndScopes.classList.contains("loading")) { return; }
+				if (languagesAndScopes.classList.contains("editLanguages")
+				 || languagesAndScopes.classList.contains("loading"))
+				{ return; }
 
 				if (!languagesAndScopes.contains(e.target)) {
 					languagesAndScopes.classList.remove("open");
 				};
 			};
 			languagesAndScopesButton.onclick = e => {
-				if (languagesAndScopes.classList.contains("loading")) { return; }
+				if (languagesAndScopes.classList.contains("editLanguages")
+				 || languagesAndScopes.classList.contains("loading"))
+				{ return; }
 
 				if (languagesAndScopes.classList.contains("open")) {
 					languagesAndScopes.classList.remove("open");
@@ -390,6 +449,62 @@
 				}
 			};
 
+			editLanguagesButton.onclick = e => {
+				scopeList.childNodes.forEach(e => e.firstChild.disabled = true);
+				downloadMissingButton.disabled = true;
+				languagesAndScopes.classList.add("editLanguages");
+				newLanguageField.value = "";
+				newLanguageField.focus();
+				newLanguages = [...languages];
+				populateLanguages(languages);
+			};
+			cancelChangesButton.onclick = e => {
+				scopeList.childNodes.forEach(e => e.firstChild.disabled = false);
+				downloadMissingButton.disabled = false;
+				languagesAndScopes.classList.remove("editLanguages");
+				populateLanguages(languages);
+			};
+			saveChangesButton.onclick = e => {
+				scopeList.childNodes.forEach(e => e.firstChild.disabled = false);
+				downloadMissingButton.disabled = false;
+				languagesAndScopes.classList.add("loading");
+				languagesAndScopes.classList.remove("editLanguages");
+				populateLanguages(languages);
+			
+				let body = {
+					"languages": newLanguages,
+					"scopes": Object.keys(scopeNames),
+					"removeFailed": true,
+				};
+				let httpRequest = new XMLHttpRequest();
+				httpRequest.open("POST", "http://127.0.0.1:2013/update", true);
+				httpRequest.onreadystatechange = e => {
+					if (httpRequest.readyState === XMLHttpRequest.DONE) {
+						if (httpRequest.status === 200) {
+							refreshMetadata();
+							refreshTranslations();
+						} else {
+							console.error(e);
+						}
+						languagesAndScopes.classList.remove("loading");
+					}
+				};
+				httpRequest.setRequestHeader("Content-Type", "application/json")
+				httpRequest.send(JSON.stringify(body));
+			};
+			newLanguageField.addEventListener("focusout", e => {
+				if (!newLanguageField.value) { return; }
+				newLanguages.push(newLanguageField.value);
+				newLanguageField.value = "";
+				populateLanguages(newLanguages);
+			});
+			newLanguageField.addEventListener("keypress", e => {
+				if (e.key !== "Enter") { return; }
+				if (!newLanguageField.value) { return; }
+				newLanguages.push(newLanguageField.value);
+				newLanguageField.value = "";
+				populateLanguages(newLanguages);
+			});
 			downloadMissingButton.onclick = e => {
 				languagesAndScopes.classList.add("loading");
 				let body = {
@@ -426,6 +541,8 @@
 						if (httpRequest.status === 200) {
 							const metadata = JSON.parse(httpRequest.responseText);
 
+							languages = metadata.languages;
+
 							for (let scope of metadata.scopes) {
 								if (scope.id) {
 									scopeNames[scope.id] = { "name": scope.name, "downloaded": scope.downloaded };
@@ -456,6 +573,19 @@
 
 				for (let lang of languages.toSorted()) {
 					let li = document.createElement("li");
+
+					let deleteButton = document.createElement("button");
+					deleteButton.classList.add("deleteLanguageButton");
+					deleteButton.onclick = e => {
+						const index = newLanguages.indexOf(lang);
+						newLanguages.splice(index, 1);
+						populateLanguages(newLanguages);
+					};
+					let deleteIcon = document.createElement("img");
+					deleteIcon.src = "/icon/remove.svg";
+					deleteIcon.alt = "Remove language from list";
+					deleteButton.appendChild(deleteIcon);
+					li.appendChild(deleteButton);
 
 					let input = document.createElement("input");
 					input.type = "checkbox";
