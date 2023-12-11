@@ -202,7 +202,7 @@
 
 				list-style: none;
 			}
-			#languages > li, #scopes > li {
+			#languagesAndScopes li, #languagesAndScopes li > label {
 				display: flex;
 				flex-direction: row;
 				align-items: center;
@@ -211,27 +211,27 @@
 			#languagesAndScopes li:not(:last-child) {
 				margin-bottom: 0.5rem;
 			}
-			#languagesAndScopes li > input {
+			#languagesAndScopes input[type="checkbox"] {
 				width: 1.2rem;
 				height: 1.2rem;
 				margin: 0;
 
 				accent-color: var(--color-button);
 			}
-			#languagesAndScopes li > input:hover {
+			#languagesAndScopes input[type="checkbox"]:hover {
 				accent-color: var(--color-button-hover);
 			}
-			#languagesAndScopes li > input:active {
+			#languagesAndScopes input[type="checkbox"]:active {
 				accent-color: var(--color-button-active);
 			}
-			#languagesAndScopes li > input:disabled {
+			#languagesAndScopes input[type="checkbox"]:disabled {
 				accent-color: var(--color-button-disabled);
 			}
 			#languagesAndScopes:not(.editLanguages) #newLanguageField,
 			#languagesAndScopes:not(.editLanguages) #cancelChangesButton,
 			#languagesAndScopes:not(.editLanguages) #saveChangesButton,
 			#languagesAndScopes:not(.editLanguages) .deleteLanguageButton,
-			.editLanguages #languages > li > input[type="checkbox"],
+			.editLanguages #languages input[type="checkbox"],
 			.editLanguages #editLanguagesButton
 			{
 				display: none;
@@ -474,7 +474,7 @@
 			};
 
 			editLanguagesButton.onclick = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.disabled = true);
+				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = true);
 				downloadMissingButton.disabled = true;
 				languagesAndScopes.classList.add("editLanguages");
 				newLanguageField.value = "";
@@ -483,13 +483,13 @@
 				populateLanguages(languages);
 			};
 			cancelChangesButton.onclick = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.disabled = false);
+				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = false);
 				downloadMissingButton.disabled = false;
 				languagesAndScopes.classList.remove("editLanguages");
 				populateLanguages(languages);
 			};
 			saveChangesButton.onclick = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.disabled = false);
+				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = false);
 				downloadMissingButton.disabled = false;
 				languagesAndScopes.classList.add("loading");
 				languagesAndScopes.classList.remove("editLanguages");
@@ -611,6 +611,8 @@
 					deleteButton.appendChild(deleteIcon);
 					li.appendChild(deleteButton);
 
+					let label = document.createElement("label");
+
 					let input = document.createElement("input");
 					input.type = "checkbox";
 					languageFilters[lang] = languageFilters[lang] ?? true;
@@ -619,11 +621,13 @@
 						languageFilters[lang] = input.checked;
 						refreshTranslations();
 					};
-					li.appendChild(input);
+					label.appendChild(input);
 
 					let span = document.createElement("span");
 					span.appendChild(document.createTextNode(lang));
-					li.appendChild(span);
+					label.appendChild(span);
+
+					li.appendChild(label);
 
 					languageList.appendChild(li);
 				}
@@ -637,6 +641,7 @@
 
 				for (let scope of scopes.toSorted((a, b) => a.name > b.name)) {
 					let li = document.createElement("li");
+					let label = document.createElement("label");
 
 					let input = document.createElement("input");
 					input.type = "checkbox";
@@ -651,12 +656,13 @@
 						}
 						refreshTranslations();
 					};
-					li.appendChild(input);
+					label.appendChild(input);
 
 					let span = document.createElement("span");
 					span.appendChild(document.createTextNode(scope.name));
-					li.appendChild(span);
+					label.appendChild(span);
 
+					li.appendChild(label)
 					scopeList.appendChild(li);
 				}
 			}
