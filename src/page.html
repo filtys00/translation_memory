@@ -540,11 +540,9 @@
 			
 				let body = {
 					"languages": newLanguages,
-					"scopes": Object.keys(scopeNames),
-					"removeFailed": true,
 				};
 				let httpRequest = new XMLHttpRequest();
-				httpRequest.open("POST", "http://127.0.0.1:2013/update", true);
+				httpRequest.open("POST", "http://127.0.0.1:2013/update_all", true);
 				httpRequest.onreadystatechange = e => {
 					if (httpRequest.readyState === XMLHttpRequest.DONE) {
 						if (httpRequest.status === 200) {

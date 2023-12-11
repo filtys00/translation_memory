@@ -1,6 +1,6 @@
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write as _},
     net::SocketAddr,
@@ -134,6 +134,7 @@ async fn web_server(store: TranslationStore) {
         .route("/query", get(query_api))
         .route("/metadata", get(metadata_api))
         .route("/update", post(update_api))
+        .route("/update_all", post(update_all_api))
         .route("/icon/search.svg", get(search_icon))
         .route("/icon/language.svg", get(language_icon))
         .route("/icon/loading.svg", get(loading_icon))
@@ -548,11 +549,7 @@ async fn metadata_api(
 #[derive(Debug, Deserialize, Serialize)]
 struct UpdatePayload {
     languages: Vec<LanguageIdentifier>,
-
     scopes: Vec<String>,
-
-    #[serde(rename = "removeFailed", default)]
-    remove_failed: bool,
 }
 
 async fn update_api(
@@ -564,8 +561,7 @@ async fn update_api(
         \n{{\
         \n    languages: [{}],\
         \n    scopes: [{}\
-        \n    ],\
-        \n    removeFailed: {}\
+        \n    ]\
         \n}}",
         payload
             .languages
@@ -577,13 +573,12 @@ async fn update_api(
             + "\n        \""
             + scope
             + "\","),
-        payload.remove_failed,
     );
 
     let mut store = store.lock().await;
 
     let errors = match store
-        .generate(payload.languages, payload.scopes, payload.remove_failed)
+        .generate(payload.languages, payload.scopes, false)
         .await
     {
         Err(e) => {
@@ -591,6 +586,69 @@ async fn update_api(
             return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
         Ok(errors) => errors,
+    };
+
+    debug!("Writing translations to disk");
+    if let Err(e) = store.write_to(CACHE_PATH) {
+        error!("Could not save transaltions: {e}");
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    Ok(Json(errors))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct UpdateAllPayload {
+    languages: Vec<LanguageIdentifier>,
+}
+
+async fn update_all_api(
+    State(store): State<Arc<Mutex<TranslationStore>>>,
+    Json(payload): Json<UpdateAllPayload>,
+) -> Result<Json<HashMap<String, Option<String>>>, (StatusCode, String)> {
+    debug!(
+        "Request for '/update_all':\
+        \n{{\
+        \n    languages: [{}]\
+        \n}}",
+        payload
+            .languages
+            .iter()
+            .map(|lang| format!("\"{lang}\""))
+            .reduce(|a, b| a + ", " + &b)
+            .unwrap_or_default(),
+    );
+
+    let mut store = store.lock().await;
+
+    let scopes: Vec<String> = store
+        .providers()
+        .iter()
+        .map(|provider| provider.id().to_string())
+        .collect();
+
+    let errors = if payload
+        .languages
+        .iter()
+        .collect::<HashSet<_>>()
+        .difference(&store.languages())
+        .count()
+        == 0
+    {
+        debug!("Fullfilling request by removal");
+        for translations in store.translations.values_mut() {
+            translations.retain(|lang_id, _| payload.languages.contains(lang_id));
+        }
+        scopes.into_iter().map(|scope| (scope, None)).collect()
+    } else {
+        debug!("Fullfilling request by generation");
+        match store.generate(payload.languages, scopes, true).await {
+            Ok(errors) => errors,
+            Err(e) => {
+                error!("Could not generate: {e}");
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+            }
+        }
     };
 
     debug!("Writing translations to disk");
