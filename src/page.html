@@ -567,17 +567,24 @@
 
 							languages = metadata.languages;
 
+							languageFilters = Object.fromEntries(
+								metadata.languages.map(language => [language, languageFilters[language] ?? true])
+							);
+
+							scopeNames = {};
+							let newScopeFilters = {};
 							for (let scope of metadata.scopes) {
 								if (scope.id) {
 									scopeNames[scope.id] = { "name": scope.name, "downloaded": scope.downloaded };
-									scopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
+									newScopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
 								} else {
 									for (let s of scope.scopes) {
 										scopeNames[s.id] = { "name": s.name, "downloaded": s.downloaded, "groupName": scope.name };
-										scopeFilters[s.id] = scopeFilters[s.id] ?? true;
+										newScopeFilters[s.id] = scopeFilters[s.id] ?? true;
 									}
 								}
 							}
+							scopeFilters = newScopeFilters;
 
 							populateLanguages(metadata.languages);
 							populateScopes(metadata.scopes);
