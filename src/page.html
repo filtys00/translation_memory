@@ -196,6 +196,12 @@
 				border-right: var(--color-border-popup) 1px solid;
 				margin: 0 1rem 0 0;
 			}
+			#allLanguagesCheckboxContainer, #allScopesCheckboxContainer {
+				display: flex;
+				gap: 0.5rem;
+				padding-bottom: 0.5rem;
+				border-bottom: var(--color-border-popup) 1px solid;
+			}
 			#languages, #scopes {
 				padding: 0;
 				margin: 0;
@@ -338,6 +344,10 @@
 					<button id="languagesAndScopesButton">Languages & Scopes</button>
 					<div id="languagesAndScopesDialog">
 						<div>
+							<label id="allLanguagesCheckboxContainer">
+								<input id="allLanguagesCheckbox" type="checkbox">
+								<span id="allLanguagesCheckboxLabel">All languages</span>
+							</label>
 							<ul id="languages"></ul>
 							<input id="newLanguageField" type="text">
 							<button class="smallButton" id="editLanguagesButton">Edit languages</button>
@@ -345,6 +355,10 @@
 							<button class="smallButton" id="saveChangesButton">Save languages</button>
 						</div>
 						<div>
+							<label id="allScopesCheckboxContainer">
+								<input id="allScopesCheckbox" type="checkbox">
+								<span id="allScopesCheckboxLabel">All scopes</span>
+							</label>
 							<ul id="scopes"></ul>
 							<button class="smallButton" id="downloadMissingButton">Download missing</button>
 						</div>
@@ -372,6 +386,12 @@
 			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
 			const languageList = document.getElementById("languages");
 			const scopeList = document.getElementById("scopes");
+
+			const allScopesCheckbox = document.getElementById("allScopesCheckbox");
+			const allScopesCheckboxLabel = document.getElementById("allScopesCheckboxLabel");
+			const allLanguagesCheckbox = document.getElementById("allLanguagesCheckbox");
+			const allLanguagesCheckboxLabel = document.getElementById("allLanguagesCheckboxLabel");
+
 			const editLanguagesButton = document.getElementById("editLanguagesButton");
 			const newLanguageField = document.getElementById("newLanguageField");
 			const cancelChangesButton = document.getElementById("cancelChangesButton");
@@ -413,6 +433,8 @@
 			languagesAndScopesButton.innerText = "Mål og vidd";
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
+			allLanguagesCheckboxLabel.innerText = "Alle mål";
+			allScopesCheckboxLabel.innerText = "Alle vidder";
 			editLanguagesButton.innerText = "Endra mål";
 			cancelChangesButton.innerText = "Avbryt";
 			saveChangesButton.innerText = "Lagra mål";
@@ -473,8 +495,25 @@
 				}
 			};
 
+			allLanguagesCheckbox.oninput = e => {
+				languageList.childNodes.forEach(e => e.childNodes[1].firstChild.checked = allLanguagesCheckbox.checked);
+				for (language in languageFilters) {
+					languageFilters[language] = allLanguagesCheckbox.checked;
+				}
+				refreshTranslations();
+			}
+			allScopesCheckbox.oninput = e => {
+				scopeList.childNodes.forEach(e => e.firstChild.firstChild.checked = allScopesCheckbox.checked);
+				for (scope in scopeFilters) {
+					scopeFilters[scope] = allScopesCheckbox.checked;
+				}
+				refreshTranslations();
+			}
+
 			editLanguagesButton.onclick = e => {
 				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = true);
+				allLanguagesCheckbox.disabled = true;
+				allScopesCheckbox.disabled = true;
 				downloadMissingButton.disabled = true;
 				languagesAndScopes.classList.add("editLanguages");
 				newLanguageField.value = "";
@@ -484,12 +523,16 @@
 			};
 			cancelChangesButton.onclick = e => {
 				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = false);
+				allLanguagesCheckbox.disabled = false;
+				allScopesCheckbox.disabled = false;
 				downloadMissingButton.disabled = false;
 				languagesAndScopes.classList.remove("editLanguages");
 				populateLanguages(languages);
 			};
 			saveChangesButton.onclick = e => {
 				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = false);
+				allLanguagesCheckbox.disabled = false;
+				allScopesCheckbox.disabled = false;
 				downloadMissingButton.disabled = false;
 				languagesAndScopes.classList.add("loading");
 				languagesAndScopes.classList.remove("editLanguages");
@@ -601,6 +644,8 @@
 			 */
 			function populateLanguages(languages) {
 				languageList.replaceChildren();
+				
+				updateCheckbox(allLanguagesCheckbox, languageFilters);
 
 				for (let lang of languages.toSorted()) {
 					let li = document.createElement("li");
@@ -626,6 +671,7 @@
 					input.checked = languageFilters[lang];
 					input.oninput = () => {
 						languageFilters[lang] = input.checked;
+						updateCheckbox(allLanguagesCheckbox, languageFilters);
 						refreshTranslations();
 					};
 					label.appendChild(input);
@@ -646,6 +692,8 @@
 			function populateScopes(scopes) {
 				scopeList.replaceChildren();
 
+				updateCheckbox(allScopesCheckbox, scopeFilters);
+
 				for (let scope of scopes.toSorted((a, b) => a.name > b.name)) {
 					let li = document.createElement("li");
 					let label = document.createElement("label");
@@ -661,6 +709,7 @@
 								scopeFilters[s.id] = input.checked;
 							}
 						}
+						updateCheckbox(allScopesCheckbox, scopeFilters);
 						refreshTranslations();
 					};
 					label.appendChild(input);
@@ -671,6 +720,21 @@
 
 					li.appendChild(label)
 					scopeList.appendChild(li);
+				}
+			}
+
+			function updateCheckbox(checkbox, filters) {
+				if (Object.getOwnPropertyNames(filters).length) {
+					let checked = Object.values(filters).reduce((acc, checked) => acc === checked ? acc : null);
+					if (checked === null) {
+						checkbox.checked = true;
+						checkbox.indeterminate = true;
+					} else {
+						checkbox.checked = checked;
+						checkbox.indeterminate = false;
+					}
+				} else {
+					checkbox.checked = true;
 				}
 			}
 
