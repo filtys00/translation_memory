@@ -721,6 +721,17 @@
 					li.appendChild(label)
 					scopeList.appendChild(li);
 				}
+
+				let missingDownloads = scopes.reduce((acc, { downloaded, scopes, name }) => {
+					if (acc) { return true; }
+
+					if (scopes) {
+						return scopes.reduce((acc, { downloaded }) => acc || !downloaded, false);
+					} else {
+						return !downloaded;
+					}
+				}, false);
+				downloadMissingButton.style.display = missingDownloads ? "" : "none";
 			}
 
 			function updateCheckbox(checkbox, filters) {
