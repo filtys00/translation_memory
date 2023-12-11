@@ -17,6 +17,16 @@
 				--color-border-popup: var(--color-background-field-focused);
 				--color-text: #222222;
 				--color-text-unfocused: #6f7070;
+				--color-button: #0060df;
+				--color-button-hover: #2374ff;
+				--color-button-active: #3e90ff;
+				--color-button-disabled: #c7c7ce;
+				--color-button-text: #ffffff;
+				--color-button-destructive: #ff0000;
+				--color-button-destructive-hover: #f10000;
+				--color-button-destructive-active: #e80000;
+				--color-button-destructive-disabled: #c7c7ce;
+				--color-button-destructive-text: #ffffff;
 				--shadow: 0 3px 5px 3px rgba(15, 11, 11, 0.1);
 
 				/* Dark mode for testing */
@@ -205,6 +215,17 @@
 				width: 1.2rem;
 				height: 1.2rem;
 				margin: 0;
+
+				accent-color: var(--color-button);
+			}
+			#languagesAndScopes li > input:hover {
+				accent-color: var(--color-button-hover);
+			}
+			#languagesAndScopes li > input:active {
+				accent-color: var(--color-button-active);
+			}
+			#languagesAndScopes li > input:disabled {
+				accent-color: var(--color-button-disabled);
 			}
 			#languagesAndScopes:not(.editLanguages) #newLanguageField,
 			#languagesAndScopes:not(.editLanguages) #cancelChangesButton,
@@ -263,19 +284,19 @@
 				border-radius: 1rem;
 				outline: none;
 
-				color: white;
-				background-color: #0060df;
+				color: var(--color-button-text);
+				background-color: var(--color-button);
 
 				transition: all 100ms;
 			}
 			.smallButton:hover {
-				background-color: #2374ff;
+				background-color: var(--color-button-hover);
 			}
 			.smallButton:active {
-				background-color: #3e90ff;
+				background-color: var(--color-button-active);
 			}
 			.smallButton:disabled {
-				background-color: #c7c7ce;
+				background-color: var(--color-button-disabled);
 			}
 			.deleteLanguageButton {
 				width: 1.2rem;
@@ -288,14 +309,17 @@
 				transition: all 100ms;
 			}
 			:is(.deleteLanguageButton, .smallButton.destructive) {
-				color: white;
-				background-color: #ff0000;
+				color: var(--color-button-destructive-text);
+				background-color: var(--color-button-destructive);
 			}
 			:is(.deleteLanguageButton, .smallButton.destructive):hover {
-				background-color: #f10000;
+				background-color: var(--color-button-destructive-hover);
 			}
 			:is(.deleteLanguageButton, .smallButton.destructive):active {
-				background-color: #e80000;
+				background-color: var(--color-button-destructive-active);
+			}
+			:is(.deleteLanguageButton, .smallButton.destructive):disabled {
+				background-color: var(--color-button-destructive-disabled);
 			}
 			.deleteLanguageButton > img {
 				width: 1rem;
