@@ -440,8 +440,7 @@
 			saveChangesButton.innerText = "Lagra mål";
 			downloadMissingButton.innerText = "Last ned manglande";
 
-			refreshMetadata();
-			refreshTranslations();
+			refreshAll();
 
 			// Add listeners to elements
 			
@@ -537,25 +536,23 @@
 				languagesAndScopes.classList.add("loading");
 				languagesAndScopes.classList.remove("editLanguages");
 				populateLanguages(languages);
-			
-				let body = {
-					"languages": newLanguages,
-				};
-				let httpRequest = new XMLHttpRequest();
-				httpRequest.open("POST", "http://127.0.0.1:2013/update_all", true);
-				httpRequest.onreadystatechange = e => {
-					if (httpRequest.readyState === XMLHttpRequest.DONE) {
-						if (httpRequest.status === 200) {
-							refreshMetadata();
-							refreshTranslations();
-						} else {
-							console.error(e);
-						}
+
+				fetch("http://127.0.0.1:2013/update_all", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({ languages: newLanguages }),
+				}).then(
+					async () => {
+						await refreshAll();
 						languagesAndScopes.classList.remove("loading");
-					}
-				};
-				httpRequest.setRequestHeader("Content-Type", "application/json")
-				httpRequest.send(JSON.stringify(body));
+					},
+					e => {
+						console.error(e);
+						languagesAndScopes.classList.remove("loading");
+					},
+				)
 			};
 			newLanguageField.addEventListener("focusout", e => {
 				if (!newLanguageField.value) { return; }
@@ -572,25 +569,26 @@
 			});
 			downloadMissingButton.onclick = e => {
 				languagesAndScopes.classList.add("loading");
-				let body = {
-					"languages": Object.keys(languageFilters),
-					"scopes": Object.entries(scopeNames).filter(([k, { downloaded }]) => !downloaded).map(([k]) => k),
-				};
-				let httpRequest = new XMLHttpRequest();
-				httpRequest.open("POST", "http://127.0.0.1:2013/update", true);
-				httpRequest.onreadystatechange = e => {
-					if (httpRequest.readyState === XMLHttpRequest.DONE) {
-						if (httpRequest.status === 200) {
-							refreshMetadata();
-							refreshTranslations();
-						} else {
-							console.error(e);
-						}
+
+				fetch("http://127.0.0.1:2013/update", {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+					},
+					body: JSON.stringify({
+						languages: Object.keys(languageFilters),
+						scopes: Object.entries(scopeNames).filter(([k, { downloaded }]) => !downloaded).map(([k]) => k),
+					}),
+				}).then(
+					async () => {
+						await refreshAll();
 						languagesAndScopes.classList.remove("loading");
-					}
-				};
-				httpRequest.setRequestHeader("Content-Type", "application/json")
-				httpRequest.send(JSON.stringify(body));
+					},
+					e => {
+						console.error(e);
+						languagesAndScopes.classList.remove("loading");
+					},
+				)
 			};
 
 			// Functions
@@ -598,43 +596,39 @@
 			/**
 			 * Replace the languages and scopes in `languageList` and `scopeList` with new ones.
 			 */
-			function refreshMetadata() {
-				let httpRequest = new XMLHttpRequest();
-				httpRequest.open("GET", "http://127.0.0.1:2013/metadata", false);
-				httpRequest.onreadystatechange = e => {
-					if (httpRequest.readyState === XMLHttpRequest.DONE) {
-						if (httpRequest.status === 200) {
-							const metadata = JSON.parse(httpRequest.responseText);
+			function refreshAll() {
+				fetch("http://127.0.0.1:2013/metadata").then(
+					async response => {
+						const metadata = await response.json();
 
-							languages = metadata.languages;
+						languages = metadata.languages;
 
-							languageFilters = Object.fromEntries(
-								metadata.languages.map(language => [language, languageFilters[language] ?? true])
-							);
+						languageFilters = Object.fromEntries(
+							metadata.languages.map(language => [language, languageFilters[language] ?? true])
+						);
 
-							scopeNames = {};
-							let newScopeFilters = {};
-							for (let scope of metadata.scopes) {
-								if (scope.id) {
-									scopeNames[scope.id] = { "name": scope.name, "downloaded": scope.downloaded };
-									newScopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
-								} else {
-									for (let s of scope.scopes) {
-										scopeNames[s.id] = { "name": s.name, "downloaded": s.downloaded, "groupName": scope.name };
-										newScopeFilters[s.id] = scopeFilters[s.id] ?? true;
-									}
+						scopeNames = {};
+						let newScopeFilters = {};
+						for (let scope of metadata.scopes) {
+							if (scope.id) {
+								scopeNames[scope.id] = { "name": scope.name, "downloaded": scope.downloaded };
+								newScopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
+							} else {
+								for (let s of scope.scopes) {
+									scopeNames[s.id] = { "name": s.name, "downloaded": s.downloaded, "groupName": scope.name };
+									newScopeFilters[s.id] = scopeFilters[s.id] ?? true;
 								}
 							}
-							scopeFilters = newScopeFilters;
-
-							populateLanguages(metadata.languages);
-							populateScopes(metadata.scopes);
-						} else {
-							console.error(e);
 						}
-					}
-				};
-				httpRequest.send();
+						scopeFilters = newScopeFilters;
+
+						populateLanguages(metadata.languages);
+						populateScopes(metadata.scopes);
+
+						refreshTranslations();
+					},
+					e => console.error(e),
+				)
 			}
 
 			/**
@@ -759,28 +753,24 @@
 			 * Replace the translations in `translationList` with new ones.
 			 */
 			function refreshTranslations() {
-				let httpRequest = new XMLHttpRequest();
-				httpRequest.open("GET", `http://127.0.0.1:2013/query?regex=${searchField.value}&limit=500&scopes=${Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k).join()}&languages=${Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k).join()}`, true);
-				httpRequest.onreadystatechange = (e) => {
-					if (httpRequest.readyState === XMLHttpRequest.DONE) {
-						if (httpRequest.status === 200) {
-							const t = JSON.parse(httpRequest.responseText);
-							
-							let regex = null;
-							try {
-								regex = new RegExp(searchField.value, "gi");
-							} catch (e) {
-								console.warn(e);
-							}
-							populateTranslations(t, regex);
+				const languages = Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k);
+				const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
+				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&limit=500`).then(
+					async response => {
+						const translations = await response.json();
 
-							window.scrollTo(0, 0);
-						} else {
-							console.error(e);
+						let regex = null;
+						try {
+							regex = new RegExp(searchField.value, "gi");
+						} catch (e) {
+							console.warn(e);
 						}
-					}
-				};
-				httpRequest.send();
+						populateTranslations(translations, regex);
+
+						window.scrollTo(0, 0);
+					},
+					e => console.error(e),
+				)
 			}
 
 			/**
