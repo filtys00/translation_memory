@@ -148,6 +148,21 @@
 				overflow: auto;
 				height: calc(100vh - 7rem - 1px);
 			}
+			#noTranslations {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				height: calc(100vh - 7rem - 1px);
+
+				font-size: 2rem;
+				color: var(--color-text-unfocused);
+			}
+			body:not(.noResults) #noTranslations {
+				display: none;
+			}
+			body.noResults #translations {
+				display: none;
+			}
 			.translation {
 				display: flex;
 				flex-direction: row;
@@ -377,10 +392,13 @@
 
 		<ul id="translations"></ul>
 
+		<div id="noTranslations">No results</div>
+
 		<script>
 			const header = document.getElementsByTagName("header")[0];
 			const search = document.getElementById("search");
 			const searchField = document.getElementById("searchField");
+			const noTranslations= document.getElementById("noTranslations");
 
 			const languagesAndScopes = document.getElementById("languagesAndScopes");
 			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
@@ -433,6 +451,8 @@
 			languagesAndScopesButton.innerText = "Mål og vidd";
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
+			noTranslations.innerText = "Ingen resultat";
+
 			allLanguagesCheckboxLabel.innerText = "Alle mål";
 			allScopesCheckboxLabel.innerText = "Alle vidder";
 			editLanguagesButton.innerText = "Endra mål";
@@ -781,6 +801,12 @@
 			 */
 			function populateTranslations(translations, search) {
 				translationList.replaceChildren();
+
+				if (translations.length) {
+					document.body.classList.remove("noResults");
+				} else {
+					document.body.classList.add("noResults");
+				}
 
 				for (let translation of translations) {
 					const scope = scopeNames[translation.scope];
