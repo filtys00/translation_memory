@@ -16,9 +16,13 @@ use reqwest::Client;
 use unic_langid::LanguageIdentifier;
 
 pub use self::{
-    android::AndroidProvider, browser_extension::BrowserExtensionProvider,
-    minecraft::MinecraftProvider, mozilla::MozillaProvider, po::gnome::graphql_gnome,
-    po::kde::graphql_kde, po::PoProvider,
+    android::AndroidProvider,
+    browser_extension::BrowserExtensionProvider,
+    minecraft::MinecraftProvider,
+    mozilla::MozillaProvider,
+    po::gnome::graphql_gnome,
+    po::kde::graphql_kde,
+    po::{NetPoProvider, PoProvider},
 };
 use super::Translation;
 
@@ -132,16 +136,22 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
         Arc::new(MinecraftProvider),
         Arc::new(MozillaProvider),
-        Arc::new(PoProvider {
+        Arc::new(NetPoProvider {
             id: "gnome",
             name: "GNOME",
             urls: graphql_gnome,
             remove_char: Some('_'),
         }),
-        Arc::new(PoProvider {
+        Arc::new(NetPoProvider {
             id: "kde",
             name: "KDE",
             urls: graphql_kde,
+            remove_char: Some('&'),
+        }),
+        Arc::new(PoProvider {
+            id: "multimc",
+            name: "MultiMC",
+            url: |lang_id| format!("https://raw.githubusercontent.com/MultiMC/Translations/master/{}.po", lang_id.language),
             remove_char: Some('&'),
         }),
 

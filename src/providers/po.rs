@@ -16,7 +16,53 @@ use unic_langid::LanguageIdentifier;
 
 use crate::{Translation, TranslationProvider};
 
-pub struct PoProvider<F, U>
+pub struct PoProvider<F>
+where
+    F: Fn(&LanguageIdentifier) -> String + Send + Sync,
+{
+    pub id: &'static str,
+    pub name: &'static str,
+    pub url: F,
+    pub remove_char: Option<char>,
+}
+
+#[async_trait]
+impl<F> TranslationProvider for PoProvider<F>
+where
+    F: Fn(&LanguageIdentifier) -> String + Send + Sync,
+{
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn group_name(&self) -> Option<&str> {
+        None
+    }
+
+    async fn generate(
+        &self,
+        lang_ids: Vec<LanguageIdentifier>,
+        client: Arc<Client>,
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+        let mut translations = BTreeMap::new();
+
+        for lang_id in lang_ids {
+            let url = (self.url)(&lang_id);
+            let translation = generate_single(url, self.remove_char, client.clone())
+                .await
+                .ok();
+            translations.insert(lang_id, translation);
+        }
+
+        Ok(translations)
+    }
+}
+
+pub struct NetPoProvider<F, U>
 where
     F: Fn(LanguageIdentifier, Arc<Client>) -> U + Copy + Send + Sync + 'static,
     U: Future<Output = anyhow::Result<Vec<String>>> + Send + Sync,
@@ -28,7 +74,7 @@ where
 }
 
 #[async_trait]
-impl<F, U> TranslationProvider for PoProvider<F, U>
+impl<F, U> TranslationProvider for NetPoProvider<F, U>
 where
     F: Fn(LanguageIdentifier, Arc<Client>) -> U + Copy + Send + Sync + 'static,
     U: Future<Output = anyhow::Result<Vec<String>>> + Send + Sync,
