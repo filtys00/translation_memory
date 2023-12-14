@@ -1,7 +1,7 @@
 mod providers;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     fs::File,
     io::{BufReader, BufWriter},
@@ -31,14 +31,14 @@ pub struct TranslationStore {
     #[serde(skip, default = "default_providers")]
     providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
 
-    pub translations: HashMap<String, HashMap<LanguageIdentifier, Option<Vec<Translation>>>>,
+    pub translations: BTreeMap<String, BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>>,
 }
 
 impl Default for TranslationStore {
     fn default() -> Self {
         Self {
             providers: default_providers(),
-            translations: HashMap::new(),
+            translations: BTreeMap::new(),
         }
     }
 }

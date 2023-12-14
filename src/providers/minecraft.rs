@@ -1,4 +1,8 @@
-use std::{collections::HashMap, io::Cursor, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    io::Cursor,
+    sync::Arc,
+};
 
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -26,7 +30,7 @@ impl TranslationProvider for MinecraftProvider {
         &self,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let manifest: Manifest = client
             .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
             .send()
@@ -50,7 +54,7 @@ impl TranslationProvider for MinecraftProvider {
             .json()
             .await?;
 
-        let mut translations = HashMap::new();
+        let mut translations = BTreeMap::new();
 
         let assets_en: HashMap<String, String> = {
             let bytes = client

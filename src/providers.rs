@@ -5,7 +5,7 @@ mod mozilla;
 mod po;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fmt::{self, Debug, Formatter},
     sync::Arc,
     vec,
@@ -36,7 +36,7 @@ pub trait TranslationProvider {
         &self,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error>;
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error>;
 }
 
 impl Debug for dyn TranslationProvider + Send + Sync {

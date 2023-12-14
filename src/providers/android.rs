@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Display,
+    sync::Arc,
+};
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
@@ -54,8 +58,8 @@ where
         &self,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
-        let mut translations_all = HashMap::new();
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+        let mut translations_all = BTreeMap::new();
 
         let resources_en =
             get_resources("default", self.default_url, &client, self.decode_as_base64)

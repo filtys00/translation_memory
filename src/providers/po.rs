@@ -2,7 +2,7 @@ pub mod gnome;
 pub mod kde;
 
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     env,
     fs::{self, File},
     future::Future,
@@ -53,8 +53,8 @@ where
         &self,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
-        let mut translations = HashMap::new();
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+        let mut translations = BTreeMap::new();
 
         let mut join_set: JoinSet<anyhow::Result<(LanguageIdentifier, Vec<Translation>)>> =
             JoinSet::new();

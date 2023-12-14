@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Cursor, sync::Arc};
+use std::{collections::BTreeMap, io::Cursor, sync::Arc};
 
 use async_trait::async_trait;
 use log::trace;
@@ -28,8 +28,8 @@ impl TranslationProvider for MozillaProvider {
         &self,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<HashMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
-        let mut translations_all = HashMap::new();
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+        let mut translations_all = BTreeMap::new();
 
         for lang_id in lang_ids {
             client
