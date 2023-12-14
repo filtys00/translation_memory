@@ -3,18 +3,14 @@ pub mod kde;
 
 use std::{
     collections::{BTreeMap, HashMap},
-    env,
-    fs::{self, File},
     future::Future,
-    io::{BufWriter, Write},
     sync::Arc,
 };
 
-use anyhow::anyhow;
+use anyhow::bail;
 use async_trait::async_trait;
-use log::{debug, error};
-use polib::po_file::{self};
-use reqwest::Client;
+use log::{debug, error, trace};
+use reqwest::{Client, StatusCode};
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
@@ -117,52 +113,86 @@ async fn generate_single(
     client: Arc<Client>,
 ) -> anyhow::Result<Vec<Translation>> {
     let response = client.get(&url).send().await?;
-    let path = env::temp_dir().join(format!(
-        "{}_{}.po",
-        env!("CARGO_PKG_NAME"),
-        url.split('/').skip(3).fold(String::new(), |mut acc, part| {
-            acc.push('_');
-            acc.push_str(part);
-            acc
-        })
-    ));
-
-    let file = File::create(&path).map_err(|e| anyhow!("Could not create file {path:?}: {e}"))?;
-    let mut writer = BufWriter::new(file);
-    writer
-        .write_all(&response.bytes().await?)
-        .map_err(|e| anyhow!("Could not write to file {path:?}: {e}"))?;
-    let po = po_file::parse(&path)?;
-    fs::remove_file(&path).map_err(|e| anyhow!("Could not delete file {path:?}: {e}"))?;
-
-    let mut translations = Vec::with_capacity(po.count());
-    for message in po.messages() {
-        if !message.is_translated() {
-            continue;
-        }
-        let msgstr = match message.msgstr() {
-            Ok(msgstr) => msgstr,
-            Err(_) => {
-                continue;
-            }
-        };
-        translations.push(Translation {
-            original: if let Some(remove_char) = remove_char {
-                message.msgid().replace(remove_char, "")
-            } else {
-                message.msgid().to_string()
-            },
-            translation: if let Some(remove_char) = remove_char {
-                msgstr.replace(remove_char, "")
-            } else {
-                msgstr.to_string()
-            },
-            comment: if message.comments().is_empty() {
-                None
-            } else {
-                Some(message.comments().trim().to_string())
-            },
-        });
+    if response.status() != StatusCode::OK {
+        bail!("Unexpected status code ({}): {url}", response.status());
     }
+    let text = response.text().await?;
+
+    let mut translations = Vec::new();
+
+    let mut values: HashMap<&str, String> = HashMap::new();
+    let mut last: Option<&mut String> = None;
+    for line in text.lines() {
+        if line.is_empty() {
+            translations.push(Translation {
+                original: {
+                    let Some(msgid) = values.remove("msgid") else {
+                        values.clear();
+                        last = None;
+                        continue;
+                    };
+                    if msgid.is_empty() {
+                        values.clear();
+                        last = None;
+                        continue;
+                    }
+                    if let Some(remove_char) = remove_char {
+                        escape_value(msgid).replace(remove_char, "")
+                    } else {
+                        escape_value(msgid)
+                    }
+                },
+                translation: {
+                    let Some(msgstr) = values.remove("msgstr") else {
+                        values.clear();
+                        last = None;
+                        continue;
+                    };
+                    if msgstr.is_empty() {
+                        values.clear();
+                        last = None;
+                        continue;
+                    }
+                    if let Some(remove_char) = remove_char {
+                        escape_value(msgstr).replace(remove_char, "")
+                    } else {
+                        escape_value(msgstr)
+                    }
+                },
+                comment: values.remove("#.").or_else(|| values.remove("msgctxt")),
+            });
+
+            values.clear();
+            last = None;
+            continue;
+        } else if line.starts_with('"') && line.ends_with('"') && line.len() >= 2 {
+            let line = &line[1..(line.len() - 1)];
+            let Some(ref mut last) = last else {
+                trace!("No last value: new value = {line}");
+                continue;
+            };
+            last.push_str(line);
+        } else if line.starts_with("# ") || (line.starts_with('#') && line.len() <= 2) {
+            continue;
+        } else if let Some((name, mut value)) = line.split_once(' ') {
+            if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+                value = &value[1..(value.len() - 1)];
+            }
+            let value = values.entry(name).or_insert(value.to_string());
+            last = Some(value);
+        } else {
+            trace!("Unexpected line: {line}");
+        }
+    }
+
     Ok(translations)
+}
+
+fn escape_value(value: String) -> String {
+    value
+        .replace("\\\\", "\u{0}")
+        .replace("\\\"", "\"")
+        .replace("\\n", "\n")
+        .replace("\\t", "\t")
+        .replace('\u{0}', "\\")
 }
