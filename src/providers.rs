@@ -1,5 +1,6 @@
 mod android;
 mod browser_extension;
+mod chrome;
 mod minecraft;
 mod mozilla;
 mod po;
@@ -18,6 +19,7 @@ use unic_langid::LanguageIdentifier;
 pub use self::{
     android::AndroidProvider,
     browser_extension::BrowserExtensionProvider,
+    chrome::ChromeProvider,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
     po::gnome::graphql_gnome,
@@ -134,6 +136,7 @@ macro_rules! browser_extension {
 #[rustfmt::skip]
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
+        Arc::new(ChromeProvider),
         Arc::new(MinecraftProvider),
         Arc::new(MozillaProvider),
         Arc::new(NetPoProvider {
