@@ -98,7 +98,7 @@ where
     ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let mut translations = BTreeMap::new();
 
-        let mut join_set: JoinSet<anyhow::Result<(LanguageIdentifier, Vec<Translation>)>> =
+        let mut join_set: JoinSet<anyhow::Result<(LanguageIdentifier, Option<Vec<Translation>>)>> =
             JoinSet::new();
 
         for lang_id in lang_ids {
@@ -114,6 +114,10 @@ where
                     "Got {} translation URLs for '{lang_id}' from '{id}'",
                     urls.len(),
                 );
+
+                if urls.is_empty() {
+                    return Ok((lang_id, None));
+                }
 
                 let mut translations = Vec::new();
 
@@ -138,13 +142,13 @@ where
                     translations.append(&mut result);
                 }
 
-                Ok((lang_id, translations))
+                Ok((lang_id, Some(translations)))
             });
         }
 
         while let Some(result) = join_set.join_next().await {
             let (lang_id, t) = result??;
-            translations.insert(lang_id, Some(t));
+            translations.insert(lang_id, t);
         }
 
         join_set.abort_all();
