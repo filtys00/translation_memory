@@ -3,7 +3,6 @@ use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::{Read, Write as _},
-    net::SocketAddr,
     path::Path,
     sync::Arc,
 };
@@ -13,7 +12,7 @@ use axum::{
     http::{header, HeaderValue, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Json, Router, Server,
+    Json, Router,
 };
 use clap::Parser;
 use env_logger::fmt::Color;
@@ -21,7 +20,7 @@ use log::{debug, error, info, Level, LevelFilter};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use tokio::sync::Mutex;
+use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::{Translation, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
@@ -142,11 +141,8 @@ async fn web_server(store: TranslationStore) {
         .route("/favicon.ico", get(language_icon))
         .with_state(store);
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 2013));
-    Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = TcpListener::bind("127.0.0.1:2013").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 
 #[cfg(debug_assertions)]
