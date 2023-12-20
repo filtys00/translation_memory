@@ -46,7 +46,7 @@ where
     ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let mut translations = BTreeMap::new();
 
-        let url = (self.url)(&"en-US".parse()?);
+        let url = (self.url)(&"en".parse()?);
         let messages_en: HashMap<String, Message> = client
             .get(&url)
             .send()

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 use zip::ZipArchive;
 
+use super::lang_id_to_string;
 use crate::{Translation, TranslationProvider};
 
 pub struct MinecraftProvider;
@@ -69,14 +70,9 @@ impl TranslationProvider for MinecraftProvider {
         };
 
         for lang_id in lang_ids {
-            let Some(region) = lang_id.region else {
-                translations.insert(lang_id, None);
-                continue;
-            };
             let key = format!(
-                "minecraft/lang/{}_{}.json",
-                lang_id.language.as_str(),
-                region.as_str().to_lowercase(),
+                "minecraft/lang/{}.json",
+                lang_id_to_string(&lang_id, "_", false, "_", false),
             );
 
             let Some(object) = asset_index.objects.get(&key) else {

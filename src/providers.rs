@@ -51,6 +51,42 @@ impl Debug for dyn TranslationProvider + Send + Sync {
     }
 }
 
+/// Returns a string version of `lang_id`.
+///
+/// # Examples
+/// ```ignore
+/// assert!(
+///     lang_id_to_string("ca_ES_valencia".parse().unwrap(), "-", false, "@", true),
+///     String::from("ca-es@VALENCIA"),
+/// );
+/// ```
+fn lang_id_to_string(
+    lang_id: &LanguageIdentifier,
+    region_binder: &str,
+    uppercase_region: bool,
+    variant_binder: &str,
+    uppercase_variant: bool,
+) -> String {
+    let mut s = lang_id.language.to_string();
+    if let Some(region) = &lang_id.region {
+        s.push_str(region_binder);
+        if uppercase_region {
+            s.push_str(region.as_str());
+        } else {
+            s.push_str(&region.as_str().to_lowercase());
+        }
+    }
+    for variant in lang_id.variants() {
+        s.push_str(variant_binder);
+        if uppercase_variant {
+            s.push_str(&variant.as_str().to_uppercase());
+        } else {
+            s.push_str(variant.as_str());
+        }
+    }
+    s
+}
+
 macro_rules! android {
     ($name:literal, github => $repo:literal) => {
         android!($name, github => $repo, "strings")
@@ -104,7 +140,7 @@ macro_rules! android {
                         $folder,
                         "/values-{}/strings.xml?format=TEXT",
                     ),
-                    lang_id.language.as_str()
+                    lang_id_to_string(&lang_id, "-r", true, "-", false),
                 )
             },
         })
@@ -126,7 +162,7 @@ macro_rules! browser_extension {
                         $folder,
                         "/{}/messages.json",
                     ),
-                    lang_id.language.as_str()
+                    lang_id_to_string(&lang_id, "_", true, "_", false),
                 )
             },
         })
@@ -154,7 +190,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         Arc::new(PoProvider {
             id: "multimc",
             name: "MultiMC",
-            url: |lang_id| format!("https://raw.githubusercontent.com/MultiMC/Translations/master/{}.po", lang_id.language),
+            url: |lang_id| format!(
+                "https://raw.githubusercontent.com/MultiMC/Translations/master/{}.po",
+                lang_id_to_string(lang_id, "_", true, "_", true),
+            ),
             remove_char: Some('&'),
         }),
 

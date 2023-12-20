@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use unic_langid::LanguageIdentifier;
 
+use crate::providers::lang_id_to_string;
+
 pub async fn graphql_kde(
     lang_id: LanguageIdentifier,
     client: Arc<Client>,
@@ -46,7 +48,7 @@ pub async fn graphql_kde(
             }}
         }}
         ",
-        lang_id.language
+        lang_id_to_string(&lang_id, "_", true, "@", false),
     );
 
     let response: Response = client

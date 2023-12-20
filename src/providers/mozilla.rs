@@ -6,6 +6,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
+use super::lang_id_to_string;
 use crate::{Translation, TranslationProvider};
 
 pub struct MozillaProvider;
@@ -46,7 +47,10 @@ impl TranslationProvider for MozillaProvider {
                 ])
                 .send()
                 .await?;
-            let url = format!("https://transvision.mozfr.org/download/mozilla_en-US_{lang_id}_523b2e5104b223d95d89461163351877_normal.tmx");
+            let url = format!(
+                "https://transvision.mozfr.org/download/mozilla_en-US_{}_523b2e5104b223d95d89461163351877_normal.tmx",
+                lang_id_to_string(&lang_id, "-", true, "-", false),
+            );
             let bytes = client.get(&url).send().await?.bytes().await?;
             if bytes.is_empty() {
                 trace!("Skipping '{url}' as it is empty");
