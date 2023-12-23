@@ -106,6 +106,9 @@ async fn main() {
         } else {
             args.language
         };
+        if lang_ids.is_empty() {
+            error!("No languages are specified");
+        }
         if let Err(e) = store.generate(lang_ids, args.generate, false).await {
             error!("{e}");
         }
