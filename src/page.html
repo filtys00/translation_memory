@@ -802,6 +802,12 @@
 			function refreshTranslations() {
 				const languages = Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k);
 				const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
+
+				if (!languages.length || !scopes.length) {
+					populateTranslations([], null);
+					return;
+				}
+
 				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&limit=500`).then(
 					async response => {
 						const translations = await response.json();
