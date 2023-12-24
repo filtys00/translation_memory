@@ -827,6 +827,9 @@
 			 * @property translation {string} - translated string
 			 * @property comment {string} - comment describing the context regarding the translation
 			 */
+
+			/** How many translations should be downloaded per request */
+			const downloadAtOnce = 500;
 			
 			/**
 			 * Replace the translations in `translationList` with new ones.
@@ -840,7 +843,7 @@
 					return;
 				}
 
-				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&limit=500`).then(
+				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&limit=${downloadAtOnce}`).then(
 					async response => {
 						const translations = await response.json();
 
