@@ -840,6 +840,7 @@
 
 				if (!languages.length || !scopes.length) {
 					populateTranslations([], null);
+					translationCount.innerText = translationCountLabel(0);
 					return;
 				}
 
