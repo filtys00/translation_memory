@@ -23,6 +23,7 @@ where
     pub id: &'static str,
     pub name: &'static str,
     pub group_name: Option<&'static str>,
+    pub default_lang: &'static str,
     pub url: F,
 }
 
@@ -50,7 +51,7 @@ where
     ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
         let mut translations = BTreeMap::new();
 
-        let url = (self.url)(&"en".parse()?);
+        let url = (self.url)(&self.default_lang.parse()?);
         let messages_en: HashMap<String, Message> = client
             .get(&url)
             .send()

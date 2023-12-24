@@ -157,6 +157,7 @@ macro_rules! browser_extension {
             id: concat!("github/", $repo, "/", $folder),
             name: $name,
             group_name: Some("Browser extension"),
+            default_lang: "en",
             url: |lang_id| {
                 format!(
                     concat!(
@@ -166,6 +167,20 @@ macro_rules! browser_extension {
                         $folder,
                         "/{}/messages.json",
                     ),
+                    lang_id_to_string(&lang_id, "_", true, "_", false),
+                )
+            },
+        })
+    };
+    ($name:literal, gitlab => $repo:literal, $folder:literal) => {
+        Arc::new(BrowserExtensionProvider {
+            id: concat!("gitlab/", $repo, "/", $folder),
+            name: $name,
+            group_name: Some("Browser extension"),
+            default_lang: "en_US",
+            url: |lang_id| {
+                format!(
+                    concat!("https://", $repo, "/-/raw/", $folder, "/{}/messages.json",),
                     lang_id_to_string(&lang_id, "_", true, "_", false),
                 )
             },
@@ -201,9 +216,15 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             remove_char: Some('&'),
         }),
 
-        browser_extension!("Tampermonkey",        github => "Tampermonkey/tampermonkey",   "master/i18n"),
-        browser_extension!("Tree Style Tab",      github => "piroor/treestyletab",         "trunk/webextensions/_locales"),
-        browser_extension!("Tab Session Manager", github => "sienori/Tab-Session-Manager", "master/src/_locales"),
+        browser_extension!("Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "master/_locales"),
+        browser_extension!("ImprovedTube",        github => "code-charity/youtube",               "master/_locales"),
+        browser_extension!("Midnight Lizard",     github => "Midnight-Lizard/Midnight-Lizard",    "master/_locales"),
+        browser_extension!("Simple Translate",    github => "sienori/simple-translate",           "master/src/_locales"),
+        browser_extension!("Tab Session Manager", github => "sienori/Tab-Session-Manager",        "master/src/_locales"),
+        browser_extension!("Tampermonkey",        github => "Tampermonkey/tampermonkey",          "master/i18n"),
+        browser_extension!("Tree Style Tab",      github => "piroor/treestyletab",                "trunk/webextensions/_locales"),
+        browser_extension!("Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "master/src/_locales"),
+        browser_extension!("uBlock Origin",       github => "gorhill/uBlock",                     "master/src/_locales"),
 
         android!("Material Files",            github => "zhanghai/MaterialFiles"),
         android!("Material Files mime types", github => "zhanghai/MaterialFiles", "mime_types"),
