@@ -394,7 +394,7 @@ async fn query_api(
         .map(|scopes| scopes.split(',').collect());
 
     debug!(
-        "Request for '/query': {{ regex: {}, languages: {}, scopes: {}, limit: {} }}",
+        "Request for '/query': {{ regex: {}, languages: {}, scopes: {}, limit: {}, count: {} }}",
         params
             .get("regex")
             .map(|v| Cow::Owned(format!("\"{v}\"")))
@@ -417,6 +417,10 @@ async fn query_api(
             .unwrap_or(Cow::Borrowed("undefined")),
         params
             .get("limit")
+            .map(|v| Cow::Borrowed(v.as_str()))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("count")
             .map(|v| Cow::Borrowed(v.as_str()))
             .unwrap_or(Cow::Borrowed("undefined")),
     );
@@ -453,48 +457,59 @@ async fn query_api(
         None
     };
 
-    let store = store.lock().await;
-    let translations = store
-        .iter()
-        .filter(|(scope, lang_id, translation)| {
-            if let Some(regex) = &regex {
-                if !regex.is_match(&translation.original)
-                    && !regex.is_match(&translation.translation)
-                {
-                    return false;
-                }
-            }
-            if let Some(scopes) = &scopes {
-                if !scopes.contains(&scope.as_str()) {
-                    return false;
-                }
-            }
-            if let Some(langs) = &langs {
-                if !langs.contains(lang_id) {
-                    return false;
-                }
-            }
+    let count = if let Some(count) = params.get("count") {
+        count
+            .parse::<bool>()
+            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+    } else {
+        false
+    };
 
-            true
-        })
-        .map(|(scope, lang_id, translation)| {
-            if let Some(comment) = &translation.comment {
-                json!({
-                    "scope": scope,
-                    "language": lang_id,
-                    "comment": comment,
-                    "original": translation.original,
-                    "translation": translation.translation,
-                })
-            } else {
-                json!({
-                    "scope": scope,
-                    "language": lang_id,
-                    "original": translation.original,
-                    "translation": translation.translation,
-                })
+    let store = store.lock().await;
+    let translations = store.iter().filter(|(scope, lang_id, translation)| {
+        if let Some(regex) = &regex {
+            if !regex.is_match(&translation.original) && !regex.is_match(&translation.translation) {
+                return false;
             }
-        });
+        }
+        if let Some(scopes) = &scopes {
+            if !scopes.contains(&scope.as_str()) {
+                return false;
+            }
+        }
+        if let Some(langs) = &langs {
+            if !langs.contains(lang_id) {
+                return false;
+            }
+        }
+
+        true
+    });
+
+    if count {
+        return Ok(Json(serde_json::to_value(translations.count()).map_err(
+            |e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+        )?));
+    }
+
+    let translations = translations.map(|(scope, lang_id, translation)| {
+        if let Some(comment) = &translation.comment {
+            json!({
+                "scope": scope,
+                "language": lang_id,
+                "comment": comment,
+                "original": translation.original,
+                "translation": translation.translation,
+            })
+        } else {
+            json!({
+                "scope": scope,
+                "language": lang_id,
+                "original": translation.original,
+                "translation": translation.translation,
+            })
+        }
+    });
 
     let translations: Vec<serde_json::Value> = if let Some(limit) = limit {
         translations.take(limit).collect()
