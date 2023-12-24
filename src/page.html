@@ -147,8 +147,6 @@
 			#titles {
 				display: flex;
 				flex-direction: row;
-
-				font-weight: bold;
 			}
 			#translations {
 				margin: 0;
@@ -188,9 +186,33 @@
 				overflow-wrap: break-word;
 			}
 			#originalsTitle, #translationsTitle {
+				font-weight: bold;
+
 				overflow: hidden;
 				text-overflow: ellipsis;
 				white-space: nowrap;
+			}
+			#translationCount, #translationSpinner {
+				position: absolute;
+				right: 1rem;
+				bottom: 1rem;
+				margin: 0;
+
+				color: var(--color-text-unfocused);
+			}
+			@media (max-width: 40rem) {
+				#translationCount, #translationSpinner {
+					transform: translateY(1rem);
+				}
+			}
+			#translationSpinner {
+				animation: loading 2s linear infinite;
+			}
+			.loading #translationCount {
+				display: none;
+			}
+			#titles:not(.loading) #translationSpinner {
+				display: none;
 			}
 
 			.open > #languagesAndScopesButton {
@@ -210,6 +232,7 @@
 				background-color: var(--color-background-popup);
 				box-shadow: var(--shadow);
 				opacity: 1;
+				z-index: 1;
 
 				transition: all 100ms;
 			}
@@ -319,10 +342,6 @@
 
 				animation: loading 2s linear infinite;
 			}
-			@keyframes loading {
-				0% { transform: rotate(0deg); }
-				100% { transform: rotate(360deg); }
-			}
 
 			.smallButton {
 				font-size: 1rem !important;
@@ -373,6 +392,11 @@
 				width: 1rem;
 				height: 1rem;
 			}
+			
+			@keyframes loading {
+				0% { transform: rotate(0deg); }
+				100% { transform: rotate(360deg); }
+			}
 		</style>
 	</head>
 	<body>
@@ -414,6 +438,8 @@
 			<div id="titles">
 				<p id="originalsTitle">Original</p>
 				<p id="translationsTitle">Translation</p>
+				<p id="translationCount"></p>
+				<img id="translationSpinner" src="/icon/loading.svg">
 			</div>
 		</header>
 
@@ -425,7 +451,7 @@
 			const header = document.getElementsByTagName("header")[0];
 			const search = document.getElementById("search");
 			const searchField = document.getElementById("searchField");
-			const noTranslations= document.getElementById("noTranslations");
+			const noTranslations = document.getElementById("noTranslations");
 
 			const languagesAndScopes = document.getElementById("languagesAndScopes");
 			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
@@ -443,8 +469,10 @@
 			const saveChangesButton = document.getElementById("saveChangesButton");
 			const downloadMissingButton = document.getElementById("downloadMissingButton");
 
+			const titles = document.getElementById("titles");
 			const originalsTitle = document.getElementById("originalsTitle");
 			const translationsTitle = document.getElementById("translationsTitle");
+			const translationCount = document.getElementById("translationCount");
 
 			const translationList = document.getElementById("translations");
 
@@ -479,6 +507,10 @@
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
 			noTranslations.innerText = "Ingen resultat";
+
+			function translationCountLabel(count) {
+				return `${new Intl.NumberFormat("nn").format(count)} omsetjingar`;
+			};
 
 			allLanguagesCheckboxLabel.innerText = "Alle mål";
 			allScopesCheckboxLabel.innerText = "Alle vidder";
@@ -823,7 +855,25 @@
 						window.scrollTo(0, 0);
 					},
 					e => console.error(e),
-				)
+				);
+
+				titles.classList.add("loading");
+				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&count=true`).then(
+					async response => {
+						const count = await response.json();
+
+						translationCount.innerText = translationCountLabel(count);
+
+						titles.classList.remove("loading");
+					},
+					e => {
+						translationCount.innerText = translationCountLabel(Number.NaN);
+
+						titles.classList.remove("loading");
+						
+						console.error(e);
+					},
+				);
 			}
 
 			/**
