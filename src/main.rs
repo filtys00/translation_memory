@@ -395,7 +395,12 @@ async fn query_api(
         .map(|scopes| scopes.split(',').collect());
 
     debug!(
-        "Request for '/query': {{ regex: {}, languages: {}, scopes: {}, limit: {}, count: {} }}",
+        "Request for '/query':\
+      \n{{\
+      \n    regex: {},\
+      \n    languages: {}, scopes: {},\
+      \n    limit: {}, skip: {}, count: {}\
+      \n}}",
         params
             .get("regex")
             .map(|v| Cow::Owned(format!("\"{v}\"")))
@@ -418,6 +423,10 @@ async fn query_api(
             .unwrap_or(Cow::Borrowed("undefined")),
         params
             .get("limit")
+            .map(|v| Cow::Borrowed(v.as_str()))
+            .unwrap_or(Cow::Borrowed("undefined")),
+        params
+            .get("skip")
             .map(|v| Cow::Borrowed(v.as_str()))
             .unwrap_or(Cow::Borrowed("undefined")),
         params
@@ -452,6 +461,15 @@ async fn query_api(
         Some(
             limit
                 .parse::<usize>()
+                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
+        )
+    } else {
+        None
+    };
+
+    let skip = if let Some(skip) = params.get("skip") {
+        Some(
+            skip.parse::<usize>()
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
         )
     } else {
@@ -512,10 +530,11 @@ async fn query_api(
         }
     });
 
-    let translations: Vec<serde_json::Value> = if let Some(limit) = limit {
-        translations.take(limit).collect()
-    } else {
-        translations.collect()
+    let translations: Vec<serde_json::Value> = match (limit, skip) {
+        (Some(limit), Some(skip)) => translations.skip(skip).take(limit).collect(),
+        (Some(limit), None) => translations.take(limit).collect(),
+        (None, Some(skip)) => translations.skip(skip).collect(),
+        (None, None) => translations.collect(),
     };
 
     Ok(Json(serde_json::to_value(translations).map_err(|e| {
