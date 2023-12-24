@@ -10,7 +10,7 @@ mod mozilla;
 mod po;
 
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::BTreeMap,
     fmt::{self, Debug, Formatter},
     sync::Arc,
     vec,
@@ -416,6 +416,8 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
     #[cfg(debug_assertions)]
     {
+        use std::collections::HashSet;
+        
         let mut set = HashSet::with_capacity(providers.len());
         for provider in &providers {
             if let Some(group_name) = provider.group_name() {

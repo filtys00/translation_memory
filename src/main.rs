@@ -5,8 +5,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    fs::File,
-    io::{Read, Write as _},
+    io::Write as _,
     path::Path,
     sync::Arc,
 };
@@ -154,6 +153,8 @@ async fn web_server(store: TranslationStore) {
 
 #[cfg(debug_assertions)]
 async fn main_page() -> Html<String> {
+    use std::{fs::File, io::Read};
+
     debug!("Request for '/' (read from file)");
 
     let mut file = File::open("src/page.html").unwrap();
