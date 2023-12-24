@@ -27,10 +27,10 @@ use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::{Translation, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
-#[cfg(debug_assertions)]
-const CACHE_PATH: &str = "translations.json";
-#[cfg(not(debug_assertions))]
+#[cfg(feature = "bin_cache")]
 const CACHE_PATH: &str = "translations.bin";
+#[cfg(not(feature = "bin_cache"))]
+const CACHE_PATH: &str = "translations.json";
 
 #[derive(Debug, Parser)]
 struct Args {
