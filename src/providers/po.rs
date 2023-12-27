@@ -26,6 +26,7 @@ where
 {
     pub id: &'static str,
     pub name: &'static str,
+    pub group_name: Option<&'static str>,
     pub url: F,
     pub remove_char: Option<char>,
 }
@@ -44,7 +45,7 @@ where
     }
 
     fn group_name(&self) -> Option<&str> {
-        None
+        self.group_name
     }
 
     async fn generate(

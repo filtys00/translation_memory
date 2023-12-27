@@ -188,6 +188,23 @@ macro_rules! browser_extension {
     };
 }
 
+macro_rules! po {
+    ($id:literal, $name:literal, $group_name:expr, $remove_char:expr, github => $path:literal) => {
+        Arc::new(PoProvider {
+            id: $id,
+            name: $name,
+            group_name: $group_name,
+            url: |lang_id| {
+                format!(
+                    concat!("https://raw.githubusercontent.com/", $path),
+                    lang_id_to_string(lang_id, "_", true, "_", false),
+                )
+            },
+            remove_char: $remove_char,
+        })
+    };
+}
+
 #[rustfmt::skip]
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
@@ -206,15 +223,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             urls: graphql_kde,
             remove_char: Some('&'),
         }),
-        Arc::new(PoProvider {
-            id: "multimc",
-            name: "MultiMC",
-            url: |lang_id| format!(
-                "https://raw.githubusercontent.com/MultiMC/Translations/master/{}.po",
-                lang_id_to_string(lang_id, "_", true, "_", true),
-            ),
-            remove_char: Some('&'),
-        }),
+
+        po!("multimc",   "MultiMC",            None,            Some('&'), github => "MultiMC/Translations/master/{}.po"),
+        po!("weblate",   "Weblate",            Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
+        po!("weblatejs", "Weblate JavaScript", Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
 
         browser_extension!("Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "master/_locales"),
         browser_extension!("ImprovedTube",        github => "code-charity/youtube",               "master/_locales"),
