@@ -5,6 +5,7 @@
 mod android;
 mod browser_extension;
 mod chrome;
+mod json;
 mod minecraft;
 mod mozilla;
 mod po;
@@ -24,6 +25,7 @@ pub use self::{
     android::AndroidProvider,
     browser_extension::BrowserExtensionProvider,
     chrome::ChromeProvider,
+    json::JsonProvider,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
     po::gnome::graphql_gnome,
@@ -203,6 +205,49 @@ macro_rules! po {
             remove_char: $remove_char,
         })
     };
+    ($name:literal, elementary => $repo:literal, $path:literal) => {
+        po!($name, $repo, elementary => $repo, $path)
+    };
+    ($name:literal, $id:literal, elementary => $repo:literal, $path:literal) => {
+        Arc::new(PoProvider {
+            id: concat!("elementary-", $id),
+            name: $name,
+            group_name: Some("Elementary"),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://raw.githubusercontent.com/elementary/",
+                        $repo,
+                        "/",
+                        $path,
+                        "/{}.po",
+                    ),
+                    lang_id_to_string(lang_id, "_", true, "_", false),
+                )
+            },
+            remove_char: Some('_'),
+        })
+    };
+}
+
+macro_rules! json {
+    (elementary => $path:literal) => {
+        Arc::new(JsonProvider {
+            id: concat!("elementary-web-", $path),
+            name: $path,
+            group_name: Some("Elementary"),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://raw.githubusercontent.com/elementary/website/master/_lang/{}/",
+                        $path,
+                        ".json",
+                    ),
+                    lang_id_to_string(lang_id, "_", true, "_", false),
+                )
+            },
+        })
+    };
 }
 
 #[rustfmt::skip]
@@ -227,6 +272,88 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         po!("multimc",   "MultiMC",            None,            Some('&'), github => "MultiMC/Translations/master/{}.po"),
         po!("weblate",   "Weblate",            Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
         po!("weblatejs", "Weblate JavaScript", Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
+
+        po!("AppCenter",                              elementary => "appcenter",   "master/po"),
+        po!("AppCenter Extra",   "appcenter-extra",   elementary => "appcenter",   "master/po/extra"),
+        po!("Calculator",                             elementary => "calculator",  "master/po"),
+        po!("Calculator Extra",  "calculator-extra",  elementary => "calculator",  "master/po/extra"),
+        po!("Calendar",                               elementary => "calendar",    "master/po"),
+        po!("Calendar Extra",    "calendar-extra",    elementary => "calendar",    "master/po/extra"),
+        po!("Camera",                                 elementary => "camera",      "master/po"),
+        po!("Camera Extra",      "camera-extra",      elementary => "camera",      "master/po/extra"),
+        po!("Code",                                   elementary => "code",        "master/po"),
+        po!("Code Extra",        "code-extra",        elementary => "code",        "master/po/extra"),
+        po!("Code Plugins",      "code-plugins",      elementary => "code",        "master/po/plugins"),
+        po!("Files",                                  elementary => "files",       "main/po"),
+        po!("Files Extra",       "files-extra",       elementary => "files",       "main/po/extra"),
+        po!("Friends",                                elementary => "friends",     "master/po"),
+        po!("Friends Extra",     "friends-extra",     elementary => "friends",     "master/po/extra"),
+        po!("Installer",                              elementary => "installer",   "master/po"),
+        po!("Installer Extra",   "installer-extra",   elementary => "installer",   "master/po/extra"),
+        po!("Mail",                                   elementary => "mail",        "master/po"),
+        po!("Mail Extra",        "mail-extra",        elementary => "mail",        "master/po/extra"),
+        po!("Music",                                  elementary => "music",       "main/po"),
+        po!("Music Extra",       "music-extra",       elementary => "music",       "main/po/extra"),
+        po!("Photos",                                 elementary => "photos",      "master/po"),
+        po!("Photos Extra",      "photos-extra",      elementary => "photos",      "master/po/extra"),
+        po!("Screenshot",                             elementary => "screenshot",  "master/po"),
+        po!("Screenshot Extra",  "screenshot-extra",  elementary => "screenshot",  "master/po/extra"),
+        po!("Switchboard",                            elementary => "switchboard", "main/po"),
+        po!("Switchboard Extra", "switchboard-extra", elementary => "switchboard", "main/po/extra"),
+        po!("Tasks",                                  elementary => "tasks",       "master/po"),
+        po!("Tasks Extra",       "tasks-extra",       elementary => "tasks",       "master/po/extra"),
+        po!("Terminal",                               elementary => "terminal",    "master/po"),
+        po!("Terminal Extra",    "terminal-extra",    elementary => "terminal",    "master/po/extra"),
+        po!("Videos",                                 elementary => "videos",      "main/po"),
+        po!("Videos Extra",      "videos-extra",      elementary => "videos",      "main/po/extra"),
+        po!("Wingpanel",                              elementary => "wingpanel",   "master/po"),
+        po!("Wingpanel Extra",   "wingpanel-extra",   elementary => "wingpanel",   "master/po/extra"),
+
+        po!("Captive Network Assistant",                                         elementary => "capnet-assist",         "master/po"),
+        po!("Captive Network Assistant Extra",    "capnet-assist-extra",         elementary => "capnet-assist",         "master/po/extra"),
+        po!("Feedback",                                                          elementary => "feedback",              "master/po"),
+        po!("Feedback Extra",                     "feedback-extra",              elementary => "feedback",              "master/po/extra"),
+        po!("Flatpak Platform",                                                  elementary => "flatpak-platform",      "main/platform-data/po"),
+        po!("Gala",                                                              elementary => "gala",                  "master/po"),
+        po!("Granite",                                                           elementary => "granite",               "main/po"),
+        po!("Granite Extra",                      "granite-extra",               elementary => "granite",               "main/po/extra"),
+        po!("Greeter",                                                           elementary => "greeter",               "master/po"),
+        po!("Greeter Extra",                      "greeter-extra",               elementary => "greeter",               "master/po/extra"),
+        po!("Icons",                                                             elementary => "icons",                 "main/po"),
+        po!("Notifications",                                                     elementary => "notifications",         "master/po/extra"),
+        po!("Pantheon Polkit Agent",                                             elementary => "pantheon-agent-polkit", "main/po"),
+        po!("Pantheon Polkit Agent Extra",        "pantheon-agent-polkit-extra", elementary => "pantheon-agent-polkit", "main/po/extra"),
+        po!("Pantheon XDG Desktop Portals",                                      elementary => "portals",               "main/po"),
+        po!("Pantheon XDG Desktop Portals Extra", "portals-extra",               elementary => "portals",               "main/po/extra"),
+        po!("Settings Daemon",                                                   elementary => "settings-daemon",       "master/po"),
+        po!("Shortcut Overlay",                                                  elementary => "shortcut-overlay",      "master/po"),
+        po!("Shortcut Overlay Extra",             "shortcut-overlay-extra",      elementary => "shortcut-overlay",      "master/po/extra"),
+        po!("Sideload",                                                          elementary => "sideload",              "master/po"),
+        po!("Sideload Extra",                     "sideload-extra",              elementary => "sideload",              "master/po/extra"),
+        po!("Stylesheet",                                                        elementary => "stylesheet",            "master/po"),
+        po!("Wallpapers",                                                        elementary => "wallpapers",            "master/po"),
+
+        json!(elementary => "docs/installation"),
+        json!(elementary => "docs/learning-the-basics"),
+        json!(elementary => "docs/translation-guide"),
+        json!(elementary => "store/cart"),
+        json!(elementary => "store/index"),
+        json!(elementary => "403"),
+        json!(elementary => "404"),
+        json!(elementary => "410"),
+        json!(elementary => "SECURITY"),
+        json!(elementary => "brand"),
+        json!(elementary => "capnet-assist"),
+        json!(elementary => "code-of-conduct"),
+        json!(elementary => "get-involved"),
+        json!(elementary => "index"),
+        json!(elementary => "layout"),
+        json!(elementary => "oem"),
+        json!(elementary => "open-source"),
+        json!(elementary => "press"),
+        json!(elementary => "privacy"),
+        json!(elementary => "support"),
+        json!(elementary => "thank-you"),
 
         browser_extension!("Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "master/_locales"),
         browser_extension!("ImprovedTube",        github => "code-charity/youtube",               "master/_locales"),
