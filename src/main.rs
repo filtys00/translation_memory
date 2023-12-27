@@ -486,8 +486,8 @@ async fn query_api(
 
     let store = store.lock().await;
     let translations = store.iter().filter(|(scope, lang_id, translation)| {
-        if let Some(regex) = &regex {
-            if !regex.is_match(&translation.original) && !regex.is_match(&translation.translation) {
+        if let Some(langs) = &langs {
+            if !langs.contains(lang_id) {
                 return false;
             }
         }
@@ -496,8 +496,8 @@ async fn query_api(
                 return false;
             }
         }
-        if let Some(langs) = &langs {
-            if !langs.contains(lang_id) {
+        if let Some(regex) = &regex {
+            if !regex.is_match(&translation.original) && !regex.is_match(&translation.translation) {
                 return false;
             }
         }
