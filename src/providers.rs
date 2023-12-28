@@ -124,6 +124,29 @@ macro_rules! android {
             },
         })
     };
+    ($name:literal, gitlab => $repo:literal) => {
+        Arc::new(AndroidProvider {
+            id: concat!("gitlab/", $repo),
+            name: $name,
+            group_name: Some("Android apps"),
+            decode_as_base64: false,
+            default_url: concat!(
+                "https://gitlab.com/",
+                $repo,
+                "/-/raw/master/app/src/main/res/values/strings.xml",
+            ),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.com/",
+                        $repo,
+                        "/-/raw/master/app/src/main/res/values-{}/strings.xml",
+                    ),
+                    lang_id_to_string(&lang_id, "-r", true, "-", false),
+                )
+            },
+        })
+    };
     ($name:literal, source => $repo:literal, $folder:literal) => {
         Arc::new(AndroidProvider {
             id: concat!("android/", $repo, "/", $folder),
@@ -365,6 +388,8 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         browser_extension!("Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "master/src/_locales"),
         browser_extension!("uBlock Origin",       github => "gorhill/uBlock",                     "master/src/_locales"),
 
+        android!("Etar",                      github => "Etar-Group/Etar-Calendar"),
+        android!("F-Droid",                   gitlab => "fdroid/fdroidclient"),
         android!("Material Files",            github => "zhanghai/MaterialFiles"),
         android!("Material Files mime types", github => "zhanghai/MaterialFiles", "mime_types"),
         android!("Notally",                   github => "OmGodse/Notally"),
