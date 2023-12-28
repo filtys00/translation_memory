@@ -169,7 +169,7 @@ async fn generate_single(
 ) -> anyhow::Result<Vec<Translation>> {
     let response = client.get(&url).send().await?;
     if response.status() != StatusCode::OK {
-        bail!("Unexpected status code ({}): {url}", response.status());
+        bail!("Unexpected status code: {}\n{url}", response.status());
     }
     let text = response.text().await?;
 
