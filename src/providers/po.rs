@@ -13,7 +13,7 @@ use std::{
 
 use anyhow::bail;
 use async_trait::async_trait;
-use log::{debug, error, trace};
+use log::{error, trace};
 use reqwest::{Client, StatusCode};
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
@@ -115,7 +115,7 @@ where
             join_set.spawn(async move {
                 let urls = urls(lang_id.clone(), client.clone()).await?;
 
-                debug!(
+                trace!(
                     "Got {} translation URLs for '{lang_id}' from '{id}'",
                     urls.len(),
                 );
