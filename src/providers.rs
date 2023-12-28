@@ -119,7 +119,7 @@ macro_rules! android {
                         $file_name,
                         ".xml"
                     ),
-                    lang_id.language.as_str()
+                    lang_id_to_string(&lang_id, "-r", true, "-", false),
                 )
             },
         })
