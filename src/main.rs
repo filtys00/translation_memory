@@ -126,7 +126,10 @@ async fn main() {
     }
 
     info!("Starting web server...");
-    web_server(store).await
+    if let Err(e) = web_server(store).await {
+        error!("Could not start web server: {e}");
+        return;
+    }
 }
 
 /// Write `args` to `buf`, preventing any line from becoming longer than `max_width`

@@ -5,6 +5,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
+    io,
     sync::Arc,
 };
 
@@ -25,7 +26,7 @@ use unic_langid::LanguageIdentifier;
 
 use super::CACHE_PATH;
 
-pub async fn web_server(store: TranslationStore) {
+pub async fn web_server(store: TranslationStore) -> io::Result<()> {
     let store = Arc::new(Mutex::new(store));
 
     let app = Router::new()
@@ -42,8 +43,10 @@ pub async fn web_server(store: TranslationStore) {
         .route("/favicon.ico", get(language_icon))
         .with_state(store);
 
-    let listener = TcpListener::bind("127.0.0.1:2013").await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = TcpListener::bind("127.0.0.1:2013").await?;
+    axum::serve(listener, app).await?;
+
+    Ok(())
 }
 
 #[cfg(debug_assertions)]
