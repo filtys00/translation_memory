@@ -472,7 +472,7 @@
 			const titles = document.getElementById("titles");
 			const originalsTitle = document.getElementById("originalsTitle");
 			const translationsTitle = document.getElementById("translationsTitle");
-			const translationCount = document.getElementById("translationCount");
+			const translationCountLabel = document.getElementById("translationCount");
 
 			const translationList = document.getElementById("translations");
 
@@ -508,8 +508,12 @@
 			translationsTitle.innerText = "Omsetjing";
 			noTranslations.innerText = "Ingen resultat";
 
-			function translationCountLabel(count) {
-				return `${new Intl.NumberFormat("nn").format(count)} omsetjingar`;
+			function setTranslationCountLabel(count, totalCount) {
+				let num = new Intl.NumberFormat("nn");
+				translationCountLabel.innerText = `${num.format(totalCount)} omsetjingar`;
+				translationCountLabel.title = totalCount === null
+					? `${num.format(count)} av ukjend`
+					: `${num.format(count)} av ${num.format(totalCount)}`;
 			};
 
 			allLanguagesCheckboxLabel.innerText = "Alle mål";
@@ -522,12 +526,15 @@
 			refreshAll();
 
 			// Add listeners to elements
-			
+
 			translationList.onscroll = e => {
 				if (e.target.scrollTop === 0) {
 					header.classList.remove("floating");
 				} else {
 					header.classList.add("floating");
+				}
+				if (Math.abs(e.target.scrollHeight - e.target.clientHeight - e.target.scrollTop) <= 1) {
+					appendTranslations();
 				}
 			};
 
@@ -829,7 +836,16 @@
 			 */
 
 			/** How many translations should be downloaded per request */
-			const downloadAtOnce = 500;
+			const downloadAtOnce = 100;
+
+			/**
+			 * How many translations the current search has
+			 * @type number?
+			 */
+			let totalTranslationCount = null;
+
+			/** How many translations have been downloaded */
+			let translationCount = 0;
 			
 			/**
 			 * Replace the translations in `translationList` with new ones.
@@ -839,8 +855,8 @@
 				const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
 
 				if (!languages.length || !scopes.length) {
-					populateTranslations([], null);
-					translationCount.innerText = translationCountLabel(0);
+					populateTranslations([], null, false);
+					setTranslationCountLabel(0, 0);
 					return;
 				}
 
@@ -866,12 +882,14 @@
 					async response => {
 						const count = await response.json();
 
-						translationCount.innerText = translationCountLabel(count);
+						totalTranslationCount = count;
+						setTranslationCountLabel(translationCount, count);
 
 						titles.classList.remove("loading");
 					},
 					e => {
-						translationCount.innerText = translationCountLabel(Number.NaN);
+						totalTranslationCount = null;
+						setTranslationCountLabel(translationCount, null);
 
 						titles.classList.remove("loading");
 						
@@ -880,20 +898,56 @@
 				);
 			}
 
+			function appendTranslations() {
+				if (totalTranslationCount !== null && translationCount >= totalTranslationCount) {
+					return;
+				}
+
+				const languages = Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k);
+				const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
+
+				if (!languages.length || !scopes.length) {
+					return;
+				}
+
+				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`).then(
+					async response => {
+						const translations = await response.json();
+
+						let regex = null;
+						try {
+							regex = new RegExp(searchField.value, "gi");
+						} catch (e) {
+							console.warn(e);
+						}
+						populateTranslations(translations, regex, true);
+					},
+					e => console.error(e),
+				);
+			}
+
 			/**
 			 * Replace the contents of `translationList` with `translations`.
 			 * 
 			 * @param translations {[Translation]} - list of translations to use
 			 * @param search {RegExp?} - regex to highlight certain sections of text
+			 * @param append {boolean?} - weather to append instead of replacing
 			 */
-			function populateTranslations(translations, search) {
-				translationList.replaceChildren();
-
-				if (translations.length) {
-					document.body.classList.remove("noResults");
+			function populateTranslations(translations, search, append) {
+				if (append) {
+					translationCount += translations.length;
 				} else {
-					document.body.classList.add("noResults");
+					translationCount = translations.length;
+
+					translationList.replaceChildren();
+
+					if (translations.length) {
+						document.body.classList.remove("noResults");
+					} else {
+						document.body.classList.add("noResults");
+					}
 				}
+				setTranslationCountLabel(translationCount, totalTranslationCount)
 
 				for (let translation of translations) {
 					const scope = scopeNames[translation.scope];
