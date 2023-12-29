@@ -5,7 +5,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    io::Write as _,
+    io::{self, Write},
     path::Path,
     sync::Arc,
 };
@@ -74,24 +74,33 @@ async fn main() {
             LevelFilter::max(),
         );
     }
+    let term_width = termsize::get().map_or(80, |size| size.cols as usize);
     builder
-        .format(|buf, record| {
+        .format(move |buf, record| {
             let mut dimmed_style = buf.style();
             dimmed_style.set_color(Color::Black);
             dimmed_style.set_intense(true);
 
-            writeln!(
+            write!(
                 buf,
-                "{}{} {}{} {}",
+                "{}{} {}{}",
                 dimmed_style.value('['),
                 buf.default_styled_level(record.level()),
                 record.target(),
                 dimmed_style.value(']'),
-                if let Level::Warn | Level::Info = record.level() {
-                    record.args().to_string().replace('\n', "\n      ")
-                } else {
-                    record.args().to_string().replace('\n', "\n       ")
-                }
+            )?;
+
+            let level_length = match record.level() {
+                Level::Error | Level::Debug | Level::Trace => 5,
+                Level::Warn | Level::Info => 4,
+            };
+
+            writeln_max_width(
+                buf,
+                &record.args().to_string(),
+                3 + level_length + record.target().len(),
+                1 + level_length,
+                term_width,
             )
         })
         .init();
@@ -128,6 +137,80 @@ async fn main() {
 
     info!("Starting web server...");
     web_server(store).await
+}
+
+/// Write `args` to `buf`, preventing any line from becoming longer than `max_width`
+/// and indenting every new line with `indent` amount of spaces.
+///
+/// `line_length` is the length of the current line.
+///
+/// # Panics
+///
+/// Panics if `indent` is not smaller than `max_width`.
+fn writeln_max_width(
+    mut buf: impl Write,
+    args: &str,
+    mut line_length: usize,
+    indent: usize,
+    max_width: usize,
+) -> io::Result<()> {
+    if args.is_empty() {
+        return writeln!(buf);
+    }
+
+    macro_rules! new_line {
+        () => {
+            writeln!(buf)?;
+            for _ in 0..indent {
+                write!(buf, " ")?;
+            }
+            #[allow(unused_assignments)]
+            {
+                line_length = indent;
+            }
+        };
+    }
+
+    for (i, line) in args.split('\n').enumerate() {
+        if line.is_empty() {
+            writeln!(buf)?;
+            line_length = 0;
+            continue;
+        }
+
+        if i > 0 {
+            new_line!();
+        }
+
+        if line_length + 1 + args.len() <= max_width {
+            write!(buf, " {args}")?;
+            line_length = 0;
+            continue;
+        }
+
+        for term in line.split(' ') {
+            if line_length + 1 + term.len() > max_width {
+                if term.len() + 1 + indent > max_width {
+                    let mut term = term;
+                    while let Some(part) = term.get(..(max_width - indent)) {
+                        write!(buf, " {part}")?;
+                        new_line!();
+                        term = &term[(max_width - indent)..];
+                    }
+                    write!(buf, " {term}")?;
+                    line_length = indent + 1 + term.len();
+                    continue;
+                } else {
+                    new_line!();
+                }
+            }
+
+            write!(buf, " {term}")?;
+            line_length += 1 + term.len();
+        }
+    }
+
+    writeln!(buf)
 }
 
 async fn web_server(store: TranslationStore) {
