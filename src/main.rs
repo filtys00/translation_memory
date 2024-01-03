@@ -17,7 +17,7 @@ use unic_langid::LanguageIdentifier;
 
 use self::web_server::web_server;
 
-const CACHE_PATH: &str = "translations.bin";
+const CACHE_PATH: &str = "translations.bin.xz";
 
 #[derive(Debug, Parser)]
 struct Args {

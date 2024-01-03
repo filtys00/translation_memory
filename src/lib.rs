@@ -19,6 +19,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
+use xz2::{read::XzDecoder, write::XzEncoder};
 
 use self::providers::{default_providers, TranslationProvider};
 
@@ -52,6 +53,7 @@ impl TranslationStore {
         let file = File::open(&file)
             .map_err(|e| anyhow!("Could not open file {:?}: {e}", file.as_ref()))?;
         let reader = BufReader::new(file);
+        let reader = XzDecoder::new(reader);
         let mut store: TranslationStore = bincode::deserialize_from(reader)?;
 
         store.translations.retain(|scope, _| {
@@ -68,6 +70,7 @@ impl TranslationStore {
         let file = File::create(&file)
             .map_err(|e| anyhow!("Could not create file {:?}: {e}", file.as_ref()))?;
         let writer = BufWriter::new(file);
+        let writer = XzEncoder::new(writer, 0);
         bincode::serialize_into(writer, self)?;
         Ok(())
     }
