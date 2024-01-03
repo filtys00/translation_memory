@@ -17,10 +17,7 @@ use unic_langid::LanguageIdentifier;
 
 use self::web_server::web_server;
 
-#[cfg(feature = "bin_cache")]
 const CACHE_PATH: &str = "translations.bin";
-#[cfg(not(feature = "bin_cache"))]
-const CACHE_PATH: &str = "translations.json";
 
 #[derive(Debug, Parser)]
 struct Args {

@@ -52,10 +52,7 @@ impl TranslationStore {
         let file = File::open(&file)
             .map_err(|e| anyhow!("Could not open file {:?}: {e}", file.as_ref()))?;
         let reader = BufReader::new(file);
-        #[cfg(feature = "bin_cache")]
         let mut store: TranslationStore = bincode::deserialize_from(reader)?;
-        #[cfg(not(feature = "bin_cache"))]
-        let mut store: TranslationStore = serde_json::from_reader(reader)?;
 
         store.translations.retain(|scope, _| {
             store
@@ -71,10 +68,7 @@ impl TranslationStore {
         let file = File::create(&file)
             .map_err(|e| anyhow!("Could not create file {:?}: {e}", file.as_ref()))?;
         let writer = BufWriter::new(file);
-        #[cfg(feature = "bin_cache")]
         bincode::serialize_into(writer, self)?;
-        #[cfg(not(feature = "bin_cache"))]
-        serde_json::to_writer_pretty(writer, self)?;
         Ok(())
     }
 
