@@ -72,7 +72,7 @@ where
                     anyhow!("Default translation were not found\n{}", self.default_url)
                 })?;
 
-        'outer: for lang_id in lang_ids {
+        for lang_id in lang_ids {
             let Some(resources) = get_resources(
                 &lang_id,
                 &(self.url)(&lang_id),
@@ -87,8 +87,7 @@ where
             let mut translations = Vec::with_capacity(resources.len());
             for (name, (text, _)) in resources {
                 let Some((text_en, comment_en)) = resources_en.get(&name) else {
-                    translations_all.insert(lang_id, None);
-                    continue 'outer;
+                    continue;
                 };
                 translations.push(Translation {
                     original: text_en.clone(),
