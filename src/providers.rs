@@ -296,6 +296,17 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         po!("weblate",   "Weblate",            Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
         po!("weblatejs", "Weblate JavaScript", Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
 
+        Arc::new(PoProvider {
+            id: "pacman",
+            name: "Pacman",
+            group_name: None,
+            url: |lang_id| format!(
+                "https://gitlab.archlinux.org/pacman/pacman/-/raw/master/src/pacman/po/{}.po",
+                lang_id_to_string(lang_id, "_", true, "@", false),
+            ),
+            remove_char: None,
+        }),
+
         po!("AppCenter",                              elementary => "appcenter",   "master/po"),
         po!("AppCenter Extra",   "appcenter-extra",   elementary => "appcenter",   "master/po/extra"),
         po!("Calculator",                             elementary => "calculator",  "master/po"),
