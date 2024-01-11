@@ -177,15 +177,23 @@
 				background-color: var(--color-background-field);
 			}
 			.originalText, .translationText, #originalsTitle, #translationsTitle {
-				width: 45vw;
+				width: 40vw;
 				margin: 0;
 				padding: 1rem;
 			}
-			.originalText, .translationText {
+			.scopeText, #scopesTitle {
+				width: 20vw;
+				margin: 0;
+				padding: 1rem;
+			}
+			.scopeText {
+				text-align: end;
+			}
+			.originalText, .translationText, .scopeText {
 				overflow: hidden;
 				overflow-wrap: break-word;
 			}
-			#originalsTitle, #translationsTitle {
+			#originalsTitle, #translationsTitle, #scopesTitle {
 				font-weight: bold;
 
 				overflow: hidden;
@@ -200,7 +208,7 @@
 
 				color: var(--color-text-unfocused);
 			}
-			@media (max-width: 40rem) {
+			@media (max-width: 60rem) {
 				#translationCount, #translationSpinner {
 					transform: translateY(1rem);
 				}
@@ -438,6 +446,7 @@
 			<div id="titles">
 				<p id="originalsTitle">Original</p>
 				<p id="translationsTitle">Translation</p>
+				<p id="scopesTitle">Translation</p>
 				<p id="translationCount"></p>
 				<img id="translationSpinner" src="/icon/loading.svg">
 			</div>
@@ -472,6 +481,7 @@
 			const titles = document.getElementById("titles");
 			const originalsTitle = document.getElementById("originalsTitle");
 			const translationsTitle = document.getElementById("translationsTitle");
+			const scopesTitle = document.getElementById("scopesTitle");
 			const translationCountLabel = document.getElementById("translationCount");
 
 			const translationList = document.getElementById("translations");
@@ -506,6 +516,7 @@
 			languagesAndScopesButton.innerText = "Mål og vidd";
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
+			scopesTitle.innerText = "Vidd";
 			noTranslations.innerText = "Ingen resultat";
 
 			function setTranslationCountLabel(count, totalCount) {
@@ -970,8 +981,19 @@
 						translationText.innerText = translation.translation;
 					}
 
+					let scopeText = document.createElement("p");
+					scopeText.classList.add("scopeText");
+					if (scope.groupName) {
+						scopeText.innerText = `${scope.groupName} • ${translation.language}`;
+					} else if (scope?.name) {
+						scopeText.innerText = `${scope.name} • ${translation.language}`;
+					} else {
+						scopeText.innerText = `${translation.language}`;
+					}
+
 					li.appendChild(originalText);
 					li.appendChild(translationText);
+					li.appendChild(scopeText);
 					translationList.appendChild(li);
 				}
 			}
