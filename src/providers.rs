@@ -266,7 +266,7 @@ macro_rules! json {
                         $path,
                         ".json",
                     ),
-                    lang_id_to_string(lang_id, "_", true, "_", false),
+                    lang_id_to_string(lang_id, "_", true, "@", false),
                 )
             },
         })
