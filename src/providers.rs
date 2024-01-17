@@ -306,6 +306,16 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             ),
             remove_char: None,
         }),
+        Arc::new(PoProvider {
+            id: "wine",
+            name: "Wine",
+            group_name: None,
+            url: |lang_id| format!(
+                "https://gitlab.winehq.org/wine/wine/-/raw/master/po/{}.po",
+                lang_id_to_string(lang_id, "_", true, "@", false),
+            ),
+            remove_char: Some('&'),
+        }),
 
         po!("AppCenter",                              elementary => "appcenter",   "master/po"),
         po!("AppCenter Extra",   "appcenter-extra",   elementary => "appcenter",   "master/po/extra"),
