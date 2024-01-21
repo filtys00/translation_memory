@@ -292,9 +292,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             remove_char: Some('&'),
         }),
 
-        po!("multimc",   "MultiMC",            None,            Some('&'), github => "MultiMC/Translations/master/{}.po"),
-        po!("weblate",   "Weblate",            Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
-        po!("weblatejs", "Weblate JavaScript", Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
+        po!("duckduckgo", "DuckDuckGo",         None,            None,      github => "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po"),
+        po!("multimc",    "MultiMC",            None,            Some('&'), github => "MultiMC/Translations/master/{}.po"),
+        po!("weblate",    "Weblate",            Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
+        po!("weblatejs",  "Weblate JavaScript", Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
 
         Arc::new(PoProvider {
             id: "pacman",
