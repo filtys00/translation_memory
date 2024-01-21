@@ -215,19 +215,49 @@ macro_rules! browser_extension {
 
 macro_rules! po {
     ($id:literal, $name:literal, $group_name:expr, $remove_char:expr, github => $path:literal) => {
+        po!($id, $name, $group_name, $remove_char, "@", false, github => $path)
+    };
+    (
+        $id:literal, $name:literal, $group_name:expr, $remove_char:expr,
+        $variant_binder:expr, $uppercase_variant:expr,
+        github => $path:literal
+    ) => {
+        po!(
+            $id, $name, $group_name, $remove_char, $variant_binder, $uppercase_variant,
+            concat!("https://raw.githubusercontent.com/", $path),
+        )
+    };
+
+    ($id:literal, $name:literal, $group_name:expr, $remove_char:expr, gitlab => $site:literal, $repo:literal, $path:literal) => {
+        po!($id, $name, $group_name, $remove_char, "@", false, gitlab => $site, $repo, $path)
+    };
+    (
+        $id:literal, $name:literal, $group_name:expr, $remove_char:expr,
+        $variant_binder:expr, $uppercase_variant:expr,
+        gitlab => $site:literal, $repo:literal, $path:literal
+    ) => {
+        po!(
+            $id, $name, $group_name, $remove_char, $variant_binder, $uppercase_variant,
+            concat!("https://", $site, "/", $repo, "/-/raw/", $path),
+        )
+    };
+
+    (
+        $id:literal, $name:literal, $group_name:expr, $remove_char:expr,
+        $variant_binder:literal, $uppercase_variant:literal,
+        $url:expr,
+    ) => {
         Arc::new(PoProvider {
             id: $id,
             name: $name,
             group_name: $group_name,
             url: |lang_id| {
-                format!(
-                    concat!("https://raw.githubusercontent.com/", $path),
-                    lang_id_to_string(lang_id, "_", true, "_", false),
-                )
+                format!($url, lang_id_to_string(lang_id, "_", true, $variant_binder, $uppercase_variant))
             },
             remove_char: $remove_char,
         })
     };
+
     ($name:literal, elementary => $repo:literal, $path:literal) => {
         po!($name, $repo, elementary => $repo, $path)
     };
@@ -292,31 +322,14 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             remove_char: Some('&'),
         }),
 
-        po!("duckduckgo", "DuckDuckGo",         None,            None,      github => "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po"),
-        po!("multimc",    "MultiMC",            None,            Some('&'), github => "MultiMC/Translations/master/{}.po"),
-        po!("weblate",    "Weblate",            Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
-        po!("weblatejs",  "Weblate JavaScript", Some("Weblate"), None,      github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
+        po!("duckduckgo", "DuckDuckGo",         None,            None,                  github => "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po"),
+        po!("multimc",    "MultiMC",            None,            Some('&'), "_", true,  github => "MultiMC/Translations/master/{}.po"),
+        po!("multimc",    "MultiMC",            None,            Some('&'), "_", true,  github => "MultiMC/Translations/master/{}.po"),
+        po!("weblate",    "Weblate",            Some("Weblate"), None,      "_", false, github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
+        po!("weblatejs",  "Weblate JavaScript", Some("Weblate"), None,      "_", false, github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
 
-        Arc::new(PoProvider {
-            id: "pacman",
-            name: "Pacman",
-            group_name: None,
-            url: |lang_id| format!(
-                "https://gitlab.archlinux.org/pacman/pacman/-/raw/master/src/pacman/po/{}.po",
-                lang_id_to_string(lang_id, "_", true, "@", false),
-            ),
-            remove_char: None,
-        }),
-        Arc::new(PoProvider {
-            id: "wine",
-            name: "Wine",
-            group_name: None,
-            url: |lang_id| format!(
-                "https://gitlab.winehq.org/wine/wine/-/raw/master/po/{}.po",
-                lang_id_to_string(lang_id, "_", true, "@", false),
-            ),
-            remove_char: Some('&'),
-        }),
+        po!("pacman", "Pacman", None, None,      gitlab => "gitlab.archlinux.org", "pacman/pacman", "master/src/pacman/po/{}.po"),
+        po!("wine",   "Wine",   None, Some('&'), gitlab => "gitlab.winehq.org",    "wine/wine",     "master/po/{}.po"),
 
         po!("AppCenter",                              elementary => "appcenter",   "master/po"),
         po!("AppCenter Extra",   "appcenter-extra",   elementary => "appcenter",   "master/po/extra"),
