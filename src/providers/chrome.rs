@@ -40,7 +40,7 @@ impl TranslationProvider for ChromeProvider {
     }
 
     fn name(&self) -> &str {
-        "Google Chrome"
+        "Chromium"
     }
 
     fn group_name(&self) -> Option<&str> {
