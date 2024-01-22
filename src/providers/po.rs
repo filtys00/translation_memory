@@ -8,6 +8,7 @@ pub mod kde;
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
+    iter,
     sync::Arc,
 };
 
@@ -177,7 +178,7 @@ async fn generate_single(
 
     let mut values: HashMap<&str, String> = HashMap::new();
     let mut last: Option<&mut String> = None;
-    for line in text.lines() {
+    for line in text.lines().chain(iter::once("")) {
         if line.is_empty() {
             translations.push(Translation {
                 original: {
