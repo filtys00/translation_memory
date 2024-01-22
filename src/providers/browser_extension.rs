@@ -82,7 +82,10 @@ where
             let mut t = Vec::with_capacity(messages.len());
             for (key, message) in messages {
                 let Some(message_en) = messages_en.get(&key) else {
-                    warn!("Translation key '{key}' were found in '{lang_id}' translation but not in 'en' translation");
+                    warn!(
+                        "Translation key '{key}' were found in '{lang_id}' translation but not in '{}' translation",
+                        self.default_lang,
+                    );
                     continue;
                 };
 
