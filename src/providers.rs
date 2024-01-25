@@ -639,19 +639,15 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         use std::collections::HashSet;
         
         let mut set = HashSet::with_capacity(providers.len());
-        for provider in &providers {
-            if let Some(group_name) = provider.group_name() {
-                set.insert(group_name);
-            }
-        }
         for (i, provider) in providers.iter().enumerate() {
             if set.contains(provider.id()) {
                 panic!("Duplicate id: {}, second at index {i}", provider.id());
             }
-            // if set.contains(provider.name()) {
-            //     panic!("Duplicate name: {}, second at index {i}", provider.name());
-            // }
-            // set.insert(provider.name());
+            set.insert(provider.id());
+            if !provider.name().is_empty() && set.contains(provider.name()) {
+                panic!("Duplicate name: {}, second at index {i}", provider.name());
+            }
+            set.insert(provider.name());
         }
     }
 
