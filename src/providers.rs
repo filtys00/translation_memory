@@ -324,7 +324,6 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         po!("duckduckgo", "DuckDuckGo",         None,            None,                  github => "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po"),
         po!("multimc",    "MultiMC",            None,            Some('&'), "_", true,  github => "MultiMC/Translations/master/{}.po"),
-        po!("multimc",    "MultiMC",            None,            Some('&'), "_", true,  github => "MultiMC/Translations/master/{}.po"),
         po!("weblate",    "Weblate",            Some("Weblate"), None,      "_", false, github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
         po!("weblatejs",  "Weblate JavaScript", Some("Weblate"), None,      "_", false, github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
 
