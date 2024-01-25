@@ -25,10 +25,6 @@ struct Args {
     #[arg(long, default_value_t = false)]
     verbose: bool,
 
-    /// Write trace logs for a specific target. Example: `--log providers::android`
-    #[arg(long = "log", value_delimiter = ',')]
-    logs: Vec<String>,
-
     /// Don't open the system web browser when the web server starts
     #[arg(long, conflicts_with = "generate")]
     no_browser: bool,
@@ -46,23 +42,16 @@ struct Args {
 async fn main() {
     let args = Args::parse();
 
-    let mut builder = env_logger::builder();
-    builder.filter_module(
-        env!("CARGO_PKG_NAME"),
-        if args.verbose {
-            LevelFilter::max()
-        } else {
-            LevelFilter::Debug
-        },
-    );
-    for log in args.logs {
-        builder.filter_module(
-            &format!("{}::{log}", env!("CARGO_PKG_NAME")),
-            LevelFilter::max(),
-        );
-    }
     let term_width = termsize::get().map_or(80, |size| size.cols as usize);
-    builder
+    env_logger::builder()
+        .filter_module(
+            env!("CARGO_PKG_NAME"),
+            if args.verbose {
+                LevelFilter::max()
+            } else {
+                LevelFilter::Debug
+            },
+        )
         .format(move |buf, record| {
             let mut dimmed_style = buf.style();
             dimmed_style.set_color(Color::Black);
