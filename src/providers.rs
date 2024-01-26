@@ -5,10 +5,13 @@
 mod android;
 mod browser_extension;
 mod chrome;
+mod dtd;
 mod json;
 mod minecraft;
 mod mozilla;
 mod po;
+mod properties;
+mod srt;
 
 use std::{
     collections::BTreeMap,
@@ -25,12 +28,15 @@ pub use self::{
     android::AndroidProvider,
     browser_extension::BrowserExtensionProvider,
     chrome::ChromeProvider,
+    dtd::DtdProvider,
     json::JsonProvider,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
     po::gnome::graphql_gnome,
     po::kde::graphql_kde,
     po::{NetPoProvider, PoProvider},
+    properties::PropertiesProvider,
+    srt::SrtProvider,
 };
 use super::Translation;
 
@@ -174,6 +180,32 @@ macro_rules! android {
             },
         })
     };
+
+    ($name:literal, tor => $branch:literal, $default_path:literal, $path:literal) => {
+        Arc::new(AndroidProvider {
+            id: concat!("torproject-", $branch),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            decode_as_base64: false,
+            default_url: concat!(
+                "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                $branch,
+                "/",
+                $default_path,
+            ),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/",
+                        $path,
+                    ),
+                    lang_id_to_string(&lang_id, "-r", true, "-", false),
+                )
+            },
+        })
+    };
 }
 
 macro_rules! browser_extension {
@@ -206,6 +238,27 @@ macro_rules! browser_extension {
             url: |lang_id| {
                 format!(
                     concat!("https://", $repo, "/-/raw/", $folder, "/{}/messages.json",),
+                    lang_id_to_string(&lang_id, "_", true, "_", false),
+                )
+            },
+        })
+    };
+
+    ($name:literal, tor => $branch:literal, $file_name:literal) => {
+        Arc::new(BrowserExtensionProvider {
+            id: concat!("torproject-", $branch, "-", $file_name),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            default_lang: "en_US",
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/{}/",
+                        $file_name,
+                        ".json",
+                    ),
                     lang_id_to_string(&lang_id, "_", true, "_", false),
                 )
             },
@@ -281,6 +334,26 @@ macro_rules! po {
             remove_char: Some('_'),
         })
     };
+
+    ($name:literal, tor => $branch:literal, $path:literal) => {
+        Arc::new(PoProvider {
+            id: concat!("torproject-", $branch),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/",
+                        $path
+                    ),
+                    lang_id_to_string(lang_id, "-", true, "@", false),
+                )
+            },
+            remove_char: None,
+        })
+    }
 }
 
 macro_rules! json {
@@ -297,6 +370,99 @@ macro_rules! json {
                         ".json",
                     ),
                     lang_id_to_string(lang_id, "_", true, "@", false),
+                )
+            },
+        })
+    };
+    ($name:literal, tor => $branch:literal, $path:literal) => {
+        Arc::new(JsonSplitProvider {
+            id: concat!("torproject-", $branch),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            default_lang: "en",
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/",
+                        $path,
+                    ),
+                    lang_id_to_string(lang_id, "_", true, "-", false),
+                )
+            },
+        })
+    };
+}
+
+macro_rules! properties {
+    ($name:literal, tor => $branch:literal, $file_name:literal) => {
+        Arc::new(PropertiesProvider {
+            id: concat!("torproject-", $branch, "-", $file_name),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            default_lang: "en-US",
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/{}/",
+                        $file_name,
+                        ".properties"
+                    ),
+                    lang_id_to_string(lang_id, "-", true, "@", false),
+                )
+            },
+        })
+    };
+}
+
+macro_rules! srt {
+    ($id:literal, $name:literal, tor => $branch:literal, $default_path:literal, $base_file_name:literal) => {
+        Arc::new(SrtProvider {
+            id: concat!("torproject-", $id),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            default_url: concat!(
+                "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                $branch,
+                "/",
+                $default_path,
+            ),
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/",
+                        $base_file_name,
+                        "-{}.srt",
+                    ),
+                    lang_id_to_string(lang_id, "-", true, "@", false),
+                )
+            },
+        })
+    };
+}
+
+macro_rules! dtd {
+    ($id:literal, $name:literal, tor => $branch:literal, $file_name:literal) => {
+        Arc::new(DtdProvider {
+            id: concat!("torproject-", $id),
+            name: $name,
+            group_name: Some("The Tor Project"),
+            default_lang: "en-US",
+            url: |lang_id| {
+                format!(
+                    concat!(
+                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                        $branch,
+                        "/{}/",
+                        $file_name,
+                        ".dtd",
+                    ),
+                    lang_id_to_string(lang_id, "-", true, "@", false),
                 )
             },
         })
@@ -329,6 +495,42 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         po!("pacman", "Pacman", None, None,      gitlab => "gitlab.archlinux.org", "pacman/pacman", "master/src/pacman/po/{}.po"),
         po!("wine",   "Wine",   None, Some('&'), gitlab => "gitlab.winehq.org",    "wine/wine",     "master/po/{}.po"),
+
+        po!("Onion Launchpad",     tor => "onion-launchpad",                "contents+{}.po"),
+        po!("Support Portal",      tor => "support-portal",                 "contents+{}.po"),
+        po!("Tor Browser manual",  tor => "tbmanual-contentspot",           "contents+{}.po"),
+        po!("Tor Community",       tor => "communitytpo-contentspot",       "contents+{}.po"),
+        po!("About Tor Project",   tor => "tpo-web",                        "contents+{}.po"),
+        po!("Tails miscellaneous", tor => "tails-misc",                     "{}.po"),
+        po!("Code of Conduct",     tor => "policies-code_of_conducttxtpot", "code_of_conduct+{}.po"),
+        po!("Onion Sprout Bot",    tor => "onionsproutsbot",                "onionsproutsbot+{}.po"),
+        po!("Tor Animation title", tor => "tor_animation",                  "title-{}.po"),
+        po!("Tor check",           tor => "torcheck",                       "{}/torcheck.po"),
+        dtd!("browser-about-dialog", "Tor Browser about dialog", tor => "tor-browser", "aboutDialog"),
+        dtd!("browser-about-update", "Tor Browser about update", tor => "tor-browser", "aboutTBUpdate"),
+        dtd!("browser-about-tor",    "Tor Browser about Tor",    tor => "tor-browser", "aboutTor"),
+        dtd!("browser-branding",     "Tor Browser branding",     tor => "tor-browser", "brand"),
+        dtd!("browser-tor-buttons",  "Tor Browser tor buttons",  tor => "tor-browser", "torbutton"),
+        srt!("onionshare-subtitles", "OnionShare introduction video",  tor => "onionshare-introduction-video-subtitles", "src/onionshare-introduction.srt",  "onionshare-introduction-subs"),
+        srt!("bridges-subtitles",    "Bridges introduction video",     tor => "bridges-introduction-video-subtitles",    "src/bridges-introduction.srt",     "bridges-introduction-subtitles"),
+        srt!("torbrowser-subtitles", "Tor Browser introduction video", tor => "tb-introduction-video-subtitles",         "src/tor-browser-introduction.srt", "tor-browser-sub"),
+        srt!("tor-animation",        "Tor animation",                  tor => "tor_animation",                           "Tor_animation.srt",                "subtitles"),
+        android!("Tor VPN",             tor => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
+        android!("Tor Browser Android", tor => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
+        properties!("Tor Browser brand",                tor => "tor-browser",  "brand"),
+        properties!("Tor Browser browser onboarding",   tor => "tor-browser",  "browserOnboarding"),
+        properties!("Tor Browser crypto safety prompt", tor => "tor-browser",  "cryptoSafetyPrompt"),
+        properties!("Tor Browser onboarding",           tor => "tor-browser",  "onboarding"),
+        properties!("Tor Browser onion location",       tor => "tor-browser",  "onionLocation"),
+        properties!("Tor Browser rulesets",             tor => "tor-browser",  "rulesets"),
+        properties!("Tor Browser settings",             tor => "tor-browser",  "settings"),
+        properties!("Tor Browser tor connect",          tor => "tor-browser",  "torConnect"),
+        properties!("Tor Browser torbutton",            tor => "tor-browser",  "torbutton"),
+        properties!("Tor Browser torlauncher",          tor => "tor-browser",  "torlauncher"),
+        properties!("Base Browser new identity",        tor => "base-browser", "newIdentity"),
+        properties!("Base Browser security level",      tor => "base-browser", "securityLevel"),
+        browser_extension!("Snowflake",         tor => "snowflake", "messages"),
+        browser_extension!("Snowflake website", tor => "snowflake", "website"),
 
         po!("AppCenter",                              elementary => "appcenter",   "master/po"),
         po!("AppCenter Extra",   "appcenter-extra",   elementary => "appcenter",   "master/po/extra"),
