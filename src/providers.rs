@@ -15,13 +15,15 @@ mod properties;
 mod srt;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fmt::{self, Debug, Formatter},
     sync::Arc,
 };
 
+use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use reqwest::Client;
+use log::trace;
+use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
 
 pub use self::defaults::default_providers;
@@ -84,4 +86,150 @@ fn lang_id_to_string(
         }
     }
     s
+}
+
+/// Returns the contents of `url` as text.
+async fn download_text(url: &str, client: &Client) -> anyhow::Result<Option<String>> {
+    trace!("Sending request: {url}");
+    let response = client.get(url).send().await?;
+    match response.status() {
+        StatusCode::OK => {}
+        StatusCode::NOT_FOUND => return Ok(None),
+        status_code => bail!("Unexpected status code: {status_code}\n{url}"),
+    }
+    let text = response.text().await?;
+    Ok(Some(text))
+}
+
+/// Standard provider for translation formats where both the original strings
+/// and the translations are located within the same file.
+pub struct MonoProvider<U, P>
+where
+    U: Fn(&LanguageIdentifier) -> String + Send + Sync,
+    P: Fn(String) -> anyhow::Result<Vec<Translation>> + Send + Sync,
+{
+    pub id: &'static str,
+    pub name: &'static str,
+    pub parse: P,
+    pub remove_char: Option<char>,
+    pub group_name: Option<&'static str>,
+    pub url: U,
+}
+
+#[async_trait]
+impl<U, P> TranslationProvider for MonoProvider<U, P>
+where
+    U: Fn(&LanguageIdentifier) -> String + Send + Sync,
+    P: Fn(String) -> anyhow::Result<Vec<Translation>> + Send + Sync,
+{
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn group_name(&self) -> Option<&str> {
+        self.group_name
+    }
+
+    async fn generate(
+        &self,
+        lang_ids: Vec<LanguageIdentifier>,
+        client: Arc<Client>,
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+        let mut translations = BTreeMap::new();
+
+        for lang_id in lang_ids {
+            let url = (self.url)(&lang_id);
+            let text = download_text(&url, &client).await?;
+
+            if let Some(text) = text {
+                let mut t = (self.parse)(text)?;
+                if let Some(remove_char) = &self.remove_char {
+                    t.iter_mut().for_each(|translation| {
+                        translation.original = translation.original.replace(*remove_char, "");
+                        translation.translation = translation.translation.replace(*remove_char, "");
+                    });
+                }
+                translations.insert(lang_id, Some(t));
+            } else {
+                translations.insert(lang_id, None);
+            }
+        }
+
+        Ok(translations)
+    }
+}
+
+/// Standard provider for translation formats where the original strings
+/// and the translations are located in separate files.
+pub struct DuoProvider<U, P>
+where
+    U: Fn(&LanguageIdentifier) -> String + Send + Sync,
+    P: Fn(String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> + Send + Sync,
+{
+    pub id: &'static str,
+    pub name: &'static str,
+    pub group_name: Option<&'static str>,
+    pub parse: P,
+    pub default_url: &'static str,
+    pub url: U,
+}
+
+#[async_trait]
+impl<U, P> TranslationProvider for DuoProvider<U, P>
+where
+    U: Fn(&LanguageIdentifier) -> String + Send + Sync,
+    P: Fn(String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> + Send + Sync,
+{
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn group_name(&self) -> Option<&str> {
+        self.group_name
+    }
+
+    async fn generate(
+        &self,
+        lang_ids: Vec<LanguageIdentifier>,
+        client: Arc<Client>,
+    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+        let mut translations = BTreeMap::new();
+
+        let text_en = download_text(self.default_url, &client)
+            .await?
+            .ok_or_else(|| anyhow!("Default translation were not found\n{}", self.default_url))?;
+        let messages_en = (self.parse)(text_en)?;
+
+        for lang_id in lang_ids {
+            let url = (self.url)(&lang_id);
+            let Some(text) = download_text(&url, &client).await? else {
+                translations.insert(lang_id, None);
+                continue;
+            };
+            let messages = (self.parse)(text)?;
+
+            let mut t = Vec::with_capacity(messages.len());
+            for (key, (translation, _comment)) in messages {
+                let Some((original, comment)) = messages_en.get(&key) else {
+                    continue;
+                };
+                t.push(Translation {
+                    original: original.clone(),
+                    translation,
+                    comment: comment.as_ref().cloned(),
+                });
+            }
+            translations.insert(lang_id, Some(t));
+        }
+
+        Ok(translations)
+    }
 }

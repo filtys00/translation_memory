@@ -5,20 +5,18 @@
 use std::{sync::Arc, vec};
 
 use super::{
-    android::AndroidProvider,
-    browser_extension::BrowserExtensionProvider,
+    android::{parse_android, parse_android_base64},
+    browser_extension::parse_browser_extension,
     chrome::ChromeProvider,
-    dtd::DtdProvider,
-    json::JsonProvider,
+    dtd::parse_dtd,
+    json::parse_json,
     lang_id_to_string,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
-    po::gnome::graphql_gnome,
-    po::kde::graphql_kde,
-    po::{NetPoProvider, PoProvider},
-    properties::PropertiesProvider,
-    srt::SrtProvider,
-    TranslationProvider,
+    po::{gnome::graphql_gnome, kde::graphql_kde, parse_po, NetPoProvider},
+    properties::parse_properties,
+    srt::parse_srt,
+    DuoProvider, MonoProvider, TranslationProvider,
 };
 
 macro_rules! android {
@@ -26,11 +24,11 @@ macro_rules! android {
         android!($name, github => $repo, "strings")
     };
     ($name:literal, github => $repo:literal, $file_name:literal) => {
-        Arc::new(AndroidProvider {
+        Arc::new(DuoProvider {
             id: concat!("github/", $repo, "/", $file_name),
             name: $name,
             group_name: Some("Android apps"),
-            decode_as_base64: false,
+            parse: parse_android,
             default_url: concat!(
                 "https://raw.githubusercontent.com/",
                 $repo,
@@ -53,11 +51,11 @@ macro_rules! android {
         })
     };
     ($name:literal, gitlab => $repo:literal) => {
-        Arc::new(AndroidProvider {
+        Arc::new(DuoProvider {
             id: concat!("gitlab/", $repo),
             name: $name,
             group_name: Some("Android apps"),
-            decode_as_base64: false,
+            parse: parse_android,
             default_url: concat!(
                 "https://gitlab.com/",
                 $repo,
@@ -76,11 +74,11 @@ macro_rules! android {
         })
     };
     ($name:literal, source => $repo:literal, $folder:literal) => {
-        Arc::new(AndroidProvider {
+        Arc::new(DuoProvider {
             id: concat!("android/", $repo, "/", $folder),
             name: $name,
             group_name: Some("Android"),
-            decode_as_base64: true,
+            parse: parse_android_base64,
             default_url: concat!(
                 "https://android.googlesource.com/platform/",
                 $repo,
@@ -104,11 +102,11 @@ macro_rules! android {
     };
 
     ($name:literal, tor => $branch:literal, $default_path:literal, $path:literal) => {
-        Arc::new(AndroidProvider {
+        Arc::new(DuoProvider {
             id: concat!("torproject-", $branch),
             name: $name,
             group_name: Some("The Tor Project"),
-            decode_as_base64: false,
+            parse: parse_android,
             default_url: concat!(
                 "https://gitlab.torproject.org/tpo/translation/-/raw/",
                 $branch,
@@ -132,11 +130,18 @@ macro_rules! android {
 
 macro_rules! browser_extension {
     ($name:literal, github => $repo:literal, $folder:literal) => {
-        Arc::new(BrowserExtensionProvider {
+        Arc::new(DuoProvider {
             id: concat!("github/", $repo, "/", $folder),
             name: $name,
             group_name: Some("Browser extension"),
-            default_lang: "en",
+            parse: parse_browser_extension,
+            default_url: concat!(
+                "https://github.com/",
+                $repo,
+                "/raw/",
+                $folder,
+                "/en/messages.json",
+            ),
             url: |lang_id| {
                 format!(
                     concat!(
@@ -152,11 +157,18 @@ macro_rules! browser_extension {
         })
     };
     ($name:literal, gitlab => $repo:literal, $folder:literal) => {
-        Arc::new(BrowserExtensionProvider {
+        Arc::new(DuoProvider {
             id: concat!("gitlab/", $repo, "/", $folder),
             name: $name,
             group_name: Some("Browser extension"),
-            default_lang: "en_US",
+            parse: parse_browser_extension,
+            default_url: concat!(
+                "https://",
+                $repo,
+                "/-/raw/",
+                $folder,
+                "/en_US/messages.json"
+            ),
             url: |lang_id| {
                 format!(
                     concat!("https://", $repo, "/-/raw/", $folder, "/{}/messages.json",),
@@ -167,11 +179,18 @@ macro_rules! browser_extension {
     };
 
     ($name:literal, tor => $branch:literal, $file_name:literal) => {
-        Arc::new(BrowserExtensionProvider {
+        Arc::new(DuoProvider {
             id: concat!("torproject-", $branch, "-", $file_name),
             name: $name,
             group_name: Some("The Tor Project"),
-            default_lang: "en_US",
+            parse: parse_browser_extension,
+            default_url: concat!(
+                "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                $branch,
+                "/en_US/",
+                $file_name,
+                ".json",
+            ),
             url: |lang_id| {
                 format!(
                     concat!(
@@ -222,14 +241,15 @@ macro_rules! po {
         $variant_binder:literal, $uppercase_variant:literal,
         $url:expr,
     ) => {
-        Arc::new(PoProvider {
+        Arc::new(MonoProvider {
             id: $id,
             name: $name,
             group_name: $group_name,
+            parse: parse_po,
+            remove_char: $remove_char,
             url: |lang_id| {
                 format!($url, lang_id_to_string(lang_id, "_", true, $variant_binder, $uppercase_variant))
             },
-            remove_char: $remove_char,
         })
     };
 
@@ -237,10 +257,12 @@ macro_rules! po {
         po!($name, $repo, elementary => $repo, $path)
     };
     ($name:literal, $id:literal, elementary => $repo:literal, $path:literal) => {
-        Arc::new(PoProvider {
+        Arc::new(MonoProvider {
             id: concat!("elementary-", $id),
             name: $name,
             group_name: Some("Elementary"),
+            parse: parse_po,
+            remove_char: Some('_'),
             url: |lang_id| {
                 format!(
                     concat!(
@@ -253,15 +275,16 @@ macro_rules! po {
                     lang_id_to_string(lang_id, "_", true, "_", false),
                 )
             },
-            remove_char: Some('_'),
         })
     };
 
     ($name:literal, tor => $branch:literal, $path:literal) => {
-        Arc::new(PoProvider {
+        Arc::new(MonoProvider {
             id: concat!("torproject-", $branch),
             name: $name,
             group_name: Some("The Tor Project"),
+            parse: parse_po,
+            remove_char: None,
             url: |lang_id| {
                 format!(
                     concat!(
@@ -273,17 +296,18 @@ macro_rules! po {
                     lang_id_to_string(lang_id, "-", true, "@", false),
                 )
             },
-            remove_char: None,
         })
     }
 }
 
 macro_rules! json {
     (elementary => $path:literal) => {
-        Arc::new(JsonProvider {
+        Arc::new(MonoProvider {
             id: concat!("elementary-web-", $path),
             name: $path,
             group_name: Some("Elementary"),
+            parse: parse_json,
+            remove_char: None,
             url: |lang_id| {
                 format!(
                     concat!(
@@ -319,11 +343,18 @@ macro_rules! json {
 
 macro_rules! properties {
     ($name:literal, tor => $branch:literal, $file_name:literal) => {
-        Arc::new(PropertiesProvider {
+        Arc::new(DuoProvider {
             id: concat!("torproject-", $branch, "-", $file_name),
             name: $name,
             group_name: Some("The Tor Project"),
-            default_lang: "en-US",
+            parse: parse_properties,
+            default_url: concat!(
+                "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                $branch,
+                "/en-US/",
+                $file_name,
+                ".properties"
+            ),
             url: |lang_id| {
                 format!(
                     concat!(
@@ -342,10 +373,11 @@ macro_rules! properties {
 
 macro_rules! srt {
     ($id:literal, $name:literal, tor => $branch:literal, $default_path:literal, $base_file_name:literal) => {
-        Arc::new(SrtProvider {
+        Arc::new(DuoProvider {
             id: concat!("torproject-", $id),
             name: $name,
             group_name: Some("The Tor Project"),
+            parse: parse_srt,
             default_url: concat!(
                 "https://gitlab.torproject.org/tpo/translation/-/raw/",
                 $branch,
@@ -370,11 +402,18 @@ macro_rules! srt {
 
 macro_rules! dtd {
     ($id:literal, $name:literal, tor => $branch:literal, $file_name:literal) => {
-        Arc::new(DtdProvider {
+        Arc::new(DuoProvider {
             id: concat!("torproject-", $id),
             name: $name,
             group_name: Some("The Tor Project"),
-            default_lang: "en-US",
+            parse: parse_dtd,
+            default_url: concat!(
+                "https://gitlab.torproject.org/tpo/translation/-/raw/",
+                $branch,
+                "/en-US/",
+                $file_name,
+                ".dtd",
+            ),
             url: |lang_id| {
                 format!(
                     concat!(

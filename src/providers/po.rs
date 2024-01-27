@@ -15,58 +15,12 @@ use std::{
 use anyhow::bail;
 use async_trait::async_trait;
 use log::{error, trace};
-use reqwest::{Client, StatusCode};
+use reqwest::Client;
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
+use super::download_text;
 use crate::{Translation, TranslationProvider};
-
-pub struct PoProvider<F>
-where
-    F: Fn(&LanguageIdentifier) -> String + Send + Sync,
-{
-    pub id: &'static str,
-    pub name: &'static str,
-    pub group_name: Option<&'static str>,
-    pub url: F,
-    pub remove_char: Option<char>,
-}
-
-#[async_trait]
-impl<F> TranslationProvider for PoProvider<F>
-where
-    F: Fn(&LanguageIdentifier) -> String + Send + Sync,
-{
-    fn id(&self) -> &str {
-        self.id
-    }
-
-    fn name(&self) -> &str {
-        self.name
-    }
-
-    fn group_name(&self) -> Option<&str> {
-        self.group_name
-    }
-
-    async fn generate(
-        &self,
-        lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
-        let mut translations = BTreeMap::new();
-
-        for lang_id in lang_ids {
-            let url = (self.url)(&lang_id);
-            let translation = generate_single(url, self.remove_char, client.clone())
-                .await
-                .ok();
-            translations.insert(lang_id, translation);
-        }
-
-        Ok(translations)
-    }
-}
 
 pub struct NetPoProvider<F, U>
 where
@@ -130,7 +84,21 @@ where
                 let mut join_set = JoinSet::new();
                 for url in urls {
                     let client = client.clone();
-                    join_set.spawn(generate_single(url, remove_char, client));
+                    join_set.spawn(async move {
+                        let Some(text) = download_text(&url, &client).await? else {
+                            bail!("not found\n{url}");
+                        };
+                        let mut translations = parse_po(text)?;
+                        if let Some(remove_char) = remove_char {
+                            translations.iter_mut().for_each(|translation| {
+                                translation.original =
+                                    translation.original.replace(remove_char, "");
+                                translation.translation =
+                                    translation.translation.replace(remove_char, "");
+                            });
+                        }
+                        Ok(translations)
+                    });
                 }
 
                 while let Some(result) = join_set.join_next().await {
@@ -163,17 +131,7 @@ where
     }
 }
 
-async fn generate_single(
-    url: String,
-    remove_char: Option<char>,
-    client: Arc<Client>,
-) -> anyhow::Result<Vec<Translation>> {
-    let response = client.get(&url).send().await?;
-    if response.status() != StatusCode::OK {
-        bail!("Unexpected status code: {}\n{url}", response.status());
-    }
-    let text = response.text().await?;
-
+pub fn parse_po(text: String) -> anyhow::Result<Vec<Translation>> {
     let mut translations = Vec::new();
 
     let mut values: HashMap<&str, String> = HashMap::new();
@@ -192,11 +150,7 @@ async fn generate_single(
                         last = None;
                         continue;
                     }
-                    if let Some(remove_char) = remove_char {
-                        escape_value(msgid).replace(remove_char, "")
-                    } else {
-                        escape_value(msgid)
-                    }
+                    escape_value(msgid)
                 },
                 translation: {
                     let Some(msgstr) = values.remove("msgstr") else {
@@ -209,11 +163,7 @@ async fn generate_single(
                         last = None;
                         continue;
                     }
-                    if let Some(remove_char) = remove_char {
-                        escape_value(msgstr).replace(remove_char, "")
-                    } else {
-                        escape_value(msgstr)
-                    }
+                    escape_value(msgstr)
                 },
                 comment: values.remove("#.").or_else(|| values.remove("msgctxt")),
             });
