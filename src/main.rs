@@ -162,7 +162,7 @@ fn writeln_max_width(
         }
 
         if line_length + 1 + args.len() <= max_width {
-            write!(buf, " {args}")?;
+            write!(buf, " {line}")?;
             line_length = 0;
             continue;
         }
@@ -171,13 +171,14 @@ fn writeln_max_width(
             if line_length + 1 + term.len() > max_width {
                 if term.len() + 1 + indent > max_width {
                     let mut term = term;
-                    while let Some(part) = term.get(..(max_width - indent)) {
+                    while let Some(part) = term.get(..(max_width - line_length - 1)) {
+                        term = &term[(max_width - line_length - 1)..];
+                        
                         write!(buf, " {part}")?;
                         new_line!();
-                        term = &term[(max_width - indent)..];
                     }
                     write!(buf, " {term}")?;
-                    line_length = indent + 1 + term.len();
+                    line_length += 1 + term.len();
                     continue;
                 } else {
                     new_line!();
