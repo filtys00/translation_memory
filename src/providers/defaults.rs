@@ -76,7 +76,7 @@ macro_rules! android {
 
     (source => $repo:literal, $folder:literal) => {
         Arc::new(DuoProvider {
-            id: concat!("android/", $repo, "/", $folder),
+            id: concat!("android-", $repo, "-", $folder),
             name: "",
             group_name: Some("Android"),
             parse: parse_android_base64,
@@ -435,64 +435,64 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         po!("pacman", "Pacman", None, None,      gitlab => "gitlab.archlinux.org", "pacman/pacman", "master/src/pacman/po/{}.po"),
         po!("wine",   "Wine",   None, Some('&'), gitlab => "gitlab.winehq.org",    "wine/wine",     "master/po/{}.po"),
 
-        android!("github/Etar-Group/Etar-Calendar/strings",  "Etar",                      github => "Etar-Group/Etar-Calendar"),
-        android!("gitlab/fdroid/fdroidclient",               "F-Droid",                   gitlab => "fdroid/fdroidclient"),
-        android!("github/zhanghai/MaterialFiles/strings",    "Material Files",            github => "zhanghai/MaterialFiles"),
-        android!("github/zhanghai/MaterialFiles/mime_types", "Material Files mime types", github => "zhanghai/MaterialFiles", "mime_types"),
-        android!("github/OmGodse/Notally/strings",           "Notally",                   github => "OmGodse/Notally"),
+        android!("etar",                      "Etar",                      github => "Etar-Group/Etar-Calendar"),
+        android!("fdroid",                    "F-Droid",                   gitlab => "fdroid/fdroidclient"),
+        android!("material-files",            "Material Files",            github => "zhanghai/MaterialFiles"),
+        android!("material-files-mime-types", "Material Files mime types", github => "zhanghai/MaterialFiles", "mime_types"),
+        android!("notally",                   "Notally",                   github => "OmGodse/Notally"),
 
-        browser_extension!("gitlab/git.synz.io/Synzvato/decentraleyes/master/_locales", "Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "master/_locales"),
-        browser_extension!("github/code-charity/youtube/master/_locales",               "ImprovedTube",        github => "code-charity/youtube",               "master/_locales"),
-        browser_extension!("github/Midnight-Lizard/Midnight-Lizard/master/_locales",    "Midnight Lizard",     github => "Midnight-Lizard/Midnight-Lizard",    "master/_locales"),
-        browser_extension!("github/sienori/simple-translate/master/src/_locales",       "Simple Translate",    github => "sienori/simple-translate",           "master/src/_locales"),
-        browser_extension!("github/sienori/Tab-Session-Manager/master/src/_locales",    "Tab Session Manager", github => "sienori/Tab-Session-Manager",        "master/src/_locales"),
-        browser_extension!("github/Tampermonkey/tampermonkey/master/i18n",              "Tampermonkey",        github => "Tampermonkey/tampermonkey",          "master/i18n"),
-        browser_extension!("github/piroor/treestyletab/trunk/webextensions/_locales",   "Tree Style Tab",      github => "piroor/treestyletab",                "trunk/webextensions/_locales"),
-        browser_extension!("github/turnoffthelights/Turn-Off-the-Lights-Chrome-extension/master/src/_locales", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "master/src/_locales"),
-        browser_extension!("github/gorhill/uBlock/master/src/_locales",                 "uBlock Origin",       github => "gorhill/uBlock",                     "master/src/_locales"),
+        browser_extension!("decentraleyes",       "Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "master/_locales"),
+        browser_extension!("improvedtube",        "ImprovedTube",        github => "code-charity/youtube",               "master/_locales"),
+        browser_extension!("midnight-lizard",     "Midnight Lizard",     github => "Midnight-Lizard/Midnight-Lizard",    "master/_locales"),
+        browser_extension!("simple-translate",    "Simple Translate",    github => "sienori/simple-translate",           "master/src/_locales"),
+        browser_extension!("tab-session-manager", "Tab Session Manager", github => "sienori/Tab-Session-Manager",        "master/src/_locales"),
+        browser_extension!("tampermonkey",        "Tampermonkey",        github => "Tampermonkey/tampermonkey",          "master/i18n"),
+        browser_extension!("tree-style-tab",      "Tree Style Tab",      github => "piroor/treestyletab",                "trunk/webextensions/_locales"),
+        browser_extension!("turn-off-the-lights", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "master/src/_locales"),
+        browser_extension!("ublock-origin",       "uBlock Origin",       github => "gorhill/uBlock",                     "master/src/_locales"),
 
         // Tor project
 
-        po!("onion-launchpad",                "Onion Launchpad",     tor => "onion-launchpad",                "contents+{}.po"),
-        po!("support-portal",                 "Support Portal",      tor => "support-portal",                 "contents+{}.po"),
-        po!("tbmanual-contentspot",           "Tor Browser manual",  tor => "tbmanual-contentspot",           "contents+{}.po"),
-        po!("communitytpo-contentspot",       "Tor Community",       tor => "communitytpo-contentspot",       "contents+{}.po"),
-        po!("tpo-web",                        "About Tor Project",   tor => "tpo-web",                        "contents+{}.po"),
-        po!("tails-misc",                     "Tails miscellaneous", tor => "tails-misc",                     "{}.po"),
-        po!("policies-code_of_conducttxtpot", "Code of Conduct",     tor => "policies-code_of_conducttxtpot", "code_of_conduct+{}.po"),
-        po!("onionsproutsbot",                "Onion Sprout Bot",    tor => "onionsproutsbot",                "onionsproutsbot+{}.po"),
-        po!("tor_animation",                  "Tor Animation title", tor => "tor_animation",                  "title-{}.po"),
-        po!("torcheck",                       "Tor check",           tor => "torcheck",                       "{}/torcheck.po"),
+        po!("onion-launchpad",     "Onion Launchpad",     tor => "onion-launchpad",                "contents+{}.po"),
+        po!("support-portal",      "Support Portal",      tor => "support-portal",                 "contents+{}.po"),
+        po!("torbrowser-manual",   "Tor Browser manual",  tor => "tbmanual-contentspot",           "contents+{}.po"),
+        po!("community",           "Tor Community",       tor => "communitytpo-contentspot",       "contents+{}.po"),
+        po!("about",               "About Tor Project",   tor => "tpo-web",                        "contents+{}.po"),
+        po!("tails-misc",          "Tails miscellaneous", tor => "tails-misc",                     "{}.po"),
+        po!("code-of-conduct",     "Code of Conduct",     tor => "policies-code_of_conducttxtpot", "code_of_conduct+{}.po"),
+        po!("onion-sprouts-bot",   "Onion Sprout Bot",    tor => "onionsproutsbot",                "onionsproutsbot+{}.po"),
+        po!("tor-animation-title", "Tor Animation title", tor => "tor_animation",                  "title-{}.po"),
+        po!("tor-check",           "Tor check",           tor => "torcheck",                       "{}/torcheck.po"),
 
-        dtd!("browser-about-dialog", "Tor Browser about dialog", tor => "tor-browser", "aboutDialog"),
-        dtd!("browser-about-update", "Tor Browser about update", tor => "tor-browser", "aboutTBUpdate"),
-        dtd!("browser-about-tor",    "Tor Browser about Tor",    tor => "tor-browser", "aboutTor"),
-        dtd!("browser-branding",     "Tor Browser branding",     tor => "tor-browser", "brand"),
-        dtd!("browser-tor-buttons",  "Tor Browser tor buttons",  tor => "tor-browser", "torbutton"),
+        dtd!("torbrowser-about-dialog", "Tor Browser about dialog", tor => "tor-browser", "aboutDialog"),
+        dtd!("torbrowser-about-update", "Tor Browser about update", tor => "tor-browser", "aboutTBUpdate"),
+        dtd!("torbrowser-about-tor",    "Tor Browser about Tor",    tor => "tor-browser", "aboutTor"),
+        dtd!("torbrowser-branding",     "Tor Browser branding",     tor => "tor-browser", "brand"),
+        dtd!("torbrowser-tor-buttons",  "Tor Browser tor buttons",  tor => "tor-browser", "torbutton"),
 
-        srt!("onionshare-subtitles", "OnionShare introduction video",  tor => "onionshare-introduction-video-subtitles", "src/onionshare-introduction.srt",  "onionshare-introduction-subs-{}.srt"),
-        srt!("bridges-subtitles",    "Bridges introduction video",     tor => "bridges-introduction-video-subtitles",    "src/bridges-introduction.srt",     "bridges-introduction-subtitles-{}.srt"),
-        srt!("torbrowser-subtitles", "Tor Browser introduction video", tor => "tb-introduction-video-subtitles",         "src/tor-browser-introduction.srt", "tor-browser-sub-{}.srt"),
-        srt!("tor-animation",        "Tor animation",                  tor => "tor_animation",                           "Tor_animation.srt",                "subtitles-{}.srt"),
+        srt!("onionshare-subtitles",    "OnionShare introduction video",  tor => "onionshare-introduction-video-subtitles", "src/onionshare-introduction.srt",  "onionshare-introduction-subs-{}.srt"),
+        srt!("bridges-subtitles",       "Bridges introduction video",     tor => "bridges-introduction-video-subtitles",    "src/bridges-introduction.srt",     "bridges-introduction-subtitles-{}.srt"),
+        srt!("torbrowser-subtitles",    "Tor Browser introduction video", tor => "tb-introduction-video-subtitles",         "src/tor-browser-introduction.srt", "tor-browser-sub-{}.srt"),
+        srt!("tor-animation-subtitles", "Tor animation",                  tor => "tor_animation",                           "Tor_animation.srt",                "subtitles-{}.srt"),
 
-        android!("tor-vpn",                    "Tor VPN",             tor => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
-        android!("fenix-torbrowserstringsxml", "Tor Browser Android", tor => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
+        android!("tor-vpn",        "Tor VPN",             tor => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
+        android!("torbrowser-app", "Tor Browser Android", tor => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
 
-        properties!("tor-browser-brand",              "Tor Browser brand",                tor => "tor-browser",  "brand"),
-        properties!("tor-browser-browserOnboarding",  "Tor Browser browser onboarding",   tor => "tor-browser",  "browserOnboarding"),
-        properties!("tor-browser-cryptoSafetyPrompt", "Tor Browser crypto safety prompt", tor => "tor-browser",  "cryptoSafetyPrompt"),
-        properties!("tor-browser-onboarding",         "Tor Browser onboarding",           tor => "tor-browser",  "onboarding"),
-        properties!("tor-browser-onionLocation",      "Tor Browser onion location",       tor => "tor-browser",  "onionLocation"),
-        properties!("tor-browser-rulesets",           "Tor Browser rulesets",             tor => "tor-browser",  "rulesets"),
-        properties!("tor-browser-settings",           "Tor Browser settings",             tor => "tor-browser",  "settings"),
-        properties!("tor-browser-torConnect",         "Tor Browser tor connect",          tor => "tor-browser",  "torConnect"),
-        properties!("tor-browser-torbutton",          "Tor Browser torbutton",            tor => "tor-browser",  "torbutton"),
-        properties!("tor-browser-torlauncher",        "Tor Browser torlauncher",          tor => "tor-browser",  "torlauncher"),
-        properties!("base-browser-newIdentity",       "Base Browser new identity",        tor => "base-browser", "newIdentity"),
-        properties!("base-browser-securityLevel",     "Base Browser security level",      tor => "base-browser", "securityLevel"),
+        properties!("torbrowser-brand",                "Tor Browser brand",                tor => "tor-browser",  "brand"),
+        properties!("torbrowser-browser-onboarding",   "Tor Browser browser onboarding",   tor => "tor-browser",  "browserOnboarding"),
+        properties!("torbrowser-crypto-safety-prompt", "Tor Browser crypto safety prompt", tor => "tor-browser",  "cryptoSafetyPrompt"),
+        properties!("torbrowser-onboarding",           "Tor Browser onboarding",           tor => "tor-browser",  "onboarding"),
+        properties!("torbrowser-onion-location",       "Tor Browser onion location",       tor => "tor-browser",  "onionLocation"),
+        properties!("torbrowser-rulesets",             "Tor Browser rulesets",             tor => "tor-browser",  "rulesets"),
+        properties!("torbrowser-settings",             "Tor Browser settings",             tor => "tor-browser",  "settings"),
+        properties!("torbrowser-tor-connect",          "Tor Browser tor connect",          tor => "tor-browser",  "torConnect"),
+        properties!("torbrowser-torbutton",            "Tor Browser torbutton",            tor => "tor-browser",  "torbutton"),
+        properties!("torbrowser-torlauncher",          "Tor Browser torlauncher",          tor => "tor-browser",  "torlauncher"),
+        properties!("basebrowser-new-identity",        "Base Browser new identity",        tor => "base-browser", "newIdentity"),
+        properties!("basebrowser-security-level",      "Base Browser security level",      tor => "base-browser", "securityLevel"),
 
-        browser_extension!("snowflake-messages", "Snowflake",         tor => "snowflake", "messages"),
-        browser_extension!("snowflake-website",  "Snowflake website", tor => "snowflake", "website"),
+        browser_extension!("snowflake",         "Snowflake",         tor => "snowflake", "messages"),
+        browser_extension!("snowflake-website", "Snowflake website", tor => "snowflake", "website"),
 
         // Elementary
 
@@ -556,27 +556,27 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         po!("stylesheet",                  "Stylesheet",                         elementary => "stylesheet",            "master/po"),
         po!("wallpapers",                  "Wallpapers",                         elementary => "wallpapers",            "master/po"),
 
-        json!("web-docs/installation",        elementary => "docs/installation"),
-        json!("web-docs/learning-the-basics", elementary => "docs/learning-the-basics"),
-        json!("web-docs/translation-guide",   elementary => "docs/translation-guide"),
-        json!("web-store/cart",               elementary => "store/cart"),
-        json!("web-store/index",              elementary => "store/index"),
-        json!("web-403",                      elementary => "403"),
-        json!("web-404",                      elementary => "404"),
-        json!("web-410",                      elementary => "410"),
-        json!("web-SECURITY",                 elementary => "SECURITY"),
-        json!("web-brand",                    elementary => "brand"),
-        json!("web-capnet-assist",            elementary => "capnet-assist"),
-        json!("web-code-of-conduct",          elementary => "code-of-conduct"),
-        json!("web-get-involved",             elementary => "get-involved"),
-        json!("web-index",                    elementary => "index"),
-        json!("web-layout",                   elementary => "layout"),
-        json!("web-oem",                      elementary => "oem"),
-        json!("web-open-source",              elementary => "open-source"),
-        json!("web-press",                    elementary => "press"),
-        json!("web-privacy",                  elementary => "privacy"),
-        json!("web-support",                  elementary => "support"),
-        json!("web-thank-you",                elementary => "thank-you"),
+        json!("website-docs-installation",        elementary => "docs/installation"),
+        json!("website-docs-learning-the-basics", elementary => "docs/learning-the-basics"),
+        json!("website-docs-translation-guide",   elementary => "docs/translation-guide"),
+        json!("website-store-index",              elementary => "store/index"),
+        json!("website-store-cart",               elementary => "store/cart"),
+        json!("website-403",                      elementary => "403"),
+        json!("website-404",                      elementary => "404"),
+        json!("website-410",                      elementary => "410"),
+        json!("website-security",                 elementary => "SECURITY"),
+        json!("website-brand",                    elementary => "brand"),
+        json!("website-capnet-assist",            elementary => "capnet-assist"),
+        json!("website-code-of-conduct",          elementary => "code-of-conduct"),
+        json!("website-get-involved",             elementary => "get-involved"),
+        json!("website-index",                    elementary => "index"),
+        json!("website-layout",                   elementary => "layout"),
+        json!("website-oem",                      elementary => "oem"),
+        json!("website-open-source",              elementary => "open-source"),
+        json!("website-press",                    elementary => "press"),
+        json!("website-privacy",                  elementary => "privacy"),
+        json!("website-support",                  elementary => "support"),
+        json!("website-thank-you",                elementary => "thank-you"),
 
         // Android source
 
@@ -791,10 +791,15 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         let mut set = HashSet::with_capacity(providers.len());
         for (i, provider) in providers.iter().enumerate() {
+            if !provider.id().starts_with("android-") && !provider.id().chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                panic!("Invalid id: {}, at index {i}", provider.id());
+            }
+
             if set.contains(provider.id()) {
                 panic!("Duplicate id: {}, second at index {i}", provider.id());
             }
             set.insert(provider.id());
+
             if !provider.name().is_empty() && set.contains(provider.name()) {
                 panic!("Duplicate name: {}, second at index {i}", provider.name());
             }
