@@ -242,7 +242,7 @@ macro_rules! json {
     ($id:literal, elementary => $path:literal) => {
         Arc::new(MonoProvider {
             id: concat!("elementary-", $id),
-            name: $path,
+            name: concat!("Elementary ", $path),
             group_name: Some("Elementary"),
             parse: parse_json,
             remove_char: None,
@@ -460,7 +460,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         po!("about",               "About Tor Project",   tor => "tpo-web",                        "contents+{}.po"),
         po!("tails-misc",          "Tails miscellaneous", tor => "tails-misc",                     "{}.po"),
         po!("code-of-conduct",     "Code of Conduct",     tor => "policies-code_of_conducttxtpot", "code_of_conduct+{}.po"),
-        po!("onion-sprouts-bot",   "Onion Sprout Bot",    tor => "onionsproutsbot",                "onionsproutsbot+{}.po"),
+        po!("onion-sprouts-bot",   "Onion Sprouts Bot",   tor => "onionsproutsbot",                "onionsproutsbot+{}.po"),
         po!("tor-animation-title", "Tor Animation title", tor => "tor_animation",                  "title-{}.po"),
         po!("tor-check",           "Tor check",           tor => "torcheck",                       "{}/torcheck.po"),
 
@@ -475,8 +475,8 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         srt!("torbrowser-subtitles",    "Tor Browser introduction video", tor => "tb-introduction-video-subtitles",         "src/tor-browser-introduction.srt", "tor-browser-sub-{}.srt"),
         srt!("tor-animation-subtitles", "Tor animation",                  tor => "tor_animation",                           "Tor_animation.srt",                "subtitles-{}.srt"),
 
-        android!("tor-vpn",        "Tor VPN",             tor => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
-        android!("torbrowser-app", "Tor Browser Android", tor => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
+        android!("tor-vpn",        "Tor VPN",         tor => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
+        android!("torbrowser-app", "Tor Browser App", tor => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
 
         properties!("torbrowser-brand",                "Tor Browser brand",                tor => "tor-browser",  "brand"),
         properties!("torbrowser-browser-onboarding",   "Tor Browser browser onboarding",   tor => "tor-browser",  "browserOnboarding"),
