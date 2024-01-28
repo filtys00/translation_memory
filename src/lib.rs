@@ -15,7 +15,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail};
-use log::{debug, error};
+use log::{debug, error, trace};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
@@ -60,10 +60,14 @@ impl TranslationStore {
         debug!("Read cache file in {} seconds", now.elapsed().as_secs());
 
         store.translations.retain(|scope, _| {
-            store
+            let retain = store
                 .providers
                 .iter()
-                .any(|provider| provider.id() == scope)
+                .any(|provider| provider.id() == scope);
+            if !retain {
+                trace!("Unknown provider in translation cache: {scope}");
+            }
+            retain
         });
 
         Ok(store)
