@@ -80,6 +80,15 @@ pub fn parse_android(text: String) -> anyhow::Result<HashMap<String, (String, Op
                     continue;
                 };
 
+                if text.len() > 2
+                    && text.starts_with('"')
+                    && text.ends_with('"')
+                    && !text[1..(text.len() - 1)].contains('"')
+                {
+                    text.remove(text.len() - 1);
+                    text.remove(0);
+                }
+
                 resources.insert(n, (text, comment));
 
                 comment = None;
