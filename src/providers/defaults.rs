@@ -792,16 +792,19 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         let mut set = HashSet::with_capacity(providers.len());
         for (i, provider) in providers.iter().enumerate() {
             if !provider.id().starts_with("android-") && !provider.id().chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-                panic!("Invalid id: {}, at index {i}", provider.id());
+                panic!("Invalid id: '{}', at index {i}", provider.id());
+            }
+            if provider.group_name() != Some("Android") && provider.name() == "" {
+                panic!("Provider has empty name: '{}', at index {i}", provider.id());
             }
 
             if set.contains(provider.id()) {
-                panic!("Duplicate id: {}, second at index {i}", provider.id());
+                panic!("Duplicate id: '{}', second at index {i}", provider.id());
             }
             set.insert(provider.id());
 
             if !provider.name().is_empty() && set.contains(provider.name()) {
-                panic!("Duplicate name: {}, second at index {i}", provider.name());
+                panic!("Duplicate name: '{}', second at index {i}", provider.name());
             }
             set.insert(provider.name());
         }
