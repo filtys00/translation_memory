@@ -857,7 +857,13 @@
 
 			/** How many translations have been downloaded */
 			let translationCount = 0;
-			
+
+			/**
+			 * An `AbortController` for requesting translations.
+			 * @type AbortController?
+			 */
+			let translationController = null;
+
 			/**
 			 * Replace the translations in `translationList` with new ones.
 			 */
@@ -871,7 +877,13 @@
 					return;
 				}
 
-				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&limit=${downloadAtOnce}`).then(
+				if (translationController) { translationController.abort(); }
+				translationController = new AbortController();
+
+				fetch(
+					`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&limit=${downloadAtOnce}`,
+					{ signal: translationController.signal },
+				).then(
 					async response => {
 						const translations = await response.json();
 
@@ -885,11 +897,17 @@
 
 						window.scrollTo(0, 0);
 					},
-					e => console.error(e),
+					e => {
+						if (e.name === "AbortError") { return; }
+						console.error(e);
+					},
 				);
 
 				titles.classList.add("loading");
-				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&count=true`).then(
+				fetch(
+					`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&count=true`,
+					{ signal: translationController.signal },
+				).then(
 					async response => {
 						const count = await response.json();
 
@@ -899,12 +917,13 @@
 						titles.classList.remove("loading");
 					},
 					e => {
+						if (e.name === "AbortError") { return; }
+						console.error(e);
+
 						totalTranslationCount = null;
 						setTranslationCountLabel(translationCount, null);
 
 						titles.classList.remove("loading");
-						
-						console.error(e);
 					},
 				);
 			}
@@ -921,7 +940,10 @@
 					return;
 				}
 
-				fetch(`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`).then(
+				fetch(
+					`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`,
+					{ signal: translationController.signal },
+				).then(
 					async response => {
 						const translations = await response.json();
 
@@ -933,7 +955,10 @@
 						}
 						populateTranslations(translations, regex, true);
 					},
-					e => console.error(e),
+					e => {
+						if (e.name === "AbortError") { return; }
+						console.error(e);
+					},
 				);
 			}
 
