@@ -275,9 +275,14 @@
 				padding-bottom: 0.5rem;
 				border-bottom: var(--color-border-popup) 1px solid;
 			}
+			#languagesAndScopesDialog {
+				max-height: calc(100vh - 5.5rem);
+			}
 			#languages, #scopes {
 				padding: 0;
 				margin: 0;
+
+				overflow-y: auto;
 
 				list-style: none;
 			}
