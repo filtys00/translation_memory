@@ -206,7 +206,7 @@ async fn debug_api(
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, Json(e.to_string())))
     } else {
         let value = match (scope, group, language) {
-            (None, None, None) => serde_json::to_value(&*store),
+            (None, None, None) => serde_json::to_value(&store.translations),
             (Some(scope), _, None) => {
                 let Some(translations) = store.translations.get(scope) else {
                     return Err((
@@ -525,7 +525,7 @@ async fn update_api(
     };
 
     debug!("Writing translations to disk");
-    if let Err(e) = store.write_to(CACHE_PATH) {
+    if let Err(e) = store.write_to_file(CACHE_PATH) {
         error!("Could not save transaltions: {e}");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
@@ -588,7 +588,7 @@ async fn update_all_api(
     };
 
     debug!("Writing translations to disk");
-    if let Err(e) = store.write_to(CACHE_PATH) {
+    if let Err(e) = store.write_to_file(CACHE_PATH) {
         error!("Could not save transaltions: {e}");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }

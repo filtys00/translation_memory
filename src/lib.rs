@@ -31,10 +31,7 @@ pub struct Translation {
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(transparent)]
 pub struct TranslationStore {
-    #[serde(skip, default = "default_providers")]
     providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
 
     pub translations: BTreeMap<String, BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>>,
@@ -50,36 +47,33 @@ impl Default for TranslationStore {
 }
 
 impl TranslationStore {
-    pub fn from_file(file: impl AsRef<Path>) -> Result<Self, anyhow::Error> {
+    pub fn load_translations(&mut self, file: impl AsRef<Path>) -> anyhow::Result<()> {
         let now = Instant::now();
         let file = File::open(&file)
             .map_err(|e| anyhow!("Could not open file {:?}: {e}", file.as_ref()))?;
         let reader = BufReader::new(file);
         let reader = XzDecoder::new(reader);
-        let mut store: TranslationStore = bincode::deserialize_from(reader)?;
+        self.translations = bincode::deserialize_from(reader)?;
         debug!("Read cache file in {} seconds", now.elapsed().as_secs());
 
-        store.translations.retain(|scope, _| {
-            let retain = store
-                .providers
-                .iter()
-                .any(|provider| provider.id() == scope);
+        self.translations.retain(|scope, _| {
+            let retain = self.providers.iter().any(|provider| provider.id() == scope);
             if !retain {
                 trace!("Unknown provider in translation cache: {scope}");
             }
             retain
         });
 
-        Ok(store)
+        Ok(())
     }
 
-    pub fn write_to(&self, file: impl AsRef<Path>) -> Result<(), anyhow::Error> {
+    pub fn write_to_file(&self, file: impl AsRef<Path>) -> anyhow::Result<()> {
         let now = Instant::now();
         let file = File::create(&file)
             .map_err(|e| anyhow!("Could not create file {:?}: {e}", file.as_ref()))?;
         let writer = BufWriter::new(file);
         let writer = XzEncoder::new(writer, 0);
-        bincode::serialize_into(writer, self)?;
+        bincode::serialize_into(writer, &self.translations)?;
         debug!("Wrote cache file in {} seconds", now.elapsed().as_secs());
         Ok(())
     }

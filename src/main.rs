@@ -81,12 +81,12 @@ async fn main() {
         })
         .init();
 
-    let mut store = if Path::new(CACHE_PATH).exists() {
-        info!("Reading caches translations from '{CACHE_PATH}'...");
-        TranslationStore::from_file(CACHE_PATH).unwrap()
-    } else {
-        TranslationStore::default()
-    };
+    let mut store = TranslationStore::default();
+
+    if Path::new(CACHE_PATH).exists() {
+        info!("Reading cached translations from '{CACHE_PATH}'...");
+        store.load_translations(CACHE_PATH).unwrap();
+    }
 
     if !args.generate.is_empty() {
         let lang_ids = if args.language.is_empty() {
@@ -100,7 +100,7 @@ async fn main() {
         if let Err(e) = store.generate(lang_ids, args.generate, false).await {
             error!("{e}");
         }
-        if let Err(e) = store.write_to(CACHE_PATH) {
+        if let Err(e) = store.write_to_file(CACHE_PATH) {
             error!("{e}");
         }
         return;

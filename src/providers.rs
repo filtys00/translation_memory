@@ -16,7 +16,6 @@ mod srt;
 
 use std::{
     collections::{BTreeMap, HashMap},
-    fmt::{self, Debug, Formatter},
     sync::Arc,
 };
 
@@ -44,12 +43,6 @@ pub trait TranslationProvider {
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
     ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error>;
-}
-
-impl Debug for dyn TranslationProvider + Send + Sync {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "provider({})", self.id())
-    }
 }
 
 /// Returns a string version of `lang_id`.
