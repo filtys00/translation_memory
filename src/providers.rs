@@ -38,6 +38,11 @@ pub trait TranslationProvider {
         None
     }
 
+    /// Returns `true` if associated data should not be saved to disk.
+    fn temporary(&self) -> bool {
+        false
+    }
+
     async fn generate(
         &self,
         lang_ids: Vec<LanguageIdentifier>,

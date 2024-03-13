@@ -18,6 +18,7 @@ use unic_langid::LanguageIdentifier;
 use self::web_server::web_server;
 
 const CACHE_PATH: &str = "translations.bin.xz";
+const CONFIG_PATH: &str = "translations.toml";
 
 #[derive(Debug, Parser)]
 struct Args {
@@ -86,6 +87,11 @@ async fn main() {
     if Path::new(CACHE_PATH).exists() {
         info!("Reading cached translations from '{CACHE_PATH}'...");
         store.load_translations(CACHE_PATH).unwrap();
+    }
+
+    if Path::new(CONFIG_PATH).exists() {
+        info!("Reading config from '{CONFIG_PATH}'...");
+        store.load_config(CONFIG_PATH).unwrap();
     }
 
     if !args.generate.is_empty() {

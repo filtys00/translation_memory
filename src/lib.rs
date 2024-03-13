@@ -8,13 +8,14 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     fs::File,
-    io::{BufReader, BufWriter},
+    io::{BufReader, BufWriter, Read},
     path::Path,
     sync::Arc,
     time::Instant,
 };
 
 use anyhow::{anyhow, bail};
+use async_trait::async_trait;
 use log::{debug, error, trace};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,59 @@ pub struct TranslationStore {
     providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
 
     pub translations: BTreeMap<String, BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct Config {
+    translations: Vec<ConfigEntry>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ConfigEntry {
+    #[serde(rename = "type")]
+    format: String,
+    name: String,
+    group_name: Option<String>,
+    paths: Vec<ConfigEntryPath>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct ConfigEntryPath {
+    language: LanguageIdentifier,
+    path: String,
+}
+
+struct NothingProvider {
+    id: String,
+    name: String,
+    group_name: Option<String>,
+}
+
+#[async_trait]
+impl TranslationProvider for NothingProvider {
+    fn id(&self) -> &str {
+        &self.id
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn group_name(&self) -> Option<&str> {
+        self.group_name.as_deref()
+    }
+
+    fn temporary(&self) -> bool {
+        true
+    }
+
+    async fn generate(
+        &self,
+        _lang_ids: Vec<LanguageIdentifier>,
+        _client: Arc<Client>,
+    ) -> anyhow::Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>> {
+        bail!("Should already be generated: {}", &self.id)
+    }
 }
 
 impl Default for TranslationStore {
@@ -67,13 +121,71 @@ impl TranslationStore {
         Ok(())
     }
 
+    pub fn load_config(&mut self, file: impl AsRef<Path>) -> anyhow::Result<()> {
+        let now = Instant::now();
+
+        let mut file = File::open(file)?;
+        let mut toml = String::with_capacity(
+            file.metadata()
+                .map_or(0, |metadata| metadata.len() as usize),
+        );
+        file.read_to_string(&mut toml)?;
+        let config: Config = toml::from_str(&toml)?;
+
+        let mut config_texts = Vec::with_capacity(config.translations.len());
+        for entry in &config.translations {
+            let mut texts = HashMap::with_capacity(entry.paths.len());
+            for entry in &entry.paths {
+                let mut file = File::open(&entry.path)?;
+                let mut text = String::with_capacity(
+                    file.metadata()
+                        .map_or(0, |metadata| metadata.len() as usize),
+                );
+                file.read_to_string(&mut text)?;
+                texts.insert(entry.language.clone(), text);
+            }
+            config_texts.push((entry, texts));
+        }
+
+        for (i, (entry, texts)) in config_texts.into_iter().enumerate() {
+            let translations = match entry.format.as_str() {
+                file_type => bail!("Unsupported translations type: {file_type}"),
+            };
+
+            let id = format!("localfile:{i}");
+            self.translations.entry(id.clone()).or_insert(translations);
+            self.providers.push(Arc::new(NothingProvider {
+                id,
+                name: entry.name.clone(),
+                group_name: entry.group_name.clone(),
+            }));
+        }
+
+        debug!("Read config in {} seconds", now.elapsed().as_secs());
+        Ok(())
+    }
+
     pub fn write_to_file(&self, file: impl AsRef<Path>) -> anyhow::Result<()> {
         let now = Instant::now();
+
         let file = File::create(&file)
             .map_err(|e| anyhow!("Could not create file {:?}: {e}", file.as_ref()))?;
         let writer = BufWriter::new(file);
         let writer = XzEncoder::new(writer, 0);
-        bincode::serialize_into(writer, &self.translations)?;
+
+        let mut translations: HashMap<
+            &String,
+            &BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
+        > = self.translations.iter().collect();
+        translations.retain(|scope, _| {
+            self.providers
+                .iter()
+                .find(|provider| provider.id() == *scope)
+                .map_or(false, |provider| !provider.temporary())
+        });
+
+        bincode::serialize_into(writer, &translations)?;
+
         debug!("Wrote cache file in {} seconds", now.elapsed().as_secs());
         Ok(())
     }
