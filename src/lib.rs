@@ -23,7 +23,7 @@ use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 use xz2::{read::XzDecoder, write::XzEncoder};
 
-use self::providers::{default_providers, parse_android, TranslationProvider};
+use self::providers::{default_providers, parse_android, parse_tbx, TranslationProvider};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {
@@ -178,6 +178,17 @@ impl TranslationStore {
                                 comment: comment.as_ref().cloned(),
                             });
                         }
+                        translations.insert(lang_id, Some(t));
+                    }
+
+                    translations
+                }
+                "microsofttbx" => {
+                    let mut translations = BTreeMap::new();
+
+                    for (lang_id, text) in texts {
+                        let t = parse_tbx(text, &lang_id)
+                            .map_err(|e| anyhow!("Could not parse type 'microsofttbx': {e}"))?;
                         translations.insert(lang_id, Some(t));
                     }
 

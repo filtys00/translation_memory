@@ -8,6 +8,7 @@ mod chrome;
 mod defaults;
 mod dtd;
 mod json;
+mod microsoft;
 mod minecraft;
 mod mozilla;
 mod po;
@@ -25,7 +26,7 @@ use log::trace;
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
 
-pub use self::{android::parse_android, defaults::default_providers};
+pub use self::{android::parse_android, defaults::default_providers, microsoft::parse_tbx};
 use super::Translation;
 
 #[async_trait]
