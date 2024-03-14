@@ -16,7 +16,7 @@ use std::{
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use log::{debug, error, trace};
+use log::{debug, error, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
@@ -113,7 +113,7 @@ impl TranslationStore {
         self.translations.retain(|scope, _| {
             let retain = self.providers.iter().any(|provider| provider.id() == scope);
             if !retain {
-                trace!("Unknown provider in translation cache: {scope}");
+                warn!("Unknown provider in translation cache: {scope}");
             }
             retain
         });
