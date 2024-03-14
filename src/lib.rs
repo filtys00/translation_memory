@@ -23,7 +23,7 @@ use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 use xz2::{read::XzDecoder, write::XzEncoder};
 
-use self::providers::{default_providers, TranslationProvider};
+use self::providers::{default_providers, parse_android, TranslationProvider};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {
@@ -149,6 +149,40 @@ impl TranslationStore {
 
         for (i, (entry, texts)) in config_texts.into_iter().enumerate() {
             let translations = match entry.format.as_str() {
+                "androidxml" => {
+                    let mut translations = BTreeMap::new();
+
+                    let en: LanguageIdentifier = "en".parse().unwrap();
+
+                    let text = texts
+                        .get(&en)
+                        .ok_or_else(|| anyhow!("Entry '{}' has no language 'en'", entry.name))?
+                        .to_string();
+                    let messages_en = parse_android(text)?;
+
+                    for (lang_id, text) in texts {
+                        if lang_id == en {
+                            continue;
+                        }
+                        let messages = parse_android(text)
+                            .map_err(|e| anyhow!("Could not parse type 'androidxml': {e}"))?;
+
+                        let mut t = Vec::with_capacity(messages.len());
+                        for (key, (translation, _comment)) in messages {
+                            let Some((original, comment)) = messages_en.get(&key) else {
+                                continue;
+                            };
+                            t.push(Translation {
+                                original: original.clone(),
+                                translation,
+                                comment: comment.as_ref().cloned(),
+                            });
+                        }
+                        translations.insert(lang_id, Some(t));
+                    }
+
+                    translations
+                }
                 file_type => bail!("Unsupported translations type: {file_type}"),
             };
 
