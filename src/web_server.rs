@@ -24,8 +24,6 @@ use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::{Translation, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
-use super::CACHE_PATH;
-
 pub async fn web_server(store: TranslationStore) -> io::Result<()> {
     let store = Arc::new(Mutex::new(store));
 
@@ -525,7 +523,7 @@ async fn update_api(
     };
 
     debug!("Writing translations to disk");
-    if let Err(e) = store.write_to_file(CACHE_PATH) {
+    if let Err(e) = store.save_translations() {
         error!("Could not save transaltions: {e}");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }
@@ -588,7 +586,7 @@ async fn update_all_api(
     };
 
     debug!("Writing translations to disk");
-    if let Err(e) = store.write_to_file(CACHE_PATH) {
+    if let Err(e) = store.save_translations() {
         error!("Could not save transaltions: {e}");
         return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
     }

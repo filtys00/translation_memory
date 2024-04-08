@@ -17,7 +17,7 @@ use unic_langid::LanguageIdentifier;
 
 use self::web_server::web_server;
 
-const CACHE_PATH: &str = "translations.bin.xz";
+const DEFAULT_CACHE_PATH: &str = "translations.bin.xz";
 const CONFIG_PATH: &str = "translations.toml";
 
 #[derive(Debug, Parser)]
@@ -92,17 +92,15 @@ async fn main() {
         })
         .init();
 
-    let mut store = TranslationStore::default();
-
-    if Path::new(CACHE_PATH).exists() {
-        info!("Reading cached translations from '{CACHE_PATH}'...");
-        store.load_translations(CACHE_PATH).unwrap();
-    }
+    let mut store = TranslationStore::new(DEFAULT_CACHE_PATH.into());
 
     if Path::new(CONFIG_PATH).exists() {
         info!("Reading config from '{CONFIG_PATH}'...");
         store.load_config(CONFIG_PATH).unwrap();
     }
+
+    info!("Reading cached translations from '{DEFAULT_CACHE_PATH}'...");
+    store.load_translations().unwrap();
 
     if !args.remove.is_empty() {
         for name in &args.remove {
@@ -133,7 +131,7 @@ async fn main() {
                 }
             }
         }
-        if let Err(e) = store.write_to_file(CACHE_PATH) {
+        if let Err(e) = store.save_translations() {
             error!("{e}");
         }
     }
@@ -150,7 +148,7 @@ async fn main() {
         if let Err(e) = store.generate(lang_ids, args.generate.clone(), false).await {
             error!("{e}");
         }
-        if let Err(e) = store.write_to_file(CACHE_PATH) {
+        if let Err(e) = store.save_translations() {
             error!("{e}");
         }
     }

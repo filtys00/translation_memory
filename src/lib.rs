@@ -9,7 +9,7 @@ use std::{
     fmt::Debug,
     fs::File,
     io::{BufReader, BufWriter, Read},
-    path::Path,
+    path::{Path, PathBuf},
     sync::Arc,
     time::Instant,
 };
@@ -35,11 +35,14 @@ pub struct Translation {
 pub struct TranslationStore {
     providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
 
+    save_path: PathBuf,
+
     pub translations: BTreeMap<String, BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>>,
 }
 
 #[derive(Deserialize, Serialize)]
 struct Config {
+    translations_path: Option<PathBuf>,
     translations: Vec<ConfigEntry>,
 }
 
@@ -91,26 +94,36 @@ impl TranslationProvider for NothingProvider {
     }
 }
 
-impl Default for TranslationStore {
-    fn default() -> Self {
+impl TranslationStore {
+    /// Returns a new `TranslationStore` that loads and saves translations to `save_path`.
+    pub fn new(save_path: PathBuf) -> Self {
         Self {
             providers: default_providers(),
+            save_path,
             translations: BTreeMap::new(),
         }
     }
-}
 
-impl TranslationStore {
-    pub fn load_translations(&mut self, file: impl AsRef<Path>) -> anyhow::Result<()> {
+    /// Load translations from the save path.
+    ///
+    /// Returns `false` if no file were found at the save path.
+    pub fn load_translations(&mut self) -> anyhow::Result<bool> {
+        if !self.save_path.exists() || !self.save_path.is_file() {
+            return Ok(false);
+        }
+
         let now = Instant::now();
-        let file = File::open(&file)
-            .map_err(|e| anyhow!("Could not open file {:?}: {e}", file.as_ref()))?;
+        let file = File::open(&self.save_path)
+            .map_err(|e| anyhow!("Could not open file {:?}: {e}", self.save_path))?;
         let reader = BufReader::new(file);
         let reader = XzDecoder::new(reader);
-        self.translations = bincode::deserialize_from(reader)?;
+        let mut translations: HashMap<
+            String,
+            BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
+        > = bincode::deserialize_from(reader)?;
         debug!("Read cache file in {} seconds", now.elapsed().as_secs());
 
-        self.translations.retain(|scope, _| {
+        translations.retain(|scope, _| {
             let retain = self.providers.iter().any(|provider| provider.id() == scope);
             if !retain {
                 warn!("Unknown provider in translation cache: {scope}");
@@ -118,9 +131,12 @@ impl TranslationStore {
             retain
         });
 
-        Ok(())
+        self.translations.extend(translations);
+
+        Ok(true)
     }
 
+    /// Read and load a TOML config file from `file`.
     pub fn load_config(&mut self, file: impl AsRef<Path>) -> anyhow::Result<()> {
         let now = Instant::now();
 
@@ -131,6 +147,10 @@ impl TranslationStore {
         );
         file.read_to_string(&mut toml)?;
         let config: Config = toml::from_str(&toml)?;
+
+        if let Some(translations_path) = config.translations_path {
+            self.save_path = translations_path;
+        }
 
         let mut config_texts = Vec::with_capacity(config.translations.len());
         for entry in &config.translations {
@@ -210,11 +230,12 @@ impl TranslationStore {
         Ok(())
     }
 
-    pub fn write_to_file(&self, file: impl AsRef<Path>) -> anyhow::Result<()> {
+    /// Write translations to the save path.
+    pub fn save_translations(&self) -> anyhow::Result<()> {
         let now = Instant::now();
 
-        let file = File::create(&file)
-            .map_err(|e| anyhow!("Could not create file {:?}: {e}", file.as_ref()))?;
+        let file = File::create(&self.save_path)
+            .map_err(|e| anyhow!("Could not create file {:?}: {e}", self.save_path))?;
         let writer = BufWriter::new(file);
         let writer = XzEncoder::new(writer, 0);
 
