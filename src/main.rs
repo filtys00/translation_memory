@@ -17,7 +17,7 @@ use unic_langid::LanguageIdentifier;
 
 use self::web_server::web_server;
 
-const DEFAULT_CACHE_PATH: &str = "translations.bin.xz";
+const DEFAULT_CACHE_PATH: &str = "translations.bin.gz";
 const CONFIG_PATH: &str = "translations.toml";
 
 #[derive(Debug, Parser)]

@@ -16,12 +16,12 @@ use std::{
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
+use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use log::{debug, error, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
-use xz2::{read::XzDecoder, write::XzEncoder};
 
 use self::providers::{default_providers, parse_android, parse_tbx, TranslationProvider};
 
@@ -116,7 +116,7 @@ impl TranslationStore {
         let file = File::open(&self.save_path)
             .map_err(|e| anyhow!("Could not open file {:?}: {e}", self.save_path))?;
         let reader = BufReader::new(file);
-        let reader = XzDecoder::new(reader);
+        let reader = GzDecoder::new(reader);
         let mut translations: HashMap<
             String,
             BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
@@ -237,7 +237,7 @@ impl TranslationStore {
         let file = File::create(&self.save_path)
             .map_err(|e| anyhow!("Could not create file {:?}: {e}", self.save_path))?;
         let writer = BufWriter::new(file);
-        let writer = XzEncoder::new(writer, 0);
+        let writer = GzEncoder::new(writer, Compression::fast());
 
         let mut translations: HashMap<
             &String,
