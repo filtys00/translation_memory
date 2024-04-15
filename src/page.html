@@ -177,12 +177,14 @@
 				background-color: var(--color-background-field);
 			}
 			.originalText, .translationText, #originalsTitle, #translationsTitle {
+				box-sizing: border-box;
 				width: 40vw;
 				margin: 0;
 				padding: 1rem;
 			}
 			.scopeText {
-				width: 20vw;
+				box-sizing: border-box;
+				width: calc(20vw - 1rem - 1px);
 				margin: 0;
 				padding: 1rem;
 				text-align: end;
