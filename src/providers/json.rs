@@ -22,3 +22,17 @@ pub fn parse_json(text: String) -> anyhow::Result<Vec<Translation>> {
     }
     Ok(translations)
 }
+
+pub fn parse_freeshow_json(
+    text: String,
+) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+    let json: HashMap<String, HashMap<String, String>> = serde_json::from_str(&text)?;
+
+    let mut translations = HashMap::new();
+    for (category_key, strings) in json {
+        for (key, string) in strings {
+            translations.insert(format!("{category_key}.{key}"), (string, None));
+        }
+    }
+    Ok(translations)
+}

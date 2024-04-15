@@ -9,7 +9,7 @@ use super::{
     browser_extension::parse_browser_extension,
     chrome::ChromeProvider,
     dtd::parse_dtd,
-    json::parse_json,
+    json::{parse_freeshow_json, parse_json},
     lang_id_to_string,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
@@ -425,6 +425,20 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             name: "KDE",
             urls: graphql_kde,
             remove_char: Some('&'),
+        }),
+
+        Arc::new(DuoProvider {
+            id: "freeshow",
+            name: "FreeShow",
+            group_name: None,
+            parse: parse_freeshow_json,
+            default_url: "https://raw.githubusercontent.com/ChurchApps/FreeShow/main/public/lang/en.json",
+            url: |lang_id| {
+                format!(
+                    "https://raw.githubusercontent.com/ChurchApps/FreeShow/main/public/lang/{}.json",
+                    lang_id_to_string(lang_id, "_", true, "@", false),
+                )
+            },
         }),
 
         po!("duckduckgo", "DuckDuckGo",         None,            None,                  github => "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po"),
