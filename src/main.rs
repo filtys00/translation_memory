@@ -316,7 +316,7 @@ async fn main() {
         webbrowser::open("http://127.0.0.1:2013/").unwrap();
     }
 
-    info!("Starting web server...");
+    info!("Starting web server at 'http://127.0.0.1:2013/'...");
     if let Err(e) = web_server(store).await {
         error!("Could not start web server: {e}");
         return;
