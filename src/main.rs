@@ -60,7 +60,7 @@ async fn main() {
             if args.verbose {
                 LevelFilter::max()
             } else {
-                LevelFilter::Debug
+                LevelFilter::Info
             },
         )
         .format(move |buf, record| {
