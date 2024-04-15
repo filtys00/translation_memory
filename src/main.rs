@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use log::{error, info, warn, Level, LevelFilter};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use translation_memory::TranslationStore;
@@ -20,11 +20,26 @@ use self::web_server::web_server;
 const DEFAULT_CACHE_PATH: &str = "translations.bin.gz";
 const CONFIG_PATH: &str = "translations.toml";
 
+#[derive(Clone, Debug, ValueEnum)]
+enum VerboseMode {
+    None,
+    Info,
+    Debug,
+    WebServer,
+    Providers,
+    All,
+}
+
 #[derive(Debug, Parser)]
 struct Args {
     /// Output all logs, including trace logs.
-    #[arg(long, default_value_t = false)]
-    verbose: bool,
+    #[arg(
+        value_enum, long,
+        default_value_t = VerboseMode::Info,
+        default_missing_value = "all",
+        num_args = 0..=1, require_equals = true,
+    )]
+    verbose: VerboseMode,
 
     /// Do not open the system web browser when the web server starts.
     #[arg(long = "nobrowser", conflicts_with = "statement")]
@@ -54,43 +69,63 @@ async fn main() {
     let args = Args::parse();
 
     let term_width = termsize::get().map_or(80, |size| size.cols as usize);
-    env_logger::builder()
-        .filter_module(
-            env!("CARGO_PKG_NAME"),
-            if args.verbose {
-                LevelFilter::max()
-            } else {
-                LevelFilter::Info
-            },
+    let mut logger = env_logger::builder();
+    logger.format(move |buf, record| {
+        let mut dimmed_style = buf.style();
+        dimmed_style.set_color(env_logger::fmt::Color::Black);
+        dimmed_style.set_intense(true);
+
+        write!(
+            buf,
+            "{}{} {}{}",
+            dimmed_style.value('['),
+            buf.default_styled_level(record.level()),
+            record.target(),
+            dimmed_style.value(']'),
+        )?;
+
+        let level_length = match record.level() {
+            Level::Error | Level::Debug | Level::Trace => 5,
+            Level::Warn | Level::Info => 4,
+        };
+
+        writeln_max_width(
+            buf,
+            &record.args().to_string(),
+            3 + level_length + record.target().len(),
+            1 + level_length,
+            term_width,
         )
-        .format(move |buf, record| {
-            let mut dimmed_style = buf.style();
-            dimmed_style.set_color(env_logger::fmt::Color::Black);
-            dimmed_style.set_intense(true);
-
-            write!(
-                buf,
-                "{}{} {}{}",
-                dimmed_style.value('['),
-                buf.default_styled_level(record.level()),
-                record.target(),
-                dimmed_style.value(']'),
-            )?;
-
-            let level_length = match record.level() {
-                Level::Error | Level::Debug | Level::Trace => 5,
-                Level::Warn | Level::Info => 4,
-            };
-
-            writeln_max_width(
-                buf,
-                &record.args().to_string(),
-                3 + level_length + record.target().len(),
-                1 + level_length,
-                term_width,
-            )
-        })
-        .init();
+    });
+    match args.verbose {
+        VerboseMode::None => {
+            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Off);
+        }
+        VerboseMode::Info => {
+            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info);
+        }
+        VerboseMode::Debug => {
+            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Debug);
+        }
+        VerboseMode::WebServer => {
+            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info);
+            logger.filter_module(
+                concat!(env!("CARGO_PKG_NAME"), "::web_server"),
+                LevelFilter::max(),
+            );
+        }
+        VerboseMode::Providers => {
+            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info);
+            logger.filter_module(
+                concat!(env!("CARGO_PKG_NAME"), "::providers"),
+                LevelFilter::max(),
+            );
+        }
+        VerboseMode::All => {
+            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::max());
+        }
+    }
+    logger.init();
 
     let mut store = TranslationStore::new(DEFAULT_CACHE_PATH.into());
 

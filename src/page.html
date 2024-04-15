@@ -181,19 +181,17 @@
 				margin: 0;
 				padding: 1rem;
 			}
-			.scopeText, #scopesTitle {
+			.scopeText {
 				width: 20vw;
 				margin: 0;
 				padding: 1rem;
-			}
-			.scopeText {
 				text-align: end;
 			}
 			.originalText, .translationText, .scopeText {
 				overflow: hidden;
 				overflow-wrap: break-word;
 			}
-			#originalsTitle, #translationsTitle, #scopesTitle {
+			#originalsTitle, #translationsTitle {
 				font-weight: bold;
 
 				overflow: hidden;
@@ -451,7 +449,6 @@
 			<div id="titles">
 				<p id="originalsTitle">Original</p>
 				<p id="translationsTitle">Translation</p>
-				<p id="scopesTitle">Translation</p>
 				<p id="translationCount"></p>
 				<img id="translationSpinner" src="/icon/loading.svg">
 			</div>
@@ -486,7 +483,6 @@
 			const titles = document.getElementById("titles");
 			const originalsTitle = document.getElementById("originalsTitle");
 			const translationsTitle = document.getElementById("translationsTitle");
-			const scopesTitle = document.getElementById("scopesTitle");
 			const translationCountLabel = document.getElementById("translationCount");
 
 			const translationList = document.getElementById("translations");
@@ -521,7 +517,6 @@
 			languagesAndScopesButton.innerText = "Mål og vidd";
 			originalsTitle.innerText = "Opprinneleg";
 			translationsTitle.innerText = "Omsetjing";
-			scopesTitle.innerText = "Vidd";
 			noTranslations.innerText = "Ingen resultat";
 
 			function setTranslationCountLabel(count, totalCount) {
