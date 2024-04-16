@@ -11,6 +11,8 @@ use unic_langid::LanguageIdentifier;
 
 use crate::providers::lang_id_to_string;
 
+// KDE GitLab GraphiQL: https://invent.kde.org/-/graphql-explorer
+
 pub async fn graphql_kde(
     lang_id: LanguageIdentifier,
     client: Arc<Client>,
@@ -34,8 +36,8 @@ pub async fn graphql_kde(
                     node {{
                         webUrl
                         repository {{
-                            po:   tree(path: \"po/{0}\", ref: \"master\") {{ ...Tree }}
-                            poqm: tree(path: \"poqm/{0}\", ref: \"master\") {{ ...Tree }}
+                            po:   tree(path: \"po/{0}\") {{ ...Tree }}
+                            poqm: tree(path: \"poqm/{0}\") {{ ...Tree }}
                         }}
                     }}
                 }}
@@ -72,13 +74,13 @@ pub async fn graphql_kde(
                 if let Some(tree) = repository.po {
                     for blob in tree.blobs.edges {
                         let path = blob.node.path;
-                        urls.push(format!("{web_url}/-/raw/master/{path}"));
+                        urls.push(format!("{web_url}/-/raw/HEAD/{path}"));
                     }
                 }
                 if let Some(tree) = repository.poqm {
                     for blob in tree.blobs.edges {
                         let path = blob.node.path;
-                        urls.push(format!("{web_url}/-/raw/master/{path}"));
+                        urls.push(format!("{web_url}/-/raw/HEAD/{path}"));
                     }
                 }
             }

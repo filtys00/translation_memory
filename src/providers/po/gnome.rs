@@ -11,6 +11,8 @@ use unic_langid::LanguageIdentifier;
 
 use crate::providers::lang_id_to_string;
 
+// GNOME GitLab GraphiQL: https://gitlab.gnome.org/-/graphql-explorer
+
 pub async fn graphql_gnome(
     lang_id: LanguageIdentifier,
     client: Arc<Client>,
@@ -57,14 +59,14 @@ pub async fn graphql_gnome(
         let web_url = project.node.web_url;
         for blob in project.node.repository.blobs.edges {
             let path = blob.node.path;
-            urls.push(format!("{web_url}/-/raw/master/{path}"));
+            urls.push(format!("{web_url}/-/raw/HEAD/{path}"));
         }
     }
     for project in response.data.world.projects.edges {
         let web_url = project.node.web_url;
         for blob in project.node.repository.blobs.edges {
             let path = blob.node.path;
-            urls.push(format!("{web_url}/-/raw/master/{path}"));
+            urls.push(format!("{web_url}/-/raw/HEAD/{path}"));
         }
     }
 
