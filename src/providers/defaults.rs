@@ -480,7 +480,6 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         dtd!("torbrowser-about-dialog", "Tor Browser about dialog", tor => "tor-browser", "aboutDialog"),
         dtd!("torbrowser-about-update", "Tor Browser about update", tor => "tor-browser", "aboutTBUpdate"),
-        dtd!("torbrowser-about-tor",    "Tor Browser about Tor",    tor => "tor-browser", "aboutTor"),
         dtd!("torbrowser-branding",     "Tor Browser branding",     tor => "tor-browser", "brand"),
         dtd!("torbrowser-tor-buttons",  "Tor Browser tor buttons",  tor => "tor-browser", "torbutton"),
 
@@ -644,7 +643,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         android!(source => "packages/apps/Calendar",                    "res"),
         android!(source => "packages/apps/Camera2",                     "res"),
         android!(source => "packages/apps/Car/Calendar",                "res"),
-        android!(source => "packages/apps/Car/Launcher",                "res"),
+        android!(source => "packages/apps/Car/Launcher",                "app/res"),
         android!(source => "packages/apps/Car/LinkViewer",              "res"),
         android!(source => "packages/apps/Car/Notification",            "res"),
         android!(source => "packages/apps/Car/Settings",                "res"),
@@ -776,11 +775,9 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         android!(source => "packages/services/Car",                     "car-maps-placeholder/res"),
         android!(source => "packages/services/Car",                     "car-usb-handler/res"),
         android!(source => "packages/services/Car",                     "car_product/car_ui_portrait/apps/CarUiPortraitSystemUI/res"),
-        // The commented translations has no default translation
-        // android!("", source => "packages/services/Car",                  "car_product/car_ui_portrait/rro/CarEvsCameraPreviewAppRRO/res"),
-        // android!("", source => "packages/services/Car",                  "car_product/car_ui_portrait/rro/CarUiPortraitDialerRRO/res"),
-        // android!("", source => "packages/services/Car",                  "car_product/car_ui_portrait/rro/CarUiPortraitNotificationRRO/res"),
-        android!(source => "packages/services/Car",                     "car_product/overlay/frameworks/base/core/res/res"),
+        android!(source => "packages/services/Car",                     "car_product/car_ui_portrait/rro/CarEvsCameraPreviewAppRRO/res"),
+        android!(source => "packages/services/Car",                     "car_product/car_ui_portrait/rro/CarUiPortraitDialerRRO/res"),
+        android!(source => "packages/services/Car",                     "car_product/car_ui_portrait/rro/CarUiPortraitNotificationRRO/res"),
         android!(source => "packages/services/Car",                     "experimental/service/res"),
         android!(source => "packages/services/Car",                     "packages/CarDeveloperOptions/res"),
         android!(source => "packages/services/Car",                     "packages/CarManagedProvisioning/res"),
