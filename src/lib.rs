@@ -287,6 +287,10 @@ impl TranslationStore {
             else {
                 bail!("Provider not found: {id}");
             };
+            if provider.temporary() {
+                debug!("Skipping generating temporary provider: {}", provider.id());
+                continue;
+            }
 
             let client = client.clone();
             let lang_ids = lang_ids.clone();
