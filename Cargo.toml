@@ -28,3 +28,6 @@ toml = "0.8.11"
 unic-langid = { version = "0.9.4", features = ["serde"] }
 webbrowser = "0.8.12"
 zip = "0.6.6"
+
+[profile.dev.package.flate2]
+opt-level = 3
