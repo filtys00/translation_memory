@@ -11,7 +11,7 @@ use std::{
     io::{BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail};
@@ -20,7 +20,7 @@ use flate2::{read::GzDecoder, write::GzEncoder, Compression};
 use log::{debug, error, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use tokio::task::JoinSet;
+use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
 use self::providers::{default_providers, parse_android, parse_tbx, TranslationProvider};
@@ -290,15 +290,20 @@ impl TranslationStore {
 
             let client = client.clone();
             let lang_ids = lang_ids.clone();
-
-            join_set.spawn(async move { (id, provider.generate(lang_ids, client).await) });
+            join_set.spawn(timeout(Duration::from_secs(60), async move {
+                (id, provider.generate(lang_ids, client).await)
+            }));
         }
 
         let mut errors = HashMap::new();
 
         while let Some(join) = join_set.join_next().await {
             let (id, result) = match join {
-                Ok(t) => t,
+                Ok(Ok(t)) => t,
+                Ok(Err(e)) => {
+                    error!("Could not generate: {e}");
+                    continue;
+                }
                 Err(e) => {
                     error!("Could not generate: {e}");
                     continue;
