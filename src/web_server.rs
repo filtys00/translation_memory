@@ -400,22 +400,34 @@ async fn query_api(
     }
 
     let translations = translations.map(|(scope, lang_id, translation)| {
-        if let Some(comment) = &translation.comment {
-            json!({
-                "scope": scope,
-                "language": lang_id,
-                "comment": comment,
-                "original": translation.original,
-                "translation": translation.translation,
-            })
-        } else {
-            json!({
-                "scope": scope,
-                "language": lang_id,
-                "original": translation.original,
-                "translation": translation.translation,
-            })
+        fn regex_parse(regex: &Option<Regex>, string: &str) -> Vec<serde_json::Value> {
+            if let Some(regex) = regex {
+                let mut original = Vec::new();
+                let mut prev = 0;
+                for capture in regex.find_iter(string) {
+                    original.push(json!(string[prev..capture.start()]));
+                    original.push(json!({
+                        "marked": true,
+                        "text": string[capture.start()..capture.end()],
+                    }));
+                    prev = capture.end();
+                }
+                original.push(json!(string[prev..]));
+                original
+            } else {
+                vec![json!(string)]
+            }
         }
+        let mut json = json!({
+            "scope": scope,
+            "language": lang_id,
+            "original": regex_parse(&regex, &translation.original),
+            "translation": regex_parse(&regex, &translation.translation),
+        });
+        if let Some(comment) = &translation.comment {
+            json["comment"] = json!(comment);
+        }
+        json
     });
 
     let translations: Vec<serde_json::Value> = match (params.limit, params.skip) {
