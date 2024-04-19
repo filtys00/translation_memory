@@ -934,7 +934,7 @@
 				}
 
 				fetch(
-					`http://127.0.0.1:2013/query?regex=${searchField.value}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`,
+					`http://127.0.0.1:2013/query?regex=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`,
 					{ signal: translationController.signal },
 				).then(
 					async response => {
