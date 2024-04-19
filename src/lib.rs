@@ -61,14 +61,15 @@ struct ConfigEntryPath {
     path: String,
 }
 
-struct NothingProvider {
+/** Provider wich does not provide anything. */
+struct DummyProvider {
     id: String,
     name: String,
     group_name: Option<String>,
 }
 
 #[async_trait]
-impl TranslationProvider for NothingProvider {
+impl TranslationProvider for DummyProvider {
     fn id(&self) -> &str {
         &self.id
     }
@@ -219,7 +220,7 @@ impl TranslationStore {
 
             let id = format!("localfile:{i}");
             self.translations.entry(id.clone()).or_insert(translations);
-            self.providers.push(Arc::new(NothingProvider {
+            self.providers.push(Arc::new(DummyProvider {
                 id,
                 name: entry.name.clone(),
                 group_name: entry.group_name.clone(),
