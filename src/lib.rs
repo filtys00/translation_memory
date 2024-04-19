@@ -17,7 +17,7 @@ use std::{
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
 use flate2::{read::GzDecoder, write::GzEncoder, Compression};
-use log::{debug, error, warn};
+use log::{debug, error, trace, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tokio::{task::JoinSet, time::timeout};
@@ -219,6 +219,11 @@ impl TranslationStore {
             };
 
             let id = format!("localfile:{i}");
+            trace!(
+                "Read config entry '{}' (ID {id}): {} translations",
+                entry.name,
+                translations.len()
+            );
             self.translations.entry(id.clone()).or_insert(translations);
             self.providers.push(Arc::new(DummyProvider {
                 id,
