@@ -6,6 +6,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     io,
+    str::FromStr,
     sync::Arc,
 };
 
@@ -18,7 +19,10 @@ use axum::{
 };
 use log::{debug, error};
 use regex::Regex;
-use serde::{Deserialize, Serialize};
+use serde::{
+    de::{self, Unexpected},
+    Deserialize, Deserializer, Serialize,
+};
 use serde_json::json;
 use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::{Translation, TranslationStore};
@@ -282,115 +286,103 @@ async fn debug_api(
     }
 }
 
+#[derive(Deserialize, Serialize)]
+struct QueryParams {
+    regex: Option<String>,
+
+    #[serde(deserialize_with = "deserialize_languages")]
+    languages: Vec<LanguageIdentifier>,
+
+    #[serde(deserialize_with = "deserialize_scopes")]
+    scopes: Vec<String>,
+
+    limit: Option<usize>,
+    skip: Option<usize>,
+
+    count: Option<bool>,
+}
+
+fn deserialize_languages<'de, D>(deserializer: D) -> Result<Vec<LanguageIdentifier>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: String = String::deserialize(deserializer)?;
+    let mut list = Vec::new();
+    for value in value.split(',') {
+        list.push(
+            LanguageIdentifier::from_str(value)
+                .map_err(|_| de::Error::invalid_value(Unexpected::Str(value), &"a language ID"))?,
+        )
+    }
+    Ok(list)
+}
+
+fn deserialize_scopes<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value: String = String::deserialize(deserializer)?;
+    Ok(value.split(',').map(|v| v.to_string()).collect())
+}
+
 async fn query_api(
     State(store): State<Arc<Mutex<TranslationStore>>>,
-    Query(params): Query<HashMap<String, String>>,
+    Query(params): Query<QueryParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    let scopes: Option<Vec<&str>> = params
-        .get("scopes")
-        .map(|scopes| scopes.split(',').collect());
-
     debug!(
         "Request for '/query':\
       \n{{\
       \n    regex: {},\
-      \n    languages: {}, scopes: {},\
+      \n    languages: \"{}\", scopes: {},\
       \n    limit: {}, skip: {}, count: {}\
       \n}}",
         params
-            .get("regex")
+            .regex
+            .as_ref()
             .map(|v| Cow::Owned(format!("\"{v}\"")))
             .unwrap_or(Cow::Borrowed("undefined")),
         params
-            .get("languages")
-            .map(|v| Cow::Owned(format!("\"{v}\"")))
+            .languages
+            .iter()
+            .map(|lang_id| lang_id.to_string())
+            .reduce(|acc, lang| acc + "," + &lang)
+            .unwrap_or_default(),
+        if params.scopes.len() > 3 {
+            format!("<{}>", params.scopes.len())
+        } else {
+            format!("\"{}\"", params.scopes.join(","))
+        },
+        params
+            .limit
+            .map(|limit| Cow::Owned(limit.to_string()))
             .unwrap_or(Cow::Borrowed("undefined")),
         params
-            .get("scopes")
-            .map(|v| {
-                let scopes = scopes.as_ref().map(|s| s.len()).unwrap_or(0);
-
-                Cow::Owned(if scopes > 3 {
-                    format!("<{scopes}>")
-                } else {
-                    format!("\"{v}\"")
-                })
-            })
+            .skip
+            .map(|skip| Cow::Owned(skip.to_string()))
             .unwrap_or(Cow::Borrowed("undefined")),
-        params
-            .get("limit")
-            .map(|v| Cow::Borrowed(v.as_str()))
-            .unwrap_or(Cow::Borrowed("undefined")),
-        params
-            .get("skip")
-            .map(|v| Cow::Borrowed(v.as_str()))
-            .unwrap_or(Cow::Borrowed("undefined")),
-        params
-            .get("count")
-            .map(|v| Cow::Borrowed(v.as_str()))
-            .unwrap_or(Cow::Borrowed("undefined")),
+        match params.count {
+            Some(true) => "true",
+            Some(false) => "false",
+            None => "undefined",
+        },
     );
 
-    let regex = if let Some(regex) = params.get("regex") {
-        Some(
+    let regex = match &params.regex {
+        None => None,
+        Some(regex) if regex.is_empty() => None,
+        Some(regex) => Some(
             Regex::new(&format!("(?i){regex}"))
                 .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-        )
-    } else {
-        None
-    };
-
-    let langs: Option<Vec<LanguageIdentifier>> = if let Some(langs) = params.get("languages") {
-        let mut langs_parsed = Vec::new();
-        for lang in langs.split(',') {
-            langs_parsed.push(
-                lang.parse::<LanguageIdentifier>()
-                    .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-            );
-        }
-        Some(langs_parsed)
-    } else {
-        None
-    };
-
-    let limit = if let Some(limit) = params.get("limit") {
-        Some(
-            limit
-                .parse::<usize>()
-                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-        )
-    } else {
-        None
-    };
-
-    let skip = if let Some(skip) = params.get("skip") {
-        Some(
-            skip.parse::<usize>()
-                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-        )
-    } else {
-        None
-    };
-
-    let count = if let Some(count) = params.get("count") {
-        count
-            .parse::<bool>()
-            .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
-    } else {
-        false
+        ),
     };
 
     let store = store.lock().await;
     let translations = store.iter().filter(|(scope, lang_id, translation)| {
-        if let Some(langs) = &langs {
-            if !langs.contains(lang_id) {
-                return false;
-            }
+        if !params.languages.contains(lang_id) {
+            return false;
         }
-        if let Some(scopes) = &scopes {
-            if !scopes.contains(&scope.as_str()) {
-                return false;
-            }
+        if !params.scopes.contains(scope) {
+            return false;
         }
         if let Some(regex) = &regex {
             if !regex.is_match(&translation.original) && !regex.is_match(&translation.translation) {
@@ -401,7 +393,7 @@ async fn query_api(
         true
     });
 
-    if count {
+    if params.count.unwrap_or(false) {
         return Ok(Json(serde_json::to_value(translations.count()).map_err(
             |e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         )?));
@@ -426,7 +418,7 @@ async fn query_api(
         }
     });
 
-    let translations: Vec<serde_json::Value> = match (limit, skip) {
+    let translations: Vec<serde_json::Value> = match (params.limit, params.skip) {
         (Some(limit), Some(skip)) => translations.skip(skip).take(limit).collect(),
         (Some(limit), None) => translations.take(limit).collect(),
         (None, Some(skip)) => translations.skip(skip).collect(),
