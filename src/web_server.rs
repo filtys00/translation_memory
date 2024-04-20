@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use log::{debug, error};
+use log::{debug, error, trace};
 use regex::Regex;
 use serde::{
     de::{self, Unexpected},
@@ -394,9 +394,13 @@ async fn query_api(
     });
 
     if params.count.unwrap_or(false) {
-        return Ok(Json(serde_json::to_value(translations.count()).map_err(
-            |e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        )?));
+        let count = translations.count();
+
+        trace!("Request for '/query': returning {count}",);
+
+        return Ok(Json(serde_json::to_value(count).map_err(|e| {
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?));
     }
 
     let translations = translations.map(|(scope, lang_id, translation)| {
@@ -436,6 +440,11 @@ async fn query_api(
         (None, Some(skip)) => translations.skip(skip).collect(),
         (None, None) => translations.collect(),
     };
+
+    trace!(
+        "Request for '/query': returning {} translations",
+        translations.len(),
+    );
 
     Ok(Json(serde_json::to_value(translations).map_err(|e| {
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
