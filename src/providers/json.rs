@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use crate::Translation;
 
-pub fn parse_json(text: String) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<Translation>> {
     let json: HashMap<String, String> = serde_json::from_str(&text)?;
 
     let mut translations = Vec::new();

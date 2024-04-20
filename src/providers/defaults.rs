@@ -9,7 +9,7 @@ use super::{
     browser_extension::parse_browser_extension,
     chrome::ChromeProvider,
     dtd::parse_dtd,
-    json::{parse_freeshow_json, parse_json, parse_mastodon_json},
+    json::{parse_elementary_json, parse_freeshow_json, parse_mastodon_json},
     lang_id_to_string,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
@@ -21,57 +21,19 @@ use super::{
 };
 
 macro_rules! android {
-    ($id:literal, $name:literal, github => $repo:literal) => {
-        android!($id, $name, github => $repo, "strings")
-    };
     ($id:literal, $name:literal, github => $repo:literal, $file_name:literal) => {
-        Arc::new(DuoProvider {
-            id: $id,
-            name: $name,
-            group_name: Some("Android apps"),
-            parse: parse_android,
-            default_url: concat!(
-                "https://raw.githubusercontent.com/",
-                $repo,
-                "/master/app/src/main/res/values/",
-                $file_name,
-                ".xml"
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://raw.githubusercontent.com/",
-                        $repo,
-                        "/master/app/src/main/res/values-{}/",
-                        $file_name,
-                        ".xml"
-                    ),
-                    lang_id_to_string(&lang_id, "-r", true, "-", false),
-                )
-            },
+        duo!($id, $name, Some("Android apps"), parse_android, github => {
+            default_url: concat!($repo, "/HEAD/app/src/main/res/values/",    $file_name),
+                    url: concat!($repo, "/HEAD/app/src/main/res/values-{}/", $file_name),
+            lang_id: "-r", true, "-", false,
         })
     };
-    ($id:literal, $name:literal, gitlab => $repo:literal) => {
-        Arc::new(DuoProvider {
-            id: $id,
-            name: $name,
-            group_name: Some("Android apps"),
-            parse: parse_android,
-            default_url: concat!(
-                "https://gitlab.com/",
-                $repo,
-                "/-/raw/master/app/src/main/res/values/strings.xml",
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.com/",
-                        $repo,
-                        "/-/raw/master/app/src/main/res/values-{}/strings.xml",
-                    ),
-                    lang_id_to_string(&lang_id, "-r", true, "-", false),
-                )
-            },
+    ($id:literal, $name:literal, gitlab => $repo:literal, $file_name:literal) => {
+        duo!($id, $name, Some("Android apps"), parse_android, gitlab => {
+            base_url: concat!("gitlab.com/", $repo),
+            default_url: concat!("HEAD/app/src/main/res/values/",    $file_name),
+                    url: concat!("HEAD/app/src/main/res/values-{}/", $file_name),
+            lang_id: "-r", true, "-", false,
         })
     };
 
@@ -102,307 +64,72 @@ macro_rules! android {
             },
         })
     };
-
-    ($id:literal, $name:literal, tor => $branch:literal, $default_path:literal, $path:literal) => {
-        Arc::new(DuoProvider {
-            id: concat!("torproject-", $id),
-            name: $name,
-            group_name: Some("The Tor Project"),
-            parse: parse_android,
-            default_url: concat!(
-                "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                $branch,
-                "/",
-                $default_path,
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                        $branch,
-                        "/",
-                        $path,
-                    ),
-                    lang_id_to_string(&lang_id, "-r", true, "-", false),
-                )
-            },
-        })
-    };
 }
 
 macro_rules! browser_extension {
-    ($id:literal, $name:literal, github => $repo:literal, $folder:literal) => {
-        Arc::new(DuoProvider {
-            id: $id,
-            name: $name,
-            group_name: Some("Browser extension"),
-            parse: parse_browser_extension,
-            default_url: concat!(
-                "https://github.com/",
-                $repo,
-                "/raw/",
-                $folder,
-                "/en/messages.json",
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://github.com/",
-                        $repo,
-                        "/raw/",
-                        $folder,
-                        "/{}/messages.json",
-                    ),
-                    lang_id_to_string(&lang_id, "_", true, "_", false),
-                )
-            },
+    ($id:literal, $name:literal, github => $repo:literal, $folder:literal, $default_lang_id:literal) => {
+        duo!($id, $name, Some("Browser extensions"), parse_browser_extension, github => {
+            default_url: concat!($repo, "/HEAD/", $folder, "/", $default_lang_id, "/messages.json"),
+                    url: concat!($repo, "/HEAD/", $folder, "/{}/messages.json"),
+            lang_id: "_", true, "_", false,
         })
     };
-    ($id:literal, $name:literal, gitlab => $repo:literal, $folder:literal) => {
-        Arc::new(DuoProvider {
-            id: $id,
-            name: $name,
-            group_name: Some("Browser extension"),
-            parse: parse_browser_extension,
-            default_url: concat!(
-                "https://",
-                $repo,
-                "/-/raw/",
-                $folder,
-                "/en_US/messages.json"
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!("https://", $repo, "/-/raw/", $folder, "/{}/messages.json"),
-                    lang_id_to_string(&lang_id, "_", true, "_", false),
-                )
-            },
-        })
-    };
-
-    ($id:literal, $name:literal, tor => $branch:literal, $file_name:literal) => {
-        Arc::new(DuoProvider {
-            id: concat!("torproject-", $id),
-            name: $name,
-            group_name: Some("The Tor Project"),
-            parse: parse_browser_extension,
-            default_url: concat!(
-                "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                $branch,
-                "/en_US/",
-                $file_name,
-                ".json",
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                        $branch,
-                        "/{}/",
-                        $file_name,
-                        ".json",
-                    ),
-                    lang_id_to_string(&lang_id, "_", true, "_", false),
-                )
-            },
+    ($id:literal, $name:literal, gitlab => $base_url:literal, $folder:literal, $default_lang_id:literal) => {
+        duo!($id, $name, Some("Browser extensions"), parse_browser_extension, gitlab => {
+            base_url: $base_url,
+            default_url: concat!("HEAD/", $folder, "/", $default_lang_id, "/messages.json"),
+                    url: concat!("HEAD/", $folder, "/{}/messages.json"),
+            lang_id: "_", true, "_", false,
         })
     };
 }
 
-macro_rules! dtd {
-    ($id:literal, $name:literal, tor => $branch:literal, $file_name:literal) => {
-        Arc::new(DuoProvider {
-            id: concat!("torproject-", $id),
-            name: $name,
-            group_name: Some("The Tor Project"),
-            parse: parse_dtd,
-            default_url: concat!(
-                "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                $branch,
-                "/en-US/",
-                $file_name,
-                ".dtd",
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                        $branch,
-                        "/{}/",
-                        $file_name,
-                        ".dtd",
-                    ),
-                    lang_id_to_string(lang_id, "-", true, "@", false),
-                )
-            },
-        })
-    };
-}
-
-macro_rules! json {
-    ($id:literal, elementary => $path:literal) => {
-        Arc::new(MonoProvider {
-            id: concat!("elementary-", $id),
-            name: concat!("Elementary ", $path),
-            group_name: Some("Elementary"),
-            parse: parse_json,
-            remove_char: None,
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://raw.githubusercontent.com/elementary/website/master/_lang/{}/",
-                        $path,
-                        ".json",
-                    ),
-                    lang_id_to_string(lang_id, "_", true, "@", false),
-                )
-            },
-        })
-    };
-}
-
-macro_rules! po {
-    ($id:literal, $name:literal, $group_name:expr, $remove_char:expr, github => $path:literal) => {
-        po!($id, $name, $group_name, $remove_char, "@", false, github => $path)
-    };
-    (
-        $id:literal, $name:literal, $group_name:expr, $remove_char:expr,
-        $variant_binder:expr, $uppercase_variant:expr,
-        github => $path:literal
-    ) => {
-        po!(
-            $id, $name, $group_name, $remove_char, $variant_binder, $uppercase_variant,
-            concat!("https://raw.githubusercontent.com/", $path),
-        )
-    };
-
-    ($id:literal, $name:literal, $group_name:expr, $remove_char:expr, gitlab => $site:literal, $repo:literal, $path:literal) => {
-        po!($id, $name, $group_name, $remove_char, "@", false, gitlab => $site, $repo, $path)
-    };
-    (
-        $id:literal, $name:literal, $group_name:expr, $remove_char:expr,
-        $variant_binder:expr, $uppercase_variant:expr,
-        gitlab => $site:literal, $repo:literal, $path:literal
-    ) => {
-        po!(
-            $id, $name, $group_name, $remove_char, $variant_binder, $uppercase_variant,
-            concat!("https://", $site, "/", $repo, "/-/raw/", $path),
-        )
-    };
-
-    (
-        $id:literal, $name:literal, $group_name:expr, $remove_char:expr,
-        $variant_binder:literal, $uppercase_variant:literal,
-        $url:expr,
-    ) => {
+macro_rules! mono {
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, github => {
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
         Arc::new(MonoProvider {
             id: $id,
             name: $name,
             group_name: $group_name,
-            parse: parse_po,
+            parse: $parse,
             remove_char: $remove_char,
             url: |lang_id| {
-                format!($url, lang_id_to_string(lang_id, "_", true, $variant_binder, $uppercase_variant))
+                format!(
+                    concat!("https://raw.githubusercontent.com/", $url),
+                    lang_id_to_string(
+                        lang_id,
+                        $region_binder,
+                        $uppercase_region,
+                        $variant_binder,
+                        $uppercase_variant
+                    ),
+                )
             },
         })
     };
-
-    ($id:literal, $name:literal, elementary => $repo:literal, $path:literal) => {
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, gitlab => {
+        base_url: $base_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
         Arc::new(MonoProvider {
-            id: concat!("elementary-", $id),
+            id: $id,
             name: $name,
-            group_name: Some("Elementary"),
-            parse: parse_po,
-            remove_char: Some('_'),
+            group_name: $group_name,
+            parse: $parse,
+            remove_char: $remove_char,
             url: |lang_id| {
                 format!(
-                    concat!(
-                        "https://raw.githubusercontent.com/elementary/",
-                        $repo,
-                        "/",
-                        $path,
-                        "/{}.po",
+                    concat!("https://", $base_url, "/-/raw/", $url),
+                    lang_id_to_string(
+                        lang_id,
+                        $region_binder,
+                        $uppercase_region,
+                        $variant_binder,
+                        $uppercase_variant
                     ),
-                    lang_id_to_string(lang_id, "_", true, "_", false),
-                )
-            },
-        })
-    };
-
-    ($id:literal, $name:literal, tor => $branch:literal, $path:literal) => {
-        Arc::new(MonoProvider {
-            id: concat!("torproject-", $id),
-            name: $name,
-            group_name: Some("The Tor Project"),
-            parse: parse_po,
-            remove_char: None,
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                        $branch,
-                        "/",
-                        $path
-                    ),
-                    lang_id_to_string(lang_id, "-", true, "@", false),
-                )
-            },
-        })
-    };
-}
-
-macro_rules! properties {
-    ($id:literal, $name:literal, tor => $branch:literal, $file_name:literal) => {
-        Arc::new(DuoProvider {
-            id: concat!("torproject-", $id),
-            name: $name,
-            group_name: Some("The Tor Project"),
-            parse: parse_properties,
-            default_url: concat!(
-                "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                $branch,
-                "/en-US/",
-                $file_name,
-                ".properties"
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                        $branch,
-                        "/{}/",
-                        $file_name,
-                        ".properties"
-                    ),
-                    lang_id_to_string(lang_id, "-", true, "@", false),
-                )
-            },
-        })
-    };
-}
-
-macro_rules! srt {
-    ($id:literal, $name:literal, tor => $branch:literal, $default_path:literal, $path:literal) => {
-        Arc::new(DuoProvider {
-            id: concat!("torproject-", $id),
-            name: $name,
-            group_name: Some("The Tor Project"),
-            parse: parse_srt,
-            default_url: concat!(
-                "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                $branch,
-                "/",
-                $default_path,
-            ),
-            url: |lang_id| {
-                format!(
-                    concat!(
-                        "https://gitlab.torproject.org/tpo/translation/-/raw/",
-                        $branch,
-                        "/",
-                        $path,
-                    ),
-                    lang_id_to_string(lang_id, "-", true, "@", false),
                 )
             },
         })
@@ -410,11 +137,11 @@ macro_rules! srt {
 }
 
 macro_rules! duo {
-    ($id:expr, $name:literal, $group_name:expr, $parse:ident, github =>
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, github => {
         default_url: $default_url:expr,
         url: $url:expr,
         lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    ) => {
+    }) => {
         Arc::new(DuoProvider {
             id: $id,
             name: $name,
@@ -435,15 +162,107 @@ macro_rules! duo {
             },
         })
     };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, gitlab => {
+        base_url: $base_url:expr,
+        default_url: $default_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        Arc::new(DuoProvider {
+            id: $id,
+            name: $name,
+            group_name: $group_name,
+            parse: $parse,
+            default_url: concat!("https://", $base_url, "/-/raw/", $default_url),
+            url: |lang_id| {
+                format!(
+                    concat!("https://", $base_url, "/-/raw/", $url),
+                    lang_id_to_string(
+                        lang_id,
+                        $region_binder,
+                        $uppercase_region,
+                        $variant_binder,
+                        $uppercase_variant
+                    ),
+                )
+            },
+        })
+    };
+}
+
+macro_rules! elementary {
+    ($id:literal, json => $path:literal) => {
+        mono!(concat!("elementary-", $id), concat!("Elementary ", $path), Some("Elementary"), parse_elementary_json, None, github => {
+            url: concat!("elementary/website/master/_lang/{}/", $path, ".json"),
+            lang_id: "_", true, "@", false,
+        })
+    };
+    ($id:literal, $name:literal, po => $repo:literal, $path:literal) => {
+        mono!(concat!("elementary-", $id), $name, Some("Elementary"), parse_po, Some('_'), github => {
+            url: concat!("elementary/", $repo, "/", $path, "/{}.po"),
+            lang_id: "_", true, "_", false,
+        })
+    };
+
 }
 
 macro_rules! mastodon {
     ($id:literal, $name:literal, yaml => $default_file_name:literal, $file_name:literal) => {
-        duo!($id, $name, Some("Mastodon"), parse_mastodon_yaml, github =>
+        duo!($id, $name, Some("Mastodon"), parse_mastodon_yaml, github => {
             default_url: concat!("mastodon/mastodon/main/config/locales/", $default_file_name),
                     url: concat!("mastodon/mastodon/main/config/locales/", $file_name),
             lang_id: "-", true, "-", false,
-        )
+        })
+    };
+}
+
+macro_rules! tor {
+    ($id:literal, $name:literal, android => $branch:literal, $default_path:literal, $path:literal) => {
+        duo!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_android, gitlab => {
+            base_url: "gitlab.torproject.org/tpo/translation",
+            default_url: concat!($branch, "/", $default_path),
+                    url: concat!($branch, "/", $path),
+            lang_id: "-r", true, "-", false,
+        })
+    };
+    ($id:literal, $name:literal, browser_extension => $branch:literal, $file_name:literal) => {
+        duo!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_browser_extension, gitlab => {
+            base_url: "gitlab.torproject.org/tpo/translation",
+            default_url: concat!($branch, "/en_US/", $file_name),
+                    url: concat!($branch, "/{}/",    $file_name),
+            lang_id: "_", true, "_", false,
+        })
+    };
+    ($id:literal, $name:literal, dtd => $branch:literal, $file_name:literal) => {
+        duo!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_dtd, gitlab => {
+            base_url: "gitlab.torproject.org/tpo/translation",
+            default_url: concat!($branch, "/en-US/", $file_name),
+                    url: concat!($branch, "/{}/",    $file_name),
+            lang_id: "-", true, "@", false,
+        })
+    };
+    ($id:literal, $name:literal, properties => $branch:literal, $file_name:literal) => {
+        duo!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_properties, gitlab => {
+            base_url: "gitlab.torproject.org/tpo/translation",
+            default_url: concat!($branch, "/en-US/", $file_name),
+                    url: concat!($branch, "/{}/",    $file_name),
+            lang_id: "-", true, "@", false,
+        })
+    };
+    ($id:literal, $name:literal, po => $branch:literal, $path:literal) => {
+        mono!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_po, None, gitlab => {
+            base_url: "gitlab.torproject.org/tpo/translation",
+            url: concat!($branch, "/", $path),
+            lang_id: "-", true, "@", false,
+        })
+    };
+    ($id:literal, $name:literal, srt => $branch:literal, $default_path:literal, $path:literal) => {
+        duo!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_srt, gitlab => {
+            base_url: "gitlab.torproject.org/tpo/translation",
+            default_url: concat!($branch, "/", $default_path),
+                    url: concat!($branch, "/", $path),
+            lang_id: "-", true, "@", false,
+        })
     };
 }
 
@@ -466,57 +285,67 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             remove_char: Some('&'),
         }),
 
-        Arc::new(DuoProvider {
-            id: "freeshow",
-            name: "FreeShow",
-            group_name: None,
-            parse: parse_freeshow_json,
-            default_url: "https://raw.githubusercontent.com/ChurchApps/FreeShow/main/public/lang/en.json",
-            url: |lang_id| {
-                format!(
-                    "https://raw.githubusercontent.com/ChurchApps/FreeShow/main/public/lang/{}.json",
-                    lang_id_to_string(lang_id, "_", true, "@", false),
-                )
-            },
+        mono!("duckduckgo", "DuckDuckGo",         None,            parse_po, None,      github => {
+            url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
+            lang_id: "_", true, "@", false,
+        }),
+        duo!( "freeshow",   "FreeShow",           None,            parse_freeshow_json, github => {
+            default_url: "ChurchApps/FreeShow/main/public/lang/en.json",
+                    url: "ChurchApps/FreeShow/main/public/lang/{}.json",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("multimc",    "MultiMC",            None,            parse_po, Some('&'), github => {
+            url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
+            lang_id: "_", true, "_", true,
+        }),
+        mono!("pacman",     "Pacman",             None,            parse_po, None,      gitlab => {
+            base_url: "gitlab.archlinux.org/pacman/pacman",
+            url: "master/src/pacman/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("weblate",    "Weblate",            Some("Weblate"), parse_po, None,      github => {
+            url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po",
+            lang_id: "_", true, "_", false,
+        }),
+        mono!("weblatejs",  "Weblate JavaScript", Some("Weblate"), parse_po, None,      github => {
+            url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po",
+            lang_id: "_", true, "_", false,
+        }),
+        mono!("wine",       "Wine",               None,            parse_po, Some('&'), gitlab => {
+            base_url: "gitlab.winehq.org/wine/wine",
+            url: "master/po/{}.po",
+            lang_id: "_", true, "@", false,
         }),
 
-        po!("duckduckgo", "DuckDuckGo",         None,            None,                  github => "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po"),
-        po!("multimc",    "MultiMC",            None,            Some('&'), "_", true,  github => "MultiMC/Translations/master/{}.po"),
-        po!("weblate",    "Weblate",            Some("Weblate"), None,      "_", false, github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po"),
-        po!("weblatejs",  "Weblate JavaScript", Some("Weblate"), None,      "_", false, github => "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po"),
+        android!("etar",                      "Etar",                      github => "Etar-Group/Etar-Calendar", "strings.xml"),
+        android!("fdroid",                    "F-Droid",                   gitlab => "fdroid/fdroidclient",      "strings.xml"),
+        android!("material-files",            "Material Files",            github => "zhanghai/MaterialFiles",   "strings.xml"),
+        android!("material-files-mime-types", "Material Files mime types", github => "zhanghai/MaterialFiles",   "mime_types.xml"),
+        android!("notally",                   "Notally",                   github => "OmGodse/Notally",          "strings.xml"),
 
-        po!("pacman", "Pacman", None, None,      gitlab => "gitlab.archlinux.org", "pacman/pacman", "master/src/pacman/po/{}.po"),
-        po!("wine",   "Wine",   None, Some('&'), gitlab => "gitlab.winehq.org",    "wine/wine",     "master/po/{}.po"),
-
-        android!("etar",                      "Etar",                      github => "Etar-Group/Etar-Calendar"),
-        android!("fdroid",                    "F-Droid",                   gitlab => "fdroid/fdroidclient"),
-        android!("material-files",            "Material Files",            github => "zhanghai/MaterialFiles"),
-        android!("material-files-mime-types", "Material Files mime types", github => "zhanghai/MaterialFiles", "mime_types"),
-        android!("notally",                   "Notally",                   github => "OmGodse/Notally"),
-
-        browser_extension!("decentraleyes",       "Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "master/_locales"),
-        browser_extension!("improvedtube",        "ImprovedTube",        github => "code-charity/youtube",               "master/_locales"),
-        browser_extension!("midnight-lizard",     "Midnight Lizard",     github => "Midnight-Lizard/Midnight-Lizard",    "master/_locales"),
-        browser_extension!("simple-translate",    "Simple Translate",    github => "sienori/simple-translate",           "master/src/_locales"),
-        browser_extension!("tab-session-manager", "Tab Session Manager", github => "sienori/Tab-Session-Manager",        "master/src/_locales"),
-        browser_extension!("tampermonkey",        "Tampermonkey",        github => "Tampermonkey/tampermonkey",          "master/i18n"),
-        browser_extension!("tree-style-tab",      "Tree Style Tab",      github => "piroor/treestyletab",                "trunk/webextensions/_locales"),
-        browser_extension!("turn-off-the-lights", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "master/src/_locales"),
-        browser_extension!("ublock-origin",       "uBlock Origin",       github => "gorhill/uBlock",                     "master/src/_locales"),
+        browser_extension!("decentraleyes",       "Decentraleyes",       gitlab => "git.synz.io/Synzvato/decentraleyes", "_locales",                        "en_US"),
+        browser_extension!("improvedtube",        "ImprovedTube",        github => "code-charity/youtube",               "_locales",                        "en"),
+        browser_extension!("midnight-lizard",     "Midnight Lizard",     github => "Midnight-Lizard/Midnight-Lizard",    "_locales",                        "en"),
+        browser_extension!("simple-translate",    "Simple Translate",    github => "sienori/simple-translate",           "src/_locales",                    "en"),
+        browser_extension!("tab-session-manager", "Tab Session Manager", github => "sienori/Tab-Session-Manager",        "src/_locales",                    "en"),
+        browser_extension!("tampermonkey",        "Tampermonkey",        github => "Tampermonkey/tampermonkey",          "i18n",                            "en"),
+        browser_extension!("tree-style-tab",      "Tree Style Tab",      github => "piroor/treestyletab",                "webextensions/_locales",          "en"),
+        browser_extension!("turn-off-the-lights", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "src/_locales", "en"),
+        browser_extension!("ublock-origin",       "uBlock Origin",       github => "gorhill/uBlock",                     "src/_locales",                    "en"),
 
         // Mastodon
 
-        duo!("mastodon-javascript", "Mastodon JavaScript", Some("Mastodon"), parse_mastodon_json, github =>
+        duo!("mastodon-javascript", "Mastodon JavaScript", Some("Mastodon"), parse_mastodon_json, github => {
             default_url: "mastodon/mastodon/main/app/javascript/mastodon/locales/en.json",
                     url: "mastodon/mastodon/main/app/javascript/mastodon/locales/{}.json",
             lang_id: "-", true, "-", false,
-        ),
+        }),
 
-        duo!("mastodon-android", "Mastodon for Android", Some("Mastodon"), parse_android, github =>
+        duo!("mastodon-android", "Mastodon for Android", Some("Mastodon"), parse_android, github => {
             default_url: "mastodon/mastodon-android/master/mastodon/src/main/res/values/strings.xml",
                     url: "mastodon/mastodon-android/master/mastodon/src/main/res/values-{}/strings.xml",
             lang_id: "-r", true, "-", false,
-        ),
+        }),
 
         mastodon!("mastodon",              "Mastodon",               yaml => "en.yml",              "{}.yml"),
         mastodon!("mastodon-activerecord", "Mastodon active record", yaml => "activerecord.en.yml", "activerecord.{}.yml"),
@@ -526,129 +355,129 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         // Tor project
 
-        po!("onion-launchpad",     "Onion Launchpad",     tor => "onion-launchpad",                "contents+{}.po"),
-        po!("support-portal",      "Support Portal",      tor => "support-portal",                 "contents+{}.po"),
-        po!("torbrowser-manual",   "Tor Browser manual",  tor => "tbmanual-contentspot",           "contents+{}.po"),
-        po!("community",           "Tor Community",       tor => "communitytpo-contentspot",       "contents+{}.po"),
-        po!("about",               "About Tor Project",   tor => "tpo-web",                        "contents+{}.po"),
-        po!("tails-misc",          "Tails miscellaneous", tor => "tails-misc",                     "{}.po"),
-        po!("code-of-conduct",     "Code of Conduct",     tor => "policies-code_of_conducttxtpot", "code_of_conduct+{}.po"),
-        po!("onion-sprouts-bot",   "Onion Sprouts Bot",   tor => "onionsproutsbot",                "onionsproutsbot+{}.po"),
-        po!("tor-animation-title", "Tor Animation title", tor => "tor_animation",                  "title-{}.po"),
-        po!("tor-check",           "Tor check",           tor => "torcheck",                       "{}/torcheck.po"),
+        tor!("onion-launchpad",     "Onion Launchpad",     po => "onion-launchpad",                "contents+{}.po"),
+        tor!("support-portal",      "Support Portal",      po => "support-portal",                 "contents+{}.po"),
+        tor!("torbrowser-manual",   "Tor Browser manual",  po => "tbmanual-contentspot",           "contents+{}.po"),
+        tor!("community",           "Tor Community",       po => "communitytpo-contentspot",       "contents+{}.po"),
+        tor!("about",               "About Tor Project",   po => "tpo-web",                        "contents+{}.po"),
+        tor!("tails-misc",          "Tails miscellaneous", po => "tails-misc",                     "{}.po"),
+        tor!("code-of-conduct",     "Code of Conduct",     po => "policies-code_of_conducttxtpot", "code_of_conduct+{}.po"),
+        tor!("onion-sprouts-bot",   "Onion Sprouts Bot",   po => "onionsproutsbot",                "onionsproutsbot+{}.po"),
+        tor!("tor-animation-title", "Tor Animation title", po => "tor_animation",                  "title-{}.po"),
+        tor!("tor-check",           "Tor check",           po => "torcheck",                       "{}/torcheck.po"),
 
-        dtd!("torbrowser-about-dialog", "Tor Browser about dialog", tor => "tor-browser", "aboutDialog"),
-        dtd!("torbrowser-about-update", "Tor Browser about update", tor => "tor-browser", "aboutTBUpdate"),
-        dtd!("torbrowser-branding",     "Tor Browser branding",     tor => "tor-browser", "brand"),
-        dtd!("torbrowser-tor-buttons",  "Tor Browser tor buttons",  tor => "tor-browser", "torbutton"),
+        tor!("torbrowser-about-dialog", "Tor Browser about dialog", dtd => "tor-browser", "aboutDialog.dtd"),
+        tor!("torbrowser-about-update", "Tor Browser about update", dtd => "tor-browser", "aboutTBUpdate.dtd"),
+        tor!("torbrowser-branding",     "Tor Browser branding",     dtd => "tor-browser", "brand.dtd"),
+        tor!("torbrowser-tor-buttons",  "Tor Browser tor buttons",  dtd => "tor-browser", "torbutton.dtd"),
 
-        srt!("onionshare-subtitles",    "OnionShare introduction video",  tor => "onionshare-introduction-video-subtitles", "src/onionshare-introduction.srt",  "onionshare-introduction-subs-{}.srt"),
-        srt!("bridges-subtitles",       "Bridges introduction video",     tor => "bridges-introduction-video-subtitles",    "src/bridges-introduction.srt",     "bridges-introduction-subtitles-{}.srt"),
-        srt!("torbrowser-subtitles",    "Tor Browser introduction video", tor => "tb-introduction-video-subtitles",         "src/tor-browser-introduction.srt", "tor-browser-sub-{}.srt"),
-        srt!("tor-animation-subtitles", "Tor animation",                  tor => "tor_animation",                           "Tor_animation.srt",                "subtitles-{}.srt"),
+        tor!("onionshare-subtitles",    "OnionShare introduction video",  srt => "onionshare-introduction-video-subtitles", "src/onionshare-introduction.srt",  "onionshare-introduction-subs-{}.srt"),
+        tor!("bridges-subtitles",       "Bridges introduction video",     srt => "bridges-introduction-video-subtitles",    "src/bridges-introduction.srt",     "bridges-introduction-subtitles-{}.srt"),
+        tor!("torbrowser-subtitles",    "Tor Browser introduction video", srt => "tb-introduction-video-subtitles",         "src/tor-browser-introduction.srt", "tor-browser-sub-{}.srt"),
+        tor!("tor-animation-subtitles", "Tor animation",                  srt => "tor_animation",                           "Tor_animation.srt",                "subtitles-{}.srt"),
 
-        android!("tor-vpn",        "Tor VPN",         tor => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
-        android!("torbrowser-app", "Tor Browser App", tor => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
+        tor!("tor-vpn",        "Tor VPN",         android => "tor-vpn",                    "res/values/strings.xml",       "res/values-{}/strings.xml"),
+        tor!("torbrowser-app", "Tor Browser App", android => "fenix-torbrowserstringsxml", "en-US/torbrowser_strings.xml", "{}/torbrowser_strings.xml"),
 
-        properties!("torbrowser-brand",                "Tor Browser brand",                tor => "tor-browser",  "brand"),
-        properties!("torbrowser-browser-onboarding",   "Tor Browser browser onboarding",   tor => "tor-browser",  "browserOnboarding"),
-        properties!("torbrowser-crypto-safety-prompt", "Tor Browser crypto safety prompt", tor => "tor-browser",  "cryptoSafetyPrompt"),
-        properties!("torbrowser-onboarding",           "Tor Browser onboarding",           tor => "tor-browser",  "onboarding"),
-        properties!("torbrowser-onion-location",       "Tor Browser onion location",       tor => "tor-browser",  "onionLocation"),
-        properties!("torbrowser-rulesets",             "Tor Browser rulesets",             tor => "tor-browser",  "rulesets"),
-        properties!("torbrowser-settings",             "Tor Browser settings",             tor => "tor-browser",  "settings"),
-        properties!("torbrowser-tor-connect",          "Tor Browser tor connect",          tor => "tor-browser",  "torConnect"),
-        properties!("torbrowser-torbutton",            "Tor Browser torbutton",            tor => "tor-browser",  "torbutton"),
-        properties!("torbrowser-torlauncher",          "Tor Browser torlauncher",          tor => "tor-browser",  "torlauncher"),
-        properties!("basebrowser-new-identity",        "Base Browser new identity",        tor => "base-browser", "newIdentity"),
-        properties!("basebrowser-security-level",      "Base Browser security level",      tor => "base-browser", "securityLevel"),
+        tor!("torbrowser-brand",                "Tor Browser brand",                properties => "tor-browser",  "brand.properties"),
+        tor!("torbrowser-browser-onboarding",   "Tor Browser browser onboarding",   properties => "tor-browser",  "browserOnboarding.properties"),
+        tor!("torbrowser-crypto-safety-prompt", "Tor Browser crypto safety prompt", properties => "tor-browser",  "cryptoSafetyPrompt.properties"),
+        tor!("torbrowser-onboarding",           "Tor Browser onboarding",           properties => "tor-browser",  "onboarding.properties"),
+        tor!("torbrowser-onion-location",       "Tor Browser onion location",       properties => "tor-browser",  "onionLocation.properties"),
+        tor!("torbrowser-rulesets",             "Tor Browser rulesets",             properties => "tor-browser",  "rulesets.properties"),
+        tor!("torbrowser-settings",             "Tor Browser settings",             properties => "tor-browser",  "settings.properties"),
+        tor!("torbrowser-tor-connect",          "Tor Browser tor connect",          properties => "tor-browser",  "torConnect.properties"),
+        tor!("torbrowser-torbutton",            "Tor Browser torbutton",            properties => "tor-browser",  "torbutton.properties"),
+        tor!("torbrowser-torlauncher",          "Tor Browser torlauncher",          properties => "tor-browser",  "torlauncher.properties"),
+        tor!("basebrowser-new-identity",        "Base Browser new identity",        properties => "base-browser", "newIdentity.properties"),
+        tor!("basebrowser-security-level",      "Base Browser security level",      properties => "base-browser", "securityLevel.properties"),
 
-        browser_extension!("snowflake",         "Snowflake",         tor => "snowflake", "messages"),
-        browser_extension!("snowflake-website", "Snowflake website", tor => "snowflake", "website"),
+        tor!("snowflake",         "Snowflake",         browser_extension => "snowflake", "messages.json"),
+        tor!("snowflake-website", "Snowflake website", browser_extension => "snowflake", "website.json"),
 
         // Elementary
 
-        po!("appcenter",         "AppCenter",         elementary => "appcenter",   "master/po"),
-        po!("appcenter-extra",   "AppCenter Extra",   elementary => "appcenter",   "master/po/extra"),
-        po!("calculator",        "Calculator",        elementary => "calculator",  "master/po"),
-        po!("calculator-extra",  "Calculator Extra",  elementary => "calculator",  "master/po/extra"),
-        po!("calendar",          "Calendar",          elementary => "calendar",    "master/po"),
-        po!("calendar-extra",    "Calendar Extra",    elementary => "calendar",    "master/po/extra"),
-        po!("camera",            "Camera",            elementary => "camera",      "master/po"),
-        po!("camera-extra",      "Camera Extra",      elementary => "camera",      "master/po/extra"),
-        po!("code",              "Code",              elementary => "code",        "master/po"),
-        po!("code-extra",        "Code Extra",        elementary => "code",        "master/po/extra"),
-        po!("code-plugins",      "Code Plugins",      elementary => "code",        "master/po/plugins"),
-        po!("files",             "Files",             elementary => "files",       "main/po"),
-        po!("files-extra",       "Files Extra",       elementary => "files",       "main/po/extra"),
-        po!("friends",           "Friends",           elementary => "friends",     "master/po"),
-        po!("friends-extra",     "Friends Extra",     elementary => "friends",     "master/po/extra"),
-        po!("installer",         "Installer",         elementary => "installer",   "master/po"),
-        po!("installer-extra",   "Installer Extra",   elementary => "installer",   "master/po/extra"),
-        po!("mail",              "Mail",              elementary => "mail",        "master/po"),
-        po!("mail-extra",        "Mail Extra",        elementary => "mail",        "master/po/extra"),
-        po!("music",             "Music",             elementary => "music",       "main/po"),
-        po!("music-extra",       "Music Extra",       elementary => "music",       "main/po/extra"),
-        po!("photos",            "Photos",            elementary => "photos",      "master/po"),
-        po!("photos-extra",      "Photos Extra",      elementary => "photos",      "master/po/extra"),
-        po!("screenshot",        "Screenshot",        elementary => "screenshot",  "master/po"),
-        po!("screenshot-extra",  "Screenshot Extra",  elementary => "screenshot",  "master/po/extra"),
-        po!("switchboard",       "Switchboard",       elementary => "switchboard", "main/po"),
-        po!("switchboard-extra", "Switchboard Extra", elementary => "switchboard", "main/po/extra"),
-        po!("tasks",             "Tasks",             elementary => "tasks",       "master/po"),
-        po!("tasks-extra",       "Tasks Extra",       elementary => "tasks",       "master/po/extra"),
-        po!("terminal",          "Terminal",          elementary => "terminal",    "master/po"),
-        po!("terminal-extra",    "Terminal Extra",    elementary => "terminal",    "master/po/extra"),
-        po!("videos",            "Videos",            elementary => "videos",      "main/po"),
-        po!("videos-extra",      "Videos Extra",      elementary => "videos",      "main/po/extra"),
-        po!("wingpanel",         "Wingpanel",         elementary => "wingpanel",   "master/po"),
-        po!("wingpanel-extra",   "Wingpanel Extra",   elementary => "wingpanel",   "master/po/extra"),
+        elementary!("appcenter",         "AppCenter",         po => "appcenter",   "master/po"),
+        elementary!("appcenter-extra",   "AppCenter Extra",   po => "appcenter",   "master/po/extra"),
+        elementary!("calculator",        "Calculator",        po => "calculator",  "master/po"),
+        elementary!("calculator-extra",  "Calculator Extra",  po => "calculator",  "master/po/extra"),
+        elementary!("calendar",          "Calendar",          po => "calendar",    "master/po"),
+        elementary!("calendar-extra",    "Calendar Extra",    po => "calendar",    "master/po/extra"),
+        elementary!("camera",            "Camera",            po => "camera",      "master/po"),
+        elementary!("camera-extra",      "Camera Extra",      po => "camera",      "master/po/extra"),
+        elementary!("code",              "Code",              po => "code",        "master/po"),
+        elementary!("code-extra",        "Code Extra",        po => "code",        "master/po/extra"),
+        elementary!("code-plugins",      "Code Plugins",      po => "code",        "master/po/plugins"),
+        elementary!("files",             "Files",             po => "files",       "main/po"),
+        elementary!("files-extra",       "Files Extra",       po => "files",       "main/po/extra"),
+        elementary!("friends",           "Friends",           po => "friends",     "master/po"),
+        elementary!("friends-extra",     "Friends Extra",     po => "friends",     "master/po/extra"),
+        elementary!("installer",         "Installer",         po => "installer",   "master/po"),
+        elementary!("installer-extra",   "Installer Extra",   po => "installer",   "master/po/extra"),
+        elementary!("mail",              "Mail",              po => "mail",        "master/po"),
+        elementary!("mail-extra",        "Mail Extra",        po => "mail",        "master/po/extra"),
+        elementary!("music",             "Music",             po => "music",       "main/po"),
+        elementary!("music-extra",       "Music Extra",       po => "music",       "main/po/extra"),
+        elementary!("photos",            "Photos",            po => "photos",      "master/po"),
+        elementary!("photos-extra",      "Photos Extra",      po => "photos",      "master/po/extra"),
+        elementary!("screenshot",        "Screenshot",        po => "screenshot",  "master/po"),
+        elementary!("screenshot-extra",  "Screenshot Extra",  po => "screenshot",  "master/po/extra"),
+        elementary!("switchboard",       "Switchboard",       po => "switchboard", "main/po"),
+        elementary!("switchboard-extra", "Switchboard Extra", po => "switchboard", "main/po/extra"),
+        elementary!("tasks",             "Tasks",             po => "tasks",       "master/po"),
+        elementary!("tasks-extra",       "Tasks Extra",       po => "tasks",       "master/po/extra"),
+        elementary!("terminal",          "Terminal",          po => "terminal",    "master/po"),
+        elementary!("terminal-extra",    "Terminal Extra",    po => "terminal",    "master/po/extra"),
+        elementary!("videos",            "Videos",            po => "videos",      "main/po"),
+        elementary!("videos-extra",      "Videos Extra",      po => "videos",      "main/po/extra"),
+        elementary!("wingpanel",         "Wingpanel",         po => "wingpanel",   "master/po"),
+        elementary!("wingpanel-extra",   "Wingpanel Extra",   po => "wingpanel",   "master/po/extra"),
 
-        po!("capnet-assist",               "Captive Network Assistant",          elementary => "capnet-assist",         "master/po"),
-        po!("capnet-assist-extra",         "Captive Network Assistant Extra",    elementary => "capnet-assist",         "master/po/extra"),
-        po!("feedback",                    "Feedback",                           elementary => "feedback",              "master/po"),
-        po!("feedback-extra",              "Feedback Extra",                     elementary => "feedback",              "master/po/extra"),
-        po!("flatpak-platform",            "Flatpak Platform",                   elementary => "flatpak-platform",      "main/platform-data/po"),
-        po!("gala",                        "Gala",                               elementary => "gala",                  "master/po"),
-        po!("granite",                     "Granite",                            elementary => "granite",               "main/po"),
-        po!("granite-extra",               "Granite Extra",                      elementary => "granite",               "main/po/extra"),
-        po!("greeter",                     "Greeter",                            elementary => "greeter",               "master/po"),
-        po!("greeter-extra",               "Greeter Extra",                      elementary => "greeter",               "master/po/extra"),
-        po!("icons",                       "Icons",                              elementary => "icons",                 "main/po"),
-        po!("notifications",               "Notifications",                      elementary => "notifications",         "master/po/extra"),
-        po!("pantheon-agent-polkit",       "Pantheon Polkit Agent",              elementary => "pantheon-agent-polkit", "main/po"),
-        po!("pantheon-agent-polkit-extra", "Pantheon Polkit Agent Extra",        elementary => "pantheon-agent-polkit", "main/po/extra"),
-        po!("portals",                     "Pantheon XDG Desktop Portals",       elementary => "portals",               "main/po"),
-        po!("portals-extra",               "Pantheon XDG Desktop Portals Extra", elementary => "portals",               "main/po/extra"),
-        po!("settings-daemon",             "Settings Daemon",                    elementary => "settings-daemon",       "master/po"),
-        po!("shortcut-overlay",            "Shortcut Overlay",                   elementary => "shortcut-overlay",      "master/po"),
-        po!("shortcut-overlay-extra",      "Shortcut Overlay Extra",             elementary => "shortcut-overlay",      "master/po/extra"),
-        po!("sideload",                    "Sideload",                           elementary => "sideload",              "master/po"),
-        po!("sideload-extra",              "Sideload Extra",                     elementary => "sideload",              "master/po/extra"),
-        po!("stylesheet",                  "Stylesheet",                         elementary => "stylesheet",            "master/po"),
-        po!("wallpapers",                  "Wallpapers",                         elementary => "wallpapers",            "master/po"),
+        elementary!("capnet-assist",               "Captive Network Assistant",          po => "capnet-assist",         "master/po"),
+        elementary!("capnet-assist-extra",         "Captive Network Assistant Extra",    po => "capnet-assist",         "master/po/extra"),
+        elementary!("feedback",                    "Feedback",                           po => "feedback",              "master/po"),
+        elementary!("feedback-extra",              "Feedback Extra",                     po => "feedback",              "master/po/extra"),
+        elementary!("flatpak-platform",            "Flatpak Platform",                   po => "flatpak-platform",      "main/platform-data/po"),
+        elementary!("gala",                        "Gala",                               po => "gala",                  "master/po"),
+        elementary!("granite",                     "Granite",                            po => "granite",               "main/po"),
+        elementary!("granite-extra",               "Granite Extra",                      po => "granite",               "main/po/extra"),
+        elementary!("greeter",                     "Greeter",                            po => "greeter",               "master/po"),
+        elementary!("greeter-extra",               "Greeter Extra",                      po => "greeter",               "master/po/extra"),
+        elementary!("icons",                       "Icons",                              po => "icons",                 "main/po"),
+        elementary!("notifications",               "Notifications",                      po => "notifications",         "master/po/extra"),
+        elementary!("pantheon-agent-polkit",       "Pantheon Polkit Agent",              po => "pantheon-agent-polkit", "main/po"),
+        elementary!("pantheon-agent-polkit-extra", "Pantheon Polkit Agent Extra",        po => "pantheon-agent-polkit", "main/po/extra"),
+        elementary!("portals",                     "Pantheon XDG Desktop Portals",       po => "portals",               "main/po"),
+        elementary!("portals-extra",               "Pantheon XDG Desktop Portals Extra", po => "portals",               "main/po/extra"),
+        elementary!("settings-daemon",             "Settings Daemon",                    po => "settings-daemon",       "master/po"),
+        elementary!("shortcut-overlay",            "Shortcut Overlay",                   po => "shortcut-overlay",      "master/po"),
+        elementary!("shortcut-overlay-extra",      "Shortcut Overlay Extra",             po => "shortcut-overlay",      "master/po/extra"),
+        elementary!("sideload",                    "Sideload",                           po => "sideload",              "master/po"),
+        elementary!("sideload-extra",              "Sideload Extra",                     po => "sideload",              "master/po/extra"),
+        elementary!("stylesheet",                  "Stylesheet",                         po => "stylesheet",            "master/po"),
+        elementary!("wallpapers",                  "Wallpapers",                         po => "wallpapers",            "master/po"),
 
-        json!("website-docs-installation",        elementary => "docs/installation"),
-        json!("website-docs-learning-the-basics", elementary => "docs/learning-the-basics"),
-        json!("website-docs-translation-guide",   elementary => "docs/translation-guide"),
-        json!("website-store-index",              elementary => "store/index"),
-        json!("website-store-cart",               elementary => "store/cart"),
-        json!("website-403",                      elementary => "403"),
-        json!("website-404",                      elementary => "404"),
-        json!("website-410",                      elementary => "410"),
-        json!("website-security",                 elementary => "SECURITY"),
-        json!("website-brand",                    elementary => "brand"),
-        json!("website-capnet-assist",            elementary => "capnet-assist"),
-        json!("website-code-of-conduct",          elementary => "code-of-conduct"),
-        json!("website-get-involved",             elementary => "get-involved"),
-        json!("website-index",                    elementary => "index"),
-        json!("website-layout",                   elementary => "layout"),
-        json!("website-oem",                      elementary => "oem"),
-        json!("website-open-source",              elementary => "open-source"),
-        json!("website-press",                    elementary => "press"),
-        json!("website-privacy",                  elementary => "privacy"),
-        json!("website-support",                  elementary => "support"),
-        json!("website-thank-you",                elementary => "thank-you"),
+        elementary!("website-docs-installation",        json => "docs/installation"),
+        elementary!("website-docs-learning-the-basics", json => "docs/learning-the-basics"),
+        elementary!("website-docs-translation-guide",   json => "docs/translation-guide"),
+        elementary!("website-store-index",              json => "store/index"),
+        elementary!("website-store-cart",               json => "store/cart"),
+        elementary!("website-403",                      json => "403"),
+        elementary!("website-404",                      json => "404"),
+        elementary!("website-410",                      json => "410"),
+        elementary!("website-security",                 json => "SECURITY"),
+        elementary!("website-brand",                    json => "brand"),
+        elementary!("website-capnet-assist",            json => "capnet-assist"),
+        elementary!("website-code-of-conduct",          json => "code-of-conduct"),
+        elementary!("website-get-involved",             json => "get-involved"),
+        elementary!("website-index",                    json => "index"),
+        elementary!("website-layout",                   json => "layout"),
+        elementary!("website-oem",                      json => "oem"),
+        elementary!("website-open-source",              json => "open-source"),
+        elementary!("website-press",                    json => "press"),
+        elementary!("website-privacy",                  json => "privacy"),
+        elementary!("website-support",                  json => "support"),
+        elementary!("website-thank-you",                json => "thank-you"),
 
         // Android source
 
