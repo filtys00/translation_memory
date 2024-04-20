@@ -36,3 +36,14 @@ pub fn parse_freeshow_json(
     }
     Ok(translations)
 }
+
+pub fn parse_mastodon_json(
+    text: String,
+) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+    let json: HashMap<String, String> = serde_json::from_str(&text)?;
+    let translations = json
+        .into_iter()
+        .map(|(key, value)| (key, (value, None)))
+        .collect();
+    Ok(translations)
+}

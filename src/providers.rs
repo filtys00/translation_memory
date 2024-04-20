@@ -14,6 +14,7 @@ mod mozilla;
 mod po;
 mod properties;
 mod srt;
+mod yaml;
 
 use std::{
     collections::{BTreeMap, HashMap},

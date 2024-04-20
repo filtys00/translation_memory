@@ -9,13 +9,14 @@ use super::{
     browser_extension::parse_browser_extension,
     chrome::ChromeProvider,
     dtd::parse_dtd,
-    json::{parse_freeshow_json, parse_json},
+    json::{parse_freeshow_json, parse_json, parse_mastodon_json},
     lang_id_to_string,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
     po::{gnome::graphql_gnome, kde::graphql_kde, parse_po, NetPoProvider},
     properties::parse_properties,
     srt::parse_srt,
+    yaml::parse_mastodon_yaml,
     DuoProvider, MonoProvider, TranslationProvider,
 };
 
@@ -408,6 +409,44 @@ macro_rules! srt {
     };
 }
 
+macro_rules! duo {
+    ($id:expr, $name:literal, $group_name:expr, $parse:ident, github =>
+        default_url: $default_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    ) => {
+        Arc::new(DuoProvider {
+            id: $id,
+            name: $name,
+            group_name: $group_name,
+            parse: $parse,
+            default_url: concat!("https://raw.githubusercontent.com/", $default_url),
+            url: |lang_id| {
+                format!(
+                    concat!("https://raw.githubusercontent.com/", $url),
+                    lang_id_to_string(
+                        lang_id,
+                        $region_binder,
+                        $uppercase_region,
+                        $variant_binder,
+                        $uppercase_variant
+                    ),
+                )
+            },
+        })
+    };
+}
+
+macro_rules! mastodon {
+    ($id:literal, $name:literal, yaml => $default_file_name:literal, $file_name:literal) => {
+        duo!($id, $name, Some("Mastodon"), parse_mastodon_yaml, github =>
+            default_url: concat!("mastodon/mastodon/main/config/locales/", $default_file_name),
+                    url: concat!("mastodon/mastodon/main/config/locales/", $file_name),
+            lang_id: "-", true, "-", false,
+        )
+    };
+}
+
 #[rustfmt::skip]
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
@@ -464,6 +503,26 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         browser_extension!("tree-style-tab",      "Tree Style Tab",      github => "piroor/treestyletab",                "trunk/webextensions/_locales"),
         browser_extension!("turn-off-the-lights", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "master/src/_locales"),
         browser_extension!("ublock-origin",       "uBlock Origin",       github => "gorhill/uBlock",                     "master/src/_locales"),
+
+        // Mastodon
+
+        duo!("mastodon-javascript", "Mastodon JavaScript", Some("Mastodon"), parse_mastodon_json, github =>
+            default_url: "mastodon/mastodon/main/app/javascript/mastodon/locales/en.json",
+                    url: "mastodon/mastodon/main/app/javascript/mastodon/locales/{}.json",
+            lang_id: "-", true, "-", false,
+        ),
+
+        duo!("mastodon-android", "Mastodon for Android", Some("Mastodon"), parse_android, github =>
+            default_url: "mastodon/mastodon-android/master/mastodon/src/main/res/values/strings.xml",
+                    url: "mastodon/mastodon-android/master/mastodon/src/main/res/values-{}/strings.xml",
+            lang_id: "-r", true, "-", false,
+        ),
+
+        mastodon!("mastodon",              "Mastodon",               yaml => "en.yml",              "{}.yml"),
+        mastodon!("mastodon-activerecord", "Mastodon active record", yaml => "activerecord.en.yml", "activerecord.{}.yml"),
+        mastodon!("mastodon-devise",       "Mastodon devise",        yaml => "devise.en.yml",       "devise.{}.yml"),
+        mastodon!("mastodon-doorkeeper",   "Mastodon doorkeeper",    yaml => "doorkeeper.en.yml",   "doorkeeper.{}.yml"),
+        mastodon!("mastodon-simple-form",  "Mastodon simple form",   yaml => "simple_form.en.yml",  "simple_form.{}.yml"),
 
         // Tor project
 
