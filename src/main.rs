@@ -41,6 +41,10 @@ struct Args {
     )]
     verbose: VerboseMode,
 
+    /// Do not read the config file.
+    #[arg(long = "noconfig")]
+    no_config: bool,
+
     /// Do not open the system web browser when the web server starts.
     #[arg(long = "nobrowser", conflicts_with = "statement")]
     no_browser: bool,
@@ -129,7 +133,7 @@ async fn main() {
 
     let mut store = TranslationStore::new(DEFAULT_CACHE_PATH.into());
 
-    if Path::new(CONFIG_PATH).exists() {
+    if !args.no_config && Path::new(CONFIG_PATH).exists() {
         info!("Reading config from '{CONFIG_PATH}'...");
         store.load_config(CONFIG_PATH).unwrap();
     }
