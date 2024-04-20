@@ -317,6 +317,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             lang_id: "_", true, "@", false,
         }),
 
+        android!("davx5",                     "DAVx⁵",                     github => "bitfireAT/davx5-ose",      "strings.xml"),
         android!("etar",                      "Etar",                      github => "Etar-Group/Etar-Calendar", "strings.xml"),
         android!("fdroid",                    "F-Droid",                   gitlab => "fdroid/fdroidclient",      "strings.xml"),
         android!("material-files",            "Material Files",            github => "zhanghai/MaterialFiles",   "strings.xml"),
