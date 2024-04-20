@@ -7,7 +7,7 @@ mod providers;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
-    fs::File,
+    fs::{self, File},
     io::{BufReader, BufWriter, Read},
     path::{Path, PathBuf},
     sync::Arc,
@@ -240,8 +240,15 @@ impl TranslationStore {
     pub fn save_translations(&self) -> anyhow::Result<()> {
         let now = Instant::now();
 
-        let file = File::create(&self.save_path)
-            .map_err(|e| anyhow!("Could not create file {:?}: {e}", self.save_path))?;
+        let mut temp_save_path = self.save_path.clone();
+        let Some(file_name) = self.save_path.file_name() else {
+            bail!("Save path has no file name: {:?}", self.save_path);
+        };
+        temp_save_path.set_file_name(format!("~{}", file_name.to_string_lossy()));
+
+        let file = File::create(&temp_save_path).map_err(|e| {
+            anyhow!("Could not create temporary save file '{temp_save_path:?}': {e}")
+        })?;
         let writer = BufWriter::new(file);
         let writer = GzEncoder::new(writer, Compression::fast());
 
@@ -257,6 +264,13 @@ impl TranslationStore {
         });
 
         bincode::serialize_into(writer, &translations)?;
+
+        fs::rename(&temp_save_path, &self.save_path).map_err(|e| {
+            anyhow!(
+                "Could not move temporary save file from '{temp_save_path:?}' to '{:?}': {e}",
+                self.save_path
+            )
+        })?;
 
         debug!("Wrote cache file in {} seconds", now.elapsed().as_secs());
         Ok(())
