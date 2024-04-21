@@ -353,6 +353,95 @@
 				animation: loading 2s linear infinite;
 			}
 
+			/* Error notifications */
+
+			#errors {
+				position: fixed;
+				bottom: 0;
+				left: 0;
+				right: 0;
+
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				margin: 0;
+				padding: 0;
+
+				pointer-events: none;
+			}
+			#errors li {
+				display: flex;
+				box-sizing: border-box;
+				margin-bottom: 0.5rem;
+				border-radius: 0.5rem;
+				width: 40vw;
+
+				background-color: #ff4444;
+				color: #ffffff;
+
+				pointer-events: auto;
+			}
+			@media (max-width: 40rem) {
+				#errors li {
+					width: calc(100vw - 1rem);
+				}
+			}
+			#errors li.created {
+				animation: error-fadein 100ms linear;
+			}
+			@keyframes error-fadein {
+				0%   { opacity: 0; }
+				100% { opacity: 1; }
+			}
+			#errors li.removed {
+				animation: error-fadeout 50ms linear forwards;
+			}
+			@keyframes error-fadeout {
+				0%   { opacity: 1; }
+				100% { opacity: 0; }
+			}
+			#errors li.down {
+				animation: error-movedown 80ms linear forwards;
+			}
+			@keyframes error-movedown {
+				0%   { transform: translateY(0); }
+				100% { transform: translateY(calc(100% + 0.5rem)); }
+			}
+			#errors div {
+				display: flex;
+				flex-direction: column;
+				gap: 0.1rem;
+				margin: 0.5rem 0.5rem 0.5rem 0.7rem;
+			}
+			#errors p {
+				margin: 0;
+			}
+			#errors button {
+				display: flex;
+				justify-content: center;
+				align-items: center;
+
+				padding: 0.2rem;
+				margin: 0.2rem 0.2rem 0.2rem auto;
+				height: auto;
+				box-sizing: border-box;
+				border: none;
+				border-radius: 0.5rem;
+				outline: none;
+
+				background-color: rgba(0, 0, 0, 0);
+				cursor: pointer;
+
+				transition: all 100ms;
+			}
+			#errors button:hover {
+				background-color: rgba(0, 0, 0, 0.2);
+			}
+			#errors img {
+				width: 1.5rem;
+				height: 1.5rem;
+			}
+
 			.smallButton {
 				font-size: 1rem !important;
 				width: 100%;
@@ -457,11 +546,14 @@
 
 		<div id="noTranslations">No results</div>
 
+		<ul id="errors"></ul>
+
 		<script>
 			const header = document.getElementsByTagName("header")[0];
 			const search = document.getElementById("search");
 			const searchField = document.getElementById("searchField");
 			const noTranslations = document.getElementById("noTranslations");
+			const errors = document.getElementById("errors");
 
 			const languagesAndScopes = document.getElementById("languagesAndScopes");
 			const languagesAndScopesButton = document.getElementById("languagesAndScopesButton");
@@ -640,12 +732,16 @@
 					},
 					body: JSON.stringify({ languages: newLanguages }),
 				}).then(
-					async () => {
+					async response => {
+						if (response.status === 422) {
+							pushError("Ugyldig målkode", "Klarte ikkje oppdatera måla");
+						}
 						await refreshAll();
 						languagesAndScopes.classList.remove("loading");
 					},
 					e => {
 						console.error(e);
+						pushError(e, "Klarte ikkje oppdatera måla");
 						languagesAndScopes.classList.remove("loading");
 					},
 				)
@@ -676,12 +772,21 @@
 						scopes: Object.entries(scopeNames).filter(([k, { downloaded }]) => !downloaded).map(([k]) => k),
 					}),
 				}).then(
-					async () => {
+					async response => {
 						await refreshAll();
+
+						const errors = JSON.parse(await response.text());
+						for (const [scope, error] of Object.entries(errors)) {
+							if (error === null) { continue; }
+
+							pushError(error, `Klarte ikkje lasta ned manglande vidd «${scope}»`)
+						}
+
 						languagesAndScopes.classList.remove("loading");
 					},
 					e => {
 						console.error(e);
+						pushError(e, "Klarte ikkje lasta ned manglande vidder");
 						languagesAndScopes.classList.remove("loading");
 					},
 				)
@@ -723,7 +828,10 @@
 
 						refreshTranslations();
 					},
-					e => console.error(e),
+					e => {
+						console.error(e);
+						pushError(e, "Klarte ikkje oppdatera måla og viddene");
+					},
 				)
 			}
 
@@ -893,6 +1001,7 @@
 					e => {
 						if (e.name === "AbortError") { return; }
 						console.error(e);
+						pushError(e, "Klarte ikkje oppdatera omsetjingane");
 					},
 				);
 
@@ -945,6 +1054,7 @@
 					e => {
 						if (e.name === "AbortError") { return; }
 						console.error(e);
+						pushError(e, "Klarte ikkje leggja til fleire omsetjingar");
 					},
 				);
 			}
@@ -1020,6 +1130,58 @@
 						container.appendChild(document.createTextNode(value));
 					}
 				}
+			}
+
+			/**
+			 * Push an error message to the user.
+			 * 
+			 * @param msg {string|Error} - an error message
+			 * @param title {string} - the error title
+			 */
+			function pushError(msg, title) {
+				if (msg instanceof Error) {
+					if (msg.name === "TypeError" && msg.message === "NetworkError when attempting to fetch resource.") {
+						msg = "Får ikkje kontakt med bakenden";
+					} else {
+						msg = msg.name + ": " + msg.message;
+					}
+				}
+
+				let li = document.createElement("li");
+				li.classList.add("created");
+				setTimeout(() => li.classList.remove("created"), 100);
+
+				let div = document.createElement("div");
+
+				let b = document.createElement("b");
+				b.appendChild(document.createTextNode(title + ":"));
+				div.appendChild(b);
+
+				let p = document.createElement("p");
+				p.appendChild(document.createTextNode(msg));
+				div.appendChild(p);
+
+				li.appendChild(div);
+
+				let button = document.createElement("button");
+				button.onclick = e => {
+					li.classList.add("removed");
+					for (const child of errors.children) {
+						if (child === li) { break; }
+						child.classList.add("down");
+					}
+					setTimeout(() => {
+						errors.childNodes.forEach(node => node.classList.remove("down"));
+						errors.removeChild(li);
+					}, 100);
+				};
+
+				let img = document.createElement("img");
+				img.src = "/icon/remove.svg";
+				button.appendChild(img);
+
+				li.appendChild(button);
+				errors.insertBefore(li, errors.firstChild);
 			}
 		</script>
 	</body>
