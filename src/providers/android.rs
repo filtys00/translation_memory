@@ -66,15 +66,10 @@ pub fn parse_android(text: String) -> anyhow::Result<HashMap<String, (String, Op
                 name = Some(name_attr);
             }
             Ok(Event::Text(e)) if name.is_some() => {
-                let t = String::from_utf8_lossy(&e);
-                if t.len() >= 2 && t.starts_with('"') && t.ends_with('"') {
-                    text.push_str(&t[1..t.len() - 1]);
-                } else {
-                    text.push_str(t.trim());
-                }
+                text.push_str(String::from_utf8_lossy(&e).trim());
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"string" => {
-                let Some(n) = name else {
+                let Some(name_local) = name else {
                     comment = None;
                     text.clear();
                     continue;
@@ -83,13 +78,23 @@ pub fn parse_android(text: String) -> anyhow::Result<HashMap<String, (String, Op
                 if text.len() > 2
                     && text.starts_with('"')
                     && text.ends_with('"')
+                    && !text.ends_with("\\\"")
                     && !text[1..(text.len() - 1)].contains('"')
                 {
                     text.remove(text.len() - 1);
                     text.remove(0);
                 }
+                if text.contains('\\') {
+                    text = text.replace("\\n", "\n");
+                    text = text.replace("\\\t", "\t");
+                    text = text.replace("\\?", "?");
+                    text = text.replace("\\\"", "\"");
+                    text = text.replace("\\'", "'");
+                    text = text.replace("\\‘", "‘");
+                    text = text.replace("\\’", "’");
+                }
 
-                resources.insert(n, (text, comment));
+                resources.insert(name_local, (text, comment));
 
                 comment = None;
                 name = None;
