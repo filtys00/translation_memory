@@ -23,7 +23,9 @@ use serde::{Deserialize, Serialize};
 use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
-use self::providers::{default_providers, parse_android, parse_microsoft_tbx, TranslationProvider};
+use self::providers::{
+    default_providers, merge_messages, parse_android, parse_microsoft_tbx, TranslationProvider,
+};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {
@@ -188,18 +190,7 @@ impl TranslationStore {
                         let messages = parse_android(text)
                             .map_err(|e| anyhow!("Could not parse type 'androidxml': {e}"))?;
 
-                        let mut t = Vec::with_capacity(messages.len());
-                        for (key, (translation, _comment)) in messages {
-                            let Some((original, comment)) = messages_en.get(&key) else {
-                                continue;
-                            };
-                            t.push(Translation {
-                                original: original.clone(),
-                                translation,
-                                comment: comment.as_ref().cloned(),
-                            });
-                        }
-                        translations.insert(lang_id, Some(t));
+                        translations.insert(lang_id, Some(merge_messages(messages, &messages_en)));
                     }
 
                     translations

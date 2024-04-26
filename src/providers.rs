@@ -218,25 +218,35 @@ where
             };
             let messages = (self.parse)(text)?;
 
-            let mut t = Vec::with_capacity(messages.len());
-            for (key, (translation, comment_en)) in messages {
-                let Some((original, comment)) = messages_en.get(&key) else {
-                    continue;
-                };
-                let comment = match (comment, comment_en) {
-                    (Some(comment), _) => format!("Key: {key}\n{comment}"),
-                    (None, Some(comment)) => format!("Key: {key}\n{comment}"),
-                    (None, None) => format!("Key: {key}"),
-                };
-                t.push(Translation {
-                    original: original.clone(),
-                    translation,
-                    comment: Some(comment),
-                });
-            }
-            translations.insert(lang_id, Some(t));
+            translations.insert(lang_id, Some(merge_messages(messages, &messages_en)));
         }
 
         Ok(translations)
     }
+}
+
+/// Returns a vector of `Translation`s by merging the translated `messages` and the English `messages_en`.
+pub fn merge_messages(
+    messages: HashMap<String, (String, Option<String>)>,
+    messages_en: &HashMap<String, (String, Option<String>)>,
+) -> Vec<Translation> {
+    let mut translations = Vec::with_capacity(messages.len());
+
+    for (key, (translation, comment)) in messages {
+        let Some((original, comment_en)) = messages_en.get(&key) else {
+            continue;
+        };
+        let comment = match (comment_en, comment) {
+            (Some(comment), _) => format!("Key: {key}\n{comment}"),
+            (None, Some(comment)) => format!("Key: {key}\n{comment}"),
+            (None, None) => format!("Key: {key}"),
+        };
+        translations.push(Translation {
+            original: original.clone(),
+            translation,
+            comment: Some(comment),
+        });
+    }
+
+    translations
 }
