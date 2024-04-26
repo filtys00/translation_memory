@@ -23,7 +23,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
-use self::providers::{default_providers, parse_android, parse_tbx, TranslationProvider};
+use self::providers::{default_providers, parse_android, parse_microsoft_tbx, TranslationProvider};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {
@@ -208,7 +208,7 @@ impl TranslationStore {
                     let mut translations = BTreeMap::new();
 
                     for (lang_id, text) in texts {
-                        let t = parse_tbx(text, &lang_id)
+                        let t = parse_microsoft_tbx(text)
                             .map_err(|e| anyhow!("Could not parse type 'microsofttbx': {e}"))?;
                         translations.insert(lang_id, Some(t));
                     }

@@ -2,17 +2,49 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
 use crate::Translation;
 
-pub fn parse_tbx(text: String, lang_id: &LanguageIdentifier) -> anyhow::Result<Vec<Translation>> {
-    let translations: MicrosoftTranslations = quick_xml::de::from_str(&text)
-        .map_err(|e| anyhow!("Could not parse language ({lang_id}) file: {e}"))?;
+pub fn parse_microsoft_tbx(text: String) -> anyhow::Result<Vec<Translation>> {
+    let translations: MicrosoftTranslations = quick_xml::de::from_str(&text)?;
 
     let en_us: LanguageIdentifier = "en-US".parse()?;
+    let lang_id = translations
+        .text
+        .body
+        .term_entries
+        .iter()
+        .find_map(|term_entry| {
+            let lang_set = term_entry
+                .lang_sets
+                .iter()
+                .find(|lang_set| lang_set.lang != en_us);
+            lang_set.map(|lang_set| &lang_set.lang)
+        })
+        .ok_or_else(|| anyhow!("Could not find any language other than '{en_us}'"))?;
+    let lang_ids: Vec<&LanguageIdentifier> = translations
+        .text
+        .body
+        .term_entries
+        .iter()
+        .flat_map(|term_entry| &term_entry.lang_sets)
+        .map(|lang_set| &lang_set.lang)
+        .filter(|lang| **lang != en_us && *lang != lang_id)
+        .collect();
+    if !lang_ids.is_empty() {
+        bail!(
+            "Found two different languages other than '{en_us}': {}",
+            lang_ids
+                .iter()
+                .map(|lang_id| lang_id.to_string())
+                .reduce(|acc, lang_id| acc + ", " + &lang_id)
+                .unwrap_or_default()
+        );
+    }
+
     let translations = translations
         .text
         .body

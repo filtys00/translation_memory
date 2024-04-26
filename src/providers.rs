@@ -27,7 +27,9 @@ use log::trace;
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
 
-pub use self::{android::parse_android, defaults::default_providers, microsoft::parse_tbx};
+pub use self::{
+    android::parse_android, defaults::default_providers, microsoft::parse_microsoft_tbx,
+};
 use super::Translation;
 
 #[async_trait]
