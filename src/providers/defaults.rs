@@ -6,7 +6,7 @@ use std::{sync::Arc, vec};
 
 use super::{
     android::{parse_android, parse_android_base64},
-    browser_extension::parse_browser_extension,
+    browser_extension::{parse_browser_extension, parse_dark_reader},
     chrome::ChromeProvider,
     dtd::parse_dtd,
     json::{parse_elementary_json, parse_freeshow_json, parse_mastodon_json},
@@ -285,33 +285,38 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             remove_char: Some('&'),
         }),
 
-        mono!("duckduckgo", "DuckDuckGo",         None,            parse_po, None,      github => {
+        duo!( "dark-reader", "Dark Reader",        Some("Browser extensions"), parse_dark_reader,  github => {
+            default_url: "darkreader/darkreader/main/src/_locales/en.config",
+                    url: "darkreader/darkreader/main/src/_locales/{}.config",
+            lang_id: "-", true, "@", false,
+        }),
+        mono!("duckduckgo",  "DuckDuckGo",         None,                       parse_po, None,      github => {
             url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
             lang_id: "_", true, "@", false,
         }),
-        duo!( "freeshow",   "FreeShow",           None,            parse_freeshow_json, github => {
+        duo!( "freeshow",    "FreeShow",           None,                       parse_freeshow_json, github => {
             default_url: "ChurchApps/FreeShow/main/public/lang/en.json",
                     url: "ChurchApps/FreeShow/main/public/lang/{}.json",
             lang_id: "_", true, "@", false,
         }),
-        mono!("multimc",    "MultiMC",            None,            parse_po, Some('&'), github => {
+        mono!("multimc",     "MultiMC",            None,                       parse_po, Some('&'), github => {
             url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
             lang_id: "_", true, "_", true,
         }),
-        mono!("pacman",     "Pacman",             None,            parse_po, None,      gitlab => {
+        mono!("pacman",      "Pacman",             None,                       parse_po, None,      gitlab => {
             base_url: "gitlab.archlinux.org/pacman/pacman",
             url: "master/src/pacman/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("weblate",    "Weblate",            Some("Weblate"), parse_po, None,      github => {
+        mono!("weblate",     "Weblate",            Some("Weblate"),            parse_po, None,      github => {
             url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po",
             lang_id: "_", true, "_", false,
         }),
-        mono!("weblatejs",  "Weblate JavaScript", Some("Weblate"), parse_po, None,      github => {
+        mono!("weblatejs",   "Weblate JavaScript", Some("Weblate"),            parse_po, None,      github => {
             url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po",
             lang_id: "_", true, "_", false,
         }),
-        mono!("wine",       "Wine",               None,            parse_po, Some('&'), gitlab => {
+        mono!("wine",        "Wine",               None,                       parse_po, Some('&'), gitlab => {
             base_url: "gitlab.winehq.org/wine/wine",
             url: "master/po/{}.po",
             lang_id: "_", true, "@", false,

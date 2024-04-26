@@ -44,3 +44,47 @@ struct Placeholder {
     content: String,
     example: Option<String>,
 }
+
+pub fn parse_dark_reader(
+    text: String,
+) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+    let mut translations: HashMap<String, (String, Option<String>)> = HashMap::new();
+
+    let mut key: Option<String> = None;
+    let mut value: Option<String> = None;
+    for line in text.lines() {
+        if line.starts_with('@') {
+            if let Some(key) = key {
+                if let Some(value) = value {
+                    translations.insert(
+                        key.clone(),
+                        (value.trim_end_matches('\n').to_string(), Some(key)),
+                    );
+                }
+            }
+
+            key = Some(line.to_string());
+            value = None;
+            continue;
+        }
+
+        let Some(value) = &mut value else {
+            value = Some(line.to_string());
+            continue;
+        };
+
+        value.push('\n');
+        value.push_str(line);
+    }
+
+    if let Some(key) = key {
+        if let Some(value) = value {
+            translations.insert(
+                key.clone(),
+                (value.trim_end_matches('\n').to_string(), Some(key)),
+            );
+        }
+    }
+
+    Ok(translations)
+}
