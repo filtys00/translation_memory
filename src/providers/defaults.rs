@@ -338,6 +338,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         browser_extension!("tree-style-tab",      "Tree Style Tab",      github => "piroor/treestyletab",                "webextensions/_locales",          "en"),
         browser_extension!("turn-off-the-lights", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "src/_locales", "en"),
         browser_extension!("ublock-origin",       "uBlock Origin",       github => "gorhill/uBlock",                     "src/_locales",                    "en"),
+        browser_extension!("i-still-dont-care-about-cookies", "I still don't care about cookies", github => "OhMyGuus/I-Still-Dont-Care-About-Cookies", "src/_locales", "en"),
 
         // Mastodon
 
