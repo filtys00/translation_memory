@@ -217,14 +217,19 @@ where
             let messages = (self.parse)(text)?;
 
             let mut t = Vec::with_capacity(messages.len());
-            for (key, (translation, _comment)) in messages {
+            for (key, (translation, comment_en)) in messages {
                 let Some((original, comment)) = messages_en.get(&key) else {
                     continue;
+                };
+                let comment = match (comment, comment_en) {
+                    (Some(comment), _) => format!("Key: {key}\n{comment}"),
+                    (None, Some(comment)) => format!("Key: {key}\n{comment}"),
+                    (None, None) => format!("Key: {key}"),
                 };
                 t.push(Translation {
                     original: original.clone(),
                     translation,
-                    comment: comment.as_ref().cloned(),
+                    comment: Some(comment),
                 });
             }
             translations.insert(lang_id, Some(t));

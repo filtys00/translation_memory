@@ -56,10 +56,7 @@ pub fn parse_dark_reader(
         if line.starts_with('@') {
             if let Some(key) = key {
                 if let Some(value) = value {
-                    translations.insert(
-                        key.clone(),
-                        (value.trim_end_matches('\n').to_string(), Some(key)),
-                    );
+                    translations.insert(key, (value.trim_end_matches('\n').to_string(), None));
                 }
             }
 
@@ -79,10 +76,7 @@ pub fn parse_dark_reader(
 
     if let Some(key) = key {
         if let Some(value) = value {
-            translations.insert(
-                key.clone(),
-                (value.trim_end_matches('\n').to_string(), Some(key)),
-            );
+            translations.insert(key, (value.trim_end_matches('\n').to_string(), None));
         }
     }
 
