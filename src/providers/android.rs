@@ -12,6 +12,8 @@ use base64::{
 };
 use quick_xml::{events::Event, Reader};
 
+use super::TranslationMessages;
+
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
         Ok(alphabet) => alphabet,
@@ -20,9 +22,7 @@ const BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new(),
 );
 
-pub fn parse_android_base64(
-    base64: String,
-) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+pub fn parse_android_base64(base64: String) -> anyhow::Result<TranslationMessages> {
     let bytes = BASE64
         .decode(&base64)
         .map_err(|e| anyhow!("Invalid base64: {e}\n{base64}"))?;
@@ -31,7 +31,7 @@ pub fn parse_android_base64(
     parse_android(text)
 }
 
-pub fn parse_android(text: String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
     let mut resources = HashMap::new();
 
     let mut reader = Reader::from_str(&text);

@@ -6,9 +6,9 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
 
-pub fn parse_mastodon_yaml(
-    text: String,
-) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+use super::TranslationMessages;
+
+pub fn parse_mastodon_yaml(text: String) -> anyhow::Result<TranslationMessages> {
     let yaml: HashMap<String, HashMap<String, serde_yaml::Value>> = serde_yaml::from_str(&text)?;
     let yaml = yaml
         .into_iter()
@@ -31,7 +31,7 @@ pub fn parse_mastodon_yaml(
 fn parse_recursive(
     value: &serde_yaml::Value,
     place: &mut Vec<String>,
-    translations: &mut HashMap<String, (String, Option<String>)>,
+    translations: &mut TranslationMessages,
 ) -> anyhow::Result<()> {
     if let Some(value) = value.as_str() {
         translations.insert(place.join("."), (value.to_string(), None));

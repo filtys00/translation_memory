@@ -103,6 +103,37 @@ async fn download_text(url: &str, client: &Client) -> anyhow::Result<Option<Stri
     Ok(Some(text))
 }
 
+/// Key-value map containing the translation messages of a single language.
+///
+/// Use `merge_messages` to convert to a list of `Translation`s.
+type TranslationMessages = HashMap<String, (String, Option<String>)>;
+
+/// Returns a vector of `Translation`s by merging the translated `messages` and the English `messages_en`.
+pub fn merge_messages(
+    messages: TranslationMessages,
+    messages_en: &TranslationMessages,
+) -> Vec<Translation> {
+    let mut translations = Vec::with_capacity(messages.len());
+
+    for (key, (translation, comment)) in messages {
+        let Some((original, comment_en)) = messages_en.get(&key) else {
+            continue;
+        };
+        let comment = match (comment_en, comment) {
+            (Some(comment), _) => format!("Key: {key}\n{comment}"),
+            (None, Some(comment)) => format!("Key: {key}\n{comment}"),
+            (None, None) => format!("Key: {key}"),
+        };
+        translations.push(Translation {
+            original: original.clone(),
+            translation,
+            comment: Some(comment),
+        });
+    }
+
+    translations
+}
+
 /// Standard provider for translation formats where both the original strings
 /// and the translations are located within the same file.
 pub struct MonoProvider<U, P>
@@ -170,7 +201,7 @@ where
 pub struct DuoProvider<U, P>
 where
     U: Fn(&LanguageIdentifier) -> String + Send + Sync,
-    P: Fn(String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> + Send + Sync,
+    P: Fn(String) -> anyhow::Result<TranslationMessages> + Send + Sync,
 {
     pub id: &'static str,
     pub name: &'static str,
@@ -184,7 +215,7 @@ where
 impl<U, P> TranslationProvider for DuoProvider<U, P>
 where
     U: Fn(&LanguageIdentifier) -> String + Send + Sync,
-    P: Fn(String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> + Send + Sync,
+    P: Fn(String) -> anyhow::Result<TranslationMessages> + Send + Sync,
 {
     fn id(&self) -> &str {
         self.id
@@ -223,30 +254,4 @@ where
 
         Ok(translations)
     }
-}
-
-/// Returns a vector of `Translation`s by merging the translated `messages` and the English `messages_en`.
-pub fn merge_messages(
-    messages: HashMap<String, (String, Option<String>)>,
-    messages_en: &HashMap<String, (String, Option<String>)>,
-) -> Vec<Translation> {
-    let mut translations = Vec::with_capacity(messages.len());
-
-    for (key, (translation, comment)) in messages {
-        let Some((original, comment_en)) = messages_en.get(&key) else {
-            continue;
-        };
-        let comment = match (comment_en, comment) {
-            (Some(comment), _) => format!("Key: {key}\n{comment}"),
-            (None, Some(comment)) => format!("Key: {key}\n{comment}"),
-            (None, None) => format!("Key: {key}"),
-        };
-        translations.push(Translation {
-            original: original.clone(),
-            translation,
-            comment: Some(comment),
-        });
-    }
-
-    translations
 }

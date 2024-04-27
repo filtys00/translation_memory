@@ -6,7 +6,9 @@ use std::collections::HashMap;
 
 use anyhow::bail;
 
-pub fn parse_dtd(text: String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+use super::TranslationMessages;
+
+pub fn parse_dtd(text: String) -> anyhow::Result<TranslationMessages> {
     let mut messages = HashMap::new();
     let mut comment = (false, None);
     for mut line in text.lines() {

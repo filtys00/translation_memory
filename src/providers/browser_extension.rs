@@ -6,9 +6,9 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-pub fn parse_browser_extension(
-    text: String,
-) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+use super::TranslationMessages;
+
+pub fn parse_browser_extension(text: String) -> anyhow::Result<TranslationMessages> {
     let messages: HashMap<String, Message> = serde_json::from_str(&text)?;
     let messages = messages
         .into_iter()
@@ -45,10 +45,8 @@ struct Placeholder {
     example: Option<String>,
 }
 
-pub fn parse_dark_reader(
-    text: String,
-) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
-    let mut translations: HashMap<String, (String, Option<String>)> = HashMap::new();
+pub fn parse_dark_reader(text: String) -> anyhow::Result<TranslationMessages> {
+    let mut translations: TranslationMessages = HashMap::new();
 
     let mut key: Option<String> = None;
     let mut value: Option<String> = None;

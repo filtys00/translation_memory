@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 
+use super::TranslationMessages;
 use crate::Translation;
 
 pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<Translation>> {
@@ -23,9 +24,7 @@ pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<Translation>> {
     Ok(translations)
 }
 
-pub fn parse_freeshow_json(
-    text: String,
-) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+pub fn parse_freeshow_json(text: String) -> anyhow::Result<TranslationMessages> {
     let json: HashMap<String, HashMap<String, String>> = serde_json::from_str(&text)?;
 
     let mut translations = HashMap::new();
@@ -37,9 +36,7 @@ pub fn parse_freeshow_json(
     Ok(translations)
 }
 
-pub fn parse_mastodon_json(
-    text: String,
-) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+pub fn parse_mastodon_json(text: String) -> anyhow::Result<TranslationMessages> {
     let json: HashMap<String, String> = serde_json::from_str(&text)?;
     let translations = json
         .into_iter()

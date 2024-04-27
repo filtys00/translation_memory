@@ -6,7 +6,9 @@ use std::collections::HashMap;
 
 use anyhow::bail;
 
-pub fn parse_properties(text: String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+use super::TranslationMessages;
+
+pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
     let mut translations = HashMap::new();
 
     let mut comment = None;

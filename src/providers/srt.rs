@@ -2,9 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::collections::HashMap;
+use super::TranslationMessages;
 
-pub fn parse_srt(text: String) -> anyhow::Result<HashMap<String, (String, Option<String>)>> {
+pub fn parse_srt(text: String) -> anyhow::Result<TranslationMessages> {
     let mut subtitles = Vec::new();
     let mut current_subtitle = String::new();
     let mut skip = 2;
