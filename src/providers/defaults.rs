@@ -301,6 +301,11 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
                     url: "ChurchApps/FreeShow/main/public/lang/{}.json",
             lang_id: "_", true, "@", false,
         }),
+        mono!("inkscape",    "Inkscape",           Some("Inkscape"),           parse_po, Some('_'), gitlab => {
+            base_url: "gitlab.com/inkscape/inkscape",
+            url: "master/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
         mono!("multimc",     "MultiMC",            None,                       parse_po, Some('&'), github => {
             url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
             lang_id: "_", true, "_", true,
