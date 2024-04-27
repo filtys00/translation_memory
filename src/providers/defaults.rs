@@ -208,7 +208,6 @@ macro_rules! elementary {
             lang_id: "_", true, "_", false,
         })
     };
-
 }
 
 macro_rules! geogebra {
