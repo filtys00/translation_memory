@@ -4,6 +4,7 @@
 
 pub mod gnome;
 pub mod kde;
+pub mod libreoffice;
 
 use std::{
     collections::{BTreeMap, HashMap},

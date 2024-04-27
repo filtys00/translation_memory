@@ -14,7 +14,10 @@ use super::{
     microsoft::parse_microsoft_tbx,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
-    po::{gnome::graphql_gnome, kde::graphql_kde, parse_po, NetPoProvider},
+    po::{
+        gnome::graphql_gnome, kde::graphql_kde, libreoffice::crawl_libreoffice, parse_po,
+        NetPoProvider,
+    },
     properties::parse_properties,
     srt::parse_srt,
     yaml::parse_mastodon_yaml,
@@ -295,6 +298,12 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             name: "KDE",
             urls: graphql_kde,
             remove_char: Some('&'),
+        }),
+        Arc::new(NetPoProvider {
+            id: "libreoffice",
+            name: "LibreOffice",
+            urls: crawl_libreoffice,
+            remove_char: Some('_'),
         }),
 
         duo!( "dark-reader", "Dark Reader",        Some("Browser extensions"), parse_dark_reader,  github => {
