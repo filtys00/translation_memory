@@ -24,7 +24,7 @@ use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
 use self::providers::{
-    default_providers, merge_messages, parse_android, parse_microsoft_tbx, TranslationProvider,
+    default_providers, merge_messages, simple_provider, SimpleProvider, TranslationProvider,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -51,7 +51,7 @@ struct Config {
 #[derive(Deserialize, Serialize)]
 struct ConfigEntry {
     #[serde(rename = "type")]
-    format: String,
+    type_name: String,
     name: String,
     group_name: Option<String>,
     paths: Vec<ConfigEntryPath>,
@@ -171,8 +171,8 @@ impl TranslationStore {
         }
 
         for (i, (entry, texts)) in config_texts.into_iter().enumerate() {
-            let translations = match entry.format.as_str() {
-                "androidxml" => {
+            let translations = match simple_provider(&entry.type_name) {
+                Some(SimpleProvider::Duo(parse)) => {
                     let mut translations = BTreeMap::new();
 
                     let en: LanguageIdentifier = "en".parse().unwrap();
@@ -181,32 +181,45 @@ impl TranslationStore {
                         .get(&en)
                         .ok_or_else(|| anyhow!("Entry '{}' has no language 'en'", entry.name))?
                         .to_string();
-                    let messages_en = parse_android(text)?;
+                    let messages_en = parse(text).map_err(|e| {
+                        anyhow!(
+                            "Could not parse language 'en' in entry '{}': {e}",
+                            entry.name
+                        )
+                    })?;
 
                     for (lang_id, text) in texts {
                         if lang_id == en {
                             continue;
                         }
-                        let messages = parse_android(text)
-                            .map_err(|e| anyhow!("Could not parse type 'androidxml': {e}"))?;
+                        let messages = parse(text).map_err(|e| {
+                            anyhow!(
+                                "Could not parse language '{lang_id}' in entry '{}': {e}",
+                                entry.name
+                            )
+                        })?;
 
                         translations.insert(lang_id, Some(merge_messages(messages, &messages_en)));
                     }
 
                     translations
                 }
-                "microsofttbx" => {
+                Some(SimpleProvider::Mono(parse)) => {
                     let mut translations = BTreeMap::new();
 
                     for (lang_id, text) in texts {
-                        let t = parse_microsoft_tbx(text)
-                            .map_err(|e| anyhow!("Could not parse type 'microsofttbx': {e}"))?;
+                        let t = parse(text).map_err(|e| {
+                            anyhow!(
+                                "Could not parse language '{lang_id}' in entry '{}': {e}",
+                                entry.name
+                            )
+                        })?;
                         translations.insert(lang_id, Some(t));
                     }
 
                     translations
                 }
-                file_type => bail!("Unsupported translations type: {file_type}"),
+                None => bail!("Type '{}' is not supported", entry.type_name),
             };
 
             let id = format!("localfile:{i}");

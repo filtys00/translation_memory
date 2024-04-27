@@ -11,14 +11,16 @@ use super::{
     dtd::parse_dtd,
     json::{parse_elementary_json, parse_freeshow_json, parse_mastodon_json},
     lang_id_to_string,
+    microsoft::parse_microsoft_tbx,
     minecraft::MinecraftProvider,
     mozilla::MozillaProvider,
     po::{gnome::graphql_gnome, kde::graphql_kde, parse_po, NetPoProvider},
     properties::parse_properties,
     srt::parse_srt,
     yaml::parse_mastodon_yaml,
-    DuoProvider, MonoProvider, TranslationProvider,
+    DuoProvider, MonoProvider, TranslationMessages, TranslationProvider,
 };
+use crate::Translation;
 
 macro_rules! android {
     ($id:literal, $name:literal, github => $repo:literal, $file_name:literal) => {
@@ -717,4 +719,20 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     }
 
     providers
+}
+
+/// A function that parses a translation file.
+pub enum SimpleProvider {
+    Mono(fn(String) -> anyhow::Result<Vec<Translation>>),
+    Duo(fn(String) -> anyhow::Result<TranslationMessages>),
+}
+
+/// Returns a `SimpleProvider` corresponding with `type_name`.
+#[rustfmt::skip]
+pub fn simple_provider(type_name: &str) -> Option<SimpleProvider> {
+    match type_name {
+          "androidxml" => Some(SimpleProvider::Duo(parse_android)),
+        "microsofttbx" => Some(SimpleProvider::Mono(parse_microsoft_tbx)),
+        _ => None,
+    }
 }

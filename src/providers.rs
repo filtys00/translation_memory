@@ -16,6 +16,8 @@ mod properties;
 mod srt;
 mod yaml;
 
+pub use defaults::{default_providers, simple_provider, SimpleProvider};
+
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -27,9 +29,6 @@ use log::trace;
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
 
-pub use self::{
-    android::parse_android, defaults::default_providers, microsoft::parse_microsoft_tbx,
-};
 use super::Translation;
 
 #[async_trait]
