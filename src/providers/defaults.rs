@@ -208,6 +208,16 @@ macro_rules! elementary {
 
 }
 
+macro_rules! geogebra {
+    ($id:literal, $name:literal, properties => $file_base:literal) => {
+        duo!(concat!("geogebra-", $id), $name, Some("GeoGebra"), parse_properties, github => {
+            default_url: concat!("geogebra/geogebra/master/common-jre/src/nonfree/resources/org/geogebra/common/jre/properties/", $file_base, ".properties"),
+                    url: concat!("geogebra/geogebra/master/common-jre/src/nonfree/resources/org/geogebra/common/jre/properties/", $file_base, "_{}.properties"),
+            lang_id: "_", true, "_", false,
+        })
+    };
+}
+
 macro_rules! mastodon {
     ($id:literal, $name:literal, yaml => $default_file_name:literal, $file_name:literal) => {
         duo!($id, $name, Some("Mastodon"), parse_mastodon_yaml, github => {
@@ -346,6 +356,15 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         browser_extension!("turn-off-the-lights", "Turn Off The Lights", github => "turnoffthelights/Turn-Off-the-Lights-Chrome-extension", "src/_locales", "en"),
         browser_extension!("ublock-origin",       "uBlock Origin",       github => "gorhill/uBlock",                     "src/_locales",                    "en"),
         browser_extension!("i-still-dont-care-about-cookies", "I still don't care about cookies", github => "OhMyGuus/I-Still-Dont-Care-About-Cookies", "src/_locales", "en"),
+
+        // GeoGebra
+
+        geogebra!("colors",  "GeoGebra colors",  properties => "colors"),
+        geogebra!("command", "GeoGebra command", properties => "command"),
+        geogebra!("error",   "GeoGebra error",   properties => "error"),
+        geogebra!("javaui",  "GeoGebra javaui",  properties => "javaui"),
+        geogebra!("menu",    "GeoGebra menu",    properties => "menu"),
+        geogebra!("symbols", "GeoGebra symbols", properties => "symbols"),
 
         // Mastodon
 
