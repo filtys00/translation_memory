@@ -1124,10 +1124,20 @@
 				for (const value of values) {
 					if (value.marked) {
 						let b = document.createElement("b");
-						b.appendChild(document.createTextNode(value.text));
+						const text = value.text.split("\n");
+						b.appendChild(document.createTextNode(text[0]));
+						for (let i = 1; i < text.length; i++) {
+							b.appendChild(document.createElement("br"));
+							b.appendChild(document.createTextNode(text[i]));
+						}
 						container.appendChild(b);
 					} else {
-						container.appendChild(document.createTextNode(value));
+						const text = value.split("\n");
+						container.appendChild(document.createTextNode(text[0]));
+						for (let i = 1; i < text.length; i++) {
+							container.appendChild(document.createElement("br"));
+							container.appendChild(document.createTextNode(text[i]));
+						}
 					}
 				}
 			}
