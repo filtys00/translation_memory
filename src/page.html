@@ -690,7 +690,11 @@
 				refreshTranslations();
 			}
 			allScopesCheckbox.oninput = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.firstChild.checked = allScopesCheckbox.checked);
+				scopeList.childNodes.forEach(e => {
+					if (!e.firstChild.firstChild.disabled) {
+						e.firstChild.firstChild.checked = allScopesCheckbox.checked;
+					}
+				});
 				for (scope in scopeFilters) {
 					scopeFilters[scope] = allScopesCheckbox.checked;
 				}
@@ -896,7 +900,16 @@
 
 					let input = document.createElement("input");
 					input.type = "checkbox";
-					input.checked = scope.id ? scopeFilters[scope.id] : scope.scopes.reduce((prev, curr) => prev || curr);
+					if (scope.downloaded === false ||
+						(scope.scopes && !scope.scopes.reduce((acc, scope) => acc || scope.downloaded, false)))
+					{
+						input.disabled = true;
+						li.title = `«${scope.name}» er ikkje lasta ned`;
+					} else {
+						input.checked = scope.id ?
+							scopeFilters[scope.id] :
+							scope.scopes.reduce((prev, curr) => prev || curr);
+					}
 					input.oninput = e => {
 						if (scope.id) {
 							scopeFilters[scope.id] = input.checked;
