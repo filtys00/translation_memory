@@ -226,7 +226,11 @@ impl TranslationStore {
             trace!(
                 "Read config entry '{}' (ID {id}): {} translations",
                 entry.name,
-                translations.len()
+                translations
+                    .iter()
+                    .filter_map(|(_, translations)| translations.as_ref())
+                    .flatten()
+                    .count(),
             );
             self.translations.entry(id.clone()).or_insert(translations);
             self.providers.push(Arc::new(DummyProvider {

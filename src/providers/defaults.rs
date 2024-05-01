@@ -333,6 +333,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             url: "master/src/pacman/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
+        mono!("poedit",      "Poedit",             None,                       parse_po, None,      github => {
+            url: "vslavik/poedit/master/locales/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
         mono!("weblate",     "Weblate",            Some("Weblate"),            parse_po, None,      github => {
             url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po",
             lang_id: "_", true, "_", false,
