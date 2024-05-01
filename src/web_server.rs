@@ -288,7 +288,7 @@ async fn debug_api(
 
 #[derive(Deserialize, Serialize)]
 struct QueryParams {
-    regex: Option<String>,
+    search: Option<String>,
 
     #[serde(deserialize_with = "deserialize_languages")]
     languages: Vec<LanguageIdentifier>,
@@ -332,12 +332,12 @@ async fn query_api(
     debug!(
         "Request for '/query':\
       \n{{\
-      \n    regex: {},\
+      \n    search: {},\
       \n    languages: \"{}\", scopes: {},\
       \n    limit: {}, skip: {}, count: {}\
       \n}}",
         params
-            .regex
+            .search
             .as_ref()
             .map(|v| Cow::Owned(format!("\"{v}\"")))
             .unwrap_or(Cow::Borrowed("undefined")),
@@ -367,13 +367,10 @@ async fn query_api(
         },
     );
 
-    let regex = match &params.regex {
-        None => None,
-        Some(regex) if regex.is_empty() => None,
-        Some(regex) => Some(
-            Regex::new(&format!("(?i){regex}"))
-                .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-        ),
+    let search_filters = if let Some(search) = &params.search {
+        parse_search(search).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
+    } else {
+        vec![]
     };
 
     let store = store.lock().await;
@@ -384,9 +381,31 @@ async fn query_api(
         if !params.scopes.contains(scope) {
             return false;
         }
-        if let Some(regex) = &regex {
-            if !regex.is_match(&translation.original) && !regex.is_match(&translation.translation) {
-                return false;
+
+        for (filter, filter_mode) in &search_filters {
+            let matches = match filter {
+                SearchFilter::OriginalRegex(regex) => regex.is_match(&translation.original),
+                SearchFilter::TranslationRegex(regex) => regex.is_match(&translation.translation),
+                SearchFilter::EitherRegex(regex) => {
+                    regex.is_match(&translation.original)
+                        || regex.is_match(&translation.translation)
+                }
+                SearchFilter::Scope(s) => {
+                    if s == *scope {
+                        true
+                    } else if let Some(provider) = store.provider(scope) {
+                        provider.name() == s || provider.group_name() == Some(s)
+                    } else {
+                        false
+                    }
+                }
+                SearchFilter::Language(l) => l == *lang_id,
+            };
+            match (filter_mode, matches) {
+                (SearchFilterMode::Require, true) => {}
+                (SearchFilterMode::Require, false) => return false,
+                (SearchFilterMode::Block, true) => return false,
+                (SearchFilterMode::Block, false) => {}
             }
         }
 
@@ -404,7 +423,7 @@ async fn query_api(
     }
 
     let translations = translations.map(|(scope, lang_id, translation)| {
-        fn regex_parse(regex: &Option<Regex>, string: &str) -> Vec<serde_json::Value> {
+        fn regex_parse(regex: Option<&Regex>, string: &str) -> Vec<serde_json::Value> {
             if let Some(regex) = regex {
                 let mut original = Vec::new();
                 let mut prev = 0;
@@ -422,11 +441,33 @@ async fn query_api(
                 vec![json!(string)]
             }
         }
+
+        let original_regex = search_filters
+            .iter()
+            .filter_map(|filter| match filter {
+                (
+                    SearchFilter::OriginalRegex(regex) | SearchFilter::EitherRegex(regex),
+                    SearchFilterMode::Require,
+                ) => Some(regex),
+                _ => None,
+            })
+            .find(|regex| regex.is_match(&translation.original));
+        let translation_regex = search_filters
+            .iter()
+            .filter_map(|filter| match filter {
+                (
+                    SearchFilter::TranslationRegex(regex) | SearchFilter::EitherRegex(regex),
+                    SearchFilterMode::Require,
+                ) => Some(regex),
+                _ => None,
+            })
+            .find(|regex| regex.is_match(&translation.translation));
+
         let mut json = json!({
             "scope": scope,
             "language": lang_id,
-            "original": regex_parse(&regex, &translation.original),
-            "translation": regex_parse(&regex, &translation.translation),
+            "original": regex_parse(original_regex, &translation.original),
+            "translation": regex_parse(translation_regex, &translation.translation),
         });
         if let Some(comment) = &translation.comment {
             json["comment"] = json!(comment);
@@ -449,6 +490,147 @@ async fn query_api(
     Ok(Json(serde_json::to_value(translations).map_err(|e| {
         (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
     })?))
+}
+
+enum SearchFilter {
+    /// Check if either `original` or `translation` matches the regex.
+    EitherRegex(Regex),
+    /// Check if `original` matches the regex.
+    OriginalRegex(Regex),
+    /// Check if `translation` matches the regex.
+    TranslationRegex(Regex),
+    /// Check if translation is from the provider with the specified id.
+    Scope(String),
+    /// Check if translation is translated to the specified language.
+    Language(LanguageIdentifier),
+}
+
+enum SearchFilterMode {
+    /// Require a search filter to be `true` to include translation in the results.
+    Require,
+    /// Require a search filter to be `false` to include translation in the results.
+    Block,
+}
+
+fn parse_search(search: &str) -> anyhow::Result<Vec<(SearchFilter, SearchFilterMode)>> {
+    if !search.contains(':') {
+        return Ok(vec![(
+            SearchFilter::EitherRegex(Regex::new(&format!("(?i){search}"))?),
+            SearchFilterMode::Require,
+        )]);
+    }
+
+    let mut search_filters = Vec::new();
+
+    let mut search_rest = String::new();
+    let mut first = true;
+    for part in split_search(search) {
+        if let Some((key, value)) = part.split_once(':') {
+            let (key, mode) = if let Some(base_key) = key.strip_prefix('-') {
+                (base_key, SearchFilterMode::Block)
+            } else {
+                (key, SearchFilterMode::Require)
+            };
+
+            match key {
+                "o" | "original" => {
+                    search_filters.push((
+                        SearchFilter::OriginalRegex(Regex::new(&format!("(?i){value}"))?),
+                        mode,
+                    ));
+                    continue;
+                }
+                "t" | "translation" => {
+                    search_filters.push((
+                        SearchFilter::TranslationRegex(Regex::new(&format!("(?i){value}"))?),
+                        mode,
+                    ));
+                    continue;
+                }
+                "s" | "scope" => {
+                    search_filters.push((SearchFilter::Scope(value.to_string()), mode));
+                    continue;
+                }
+                "l" | "lang" | "language" => {
+                    search_filters.push((SearchFilter::Language(value.parse()?), mode));
+                    continue;
+                }
+                _ => {}
+            }
+        }
+
+        if first {
+            first = false;
+        } else {
+            search_rest.push(' ');
+        }
+        search_rest.push_str(&part)
+    }
+
+    if !search_rest.is_empty() {
+        search_filters.push((
+            SearchFilter::EitherRegex(Regex::new(&format!("(?i){search_rest}"))?),
+            SearchFilterMode::Require,
+        ));
+    }
+
+    Ok(search_filters)
+}
+
+/// Splits `search` by spaces, except for spaces within quotation marks (`"` or `'`)
+/// that are preceded by a colon (`:`).
+///
+/// # Example:
+///
+/// ```
+/// let search = split_search("A search scope:\"A scope\" for \"something cool\"");
+/// assert_eq!(search.get(0), Some(Cow::Borrowed("A")));
+/// assert_eq!(search.get(1), Some(Cow::Borrowed("search")));
+/// assert_eq!(search.get(2), Some(Cow::Borrowed("scope:A scope")));
+/// assert_eq!(search.get(3), Some(Cow::Borrowed("for")));
+/// assert_eq!(search.get(4), Some(Cow::Borrowed("\"something")));
+/// assert_eq!(search.get(5), Some(Cow::Borrowed("cool\"")));
+/// assert_eq!(search.get(6), None);
+/// ```
+fn split_search(search: &str) -> Vec<Cow<str>> {
+    let mut parts = Vec::new();
+
+    let mut part_start = 0;
+    let mut quote = None;
+    let mut skip_next = false;
+    for (char_i, (byte_i, c)) in search.char_indices().enumerate() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if let Some((quote_char, quote_start)) = quote {
+            if c == quote_char && matches!(search.chars().nth(char_i + 1), None | Some(' ')) {
+                parts.push(Cow::Owned(format!(
+                    "{}{}",
+                    &search[part_start..quote_start],
+                    &search[(quote_start + 1)..byte_i]
+                )));
+                part_start = byte_i + 2;
+                quote = None;
+                skip_next = true;
+            }
+            continue;
+        }
+        if (c == '"' || c == '\'') && search.chars().nth(char_i - 1) == Some(':') {
+            quote = Some((c, byte_i));
+            continue;
+        }
+        if c == ' ' {
+            parts.push(Cow::Borrowed(&search[part_start..byte_i]));
+            part_start = byte_i + 1;
+            continue;
+        }
+    }
+    if let Some(last_part) = search.get(part_start..) {
+        parts.push(Cow::Borrowed(last_part));
+    }
+
+    parts
 }
 
 async fn metadata_api(

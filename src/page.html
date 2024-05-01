@@ -988,7 +988,7 @@
 				translationController = new AbortController();
 
 				fetch(
-					`http://127.0.0.1:2013/query?regex=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&limit=${downloadAtOnce}`,
+					`http://127.0.0.1:2013/query?search=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&limit=${downloadAtOnce}`,
 					{ signal: translationController.signal },
 				).then(
 					async response => {
@@ -1007,7 +1007,7 @@
 
 				titles.classList.add("loading");
 				fetch(
-					`http://127.0.0.1:2013/query?regex=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&count=true`,
+					`http://127.0.0.1:2013/query?search=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&count=true`,
 					{ signal: translationController.signal },
 				).then(
 					async response => {
@@ -1043,7 +1043,7 @@
 				}
 
 				fetch(
-					`http://127.0.0.1:2013/query?regex=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`,
+					`http://127.0.0.1:2013/query?search=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`,
 					{ signal: translationController.signal },
 				).then(
 					async response => {
