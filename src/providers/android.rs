@@ -12,7 +12,7 @@ use base64::{
 };
 use quick_xml::{events::Event, Reader};
 
-use super::TranslationMessages;
+use super::{unescape, TranslationMessages};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
@@ -84,15 +84,7 @@ pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
                     text.remove(text.len() - 1);
                     text.remove(0);
                 }
-                if text.contains('\\') {
-                    text = text.replace("\\n", "\n");
-                    text = text.replace("\\\t", "\t");
-                    text = text.replace("\\?", "?");
-                    text = text.replace("\\\"", "\"");
-                    text = text.replace("\\'", "'");
-                    text = text.replace("\\‘", "‘");
-                    text = text.replace("\\’", "’");
-                }
+                text = unescape(&text, &['n', 'u', 't', '"', '\'', '‘', '’', '?', '%']);
 
                 resources.insert(name_local, (text, comment));
 

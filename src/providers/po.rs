@@ -20,7 +20,7 @@ use reqwest::Client;
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
-use super::download_text;
+use super::{download_text, unescape};
 use crate::{Translation, TranslationProvider};
 
 pub struct NetPoProvider<F, U>
@@ -151,7 +151,7 @@ pub fn parse_po(text: String) -> anyhow::Result<Vec<Translation>> {
                         last = None;
                         continue;
                     }
-                    escape_value(msgid)
+                    unescape(&msgid, &['n', 'u', 't', '"'])
                 },
                 translation: {
                     let Some(msgstr) = values.remove("msgstr") else {
@@ -164,7 +164,7 @@ pub fn parse_po(text: String) -> anyhow::Result<Vec<Translation>> {
                         last = None;
                         continue;
                     }
-                    escape_value(msgstr)
+                    unescape(&msgstr, &['n', 'u', 't', '"'])
                 },
                 comment: values.remove("#.").or_else(|| values.remove("msgctxt")),
             });
@@ -193,13 +193,4 @@ pub fn parse_po(text: String) -> anyhow::Result<Vec<Translation>> {
     }
 
     Ok(translations)
-}
-
-fn escape_value(value: String) -> String {
-    value
-        .replace("\\\\", "\u{0}")
-        .replace("\\\"", "\"")
-        .replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace('\u{0}', "\\")
 }

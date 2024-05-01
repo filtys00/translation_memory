@@ -21,6 +21,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
+use super::unescape;
 use crate::{Translation, TranslationProvider};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
@@ -142,8 +143,8 @@ impl TranslationProvider for ChromeProvider {
                     };
 
                     translations.push(Translation {
-                        original: translation_en.clone(),
-                        translation,
+                        original: unescape(translation_en, &['n', 'u']),
+                        translation: unescape(&translation, &['n', 'u']),
                         comment: None,
                     })
                 }

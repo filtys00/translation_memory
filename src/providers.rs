@@ -102,6 +102,64 @@ async fn download_text(url: &str, client: &Client) -> anyhow::Result<Option<Stri
     Ok(Some(text))
 }
 
+/// Returns `text` where all `allowed_escapes` have been resolved.
+///
+/// Escapes are a backslash (`\`) followed by an `allowed_escape` character.
+/// Any escape with a character that is not in `allowed_escape` will be ignored.
+///
+/// Special cases:
+/// - `\n` -> a new line
+/// - `\uxxxx` -> an Unicode code point
+/// - `\t`-> a tab
+fn unescape(text: &str, allowed_escapes: &[char]) -> String {
+    if !text.contains('\\') {
+        return text.to_string();
+    }
+
+    let mut new_text = String::with_capacity(text.len());
+    let mut escape = false;
+    let mut skip = 0;
+    for (i, c) in text.char_indices() {
+        if skip > 0 {
+            skip -= 1;
+            continue;
+        }
+        if escape {
+            escape = false;
+            if !allowed_escapes.contains(&c) {
+                new_text.push('\\');
+                new_text.push(c);
+                continue;
+            }
+            match c {
+                'n' => new_text.push('\n'),
+                't' => new_text.push('\t'),
+                'u' => {
+                    if let Some(hex) = text.get((i + 1)..(i + 5)) {
+                        if let Ok(point) = u32::from_str_radix(hex, 16) {
+                            if let Some(c) = char::from_u32(point) {
+                                new_text.push(c);
+                                skip = 4;
+                                continue;
+                            }
+                        }
+                    }
+                    new_text.push_str("\\u");
+                }
+                c => new_text.push(c),
+            }
+            continue;
+        }
+        if c == '\\' {
+            escape = true;
+            continue;
+        }
+        new_text.push(c);
+    }
+
+    new_text
+}
+
 /// Key-value map containing the translation messages of a single language.
 ///
 /// Use `merge_messages` to convert to a list of `Translation`s.
