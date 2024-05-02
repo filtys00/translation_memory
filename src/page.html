@@ -992,7 +992,7 @@
 				const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
 
 				if (!languages.length || !scopes.length) {
-					populateTranslations([], null, false);
+					populateTranslations([], false);
 					setTranslationCountLabel(0, 0);
 					return;
 				}
