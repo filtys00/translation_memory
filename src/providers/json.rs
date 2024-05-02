@@ -4,7 +4,9 @@
 
 use std::collections::HashMap;
 
-use super::TranslationMessages;
+use regex::Regex;
+
+use super::{unescape, TranslationMessages};
 use crate::Translation;
 
 pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<Translation>> {
@@ -34,6 +36,22 @@ pub fn parse_freeshow_json(text: String) -> anyhow::Result<TranslationMessages> 
         }
     }
     Ok(translations)
+}
+
+pub fn parse_geogebra_js_json(text: String) -> anyhow::Result<TranslationMessages> {
+    let mut messages = TranslationMessages::new();
+
+    let regex = Regex::new("JSON\\.parse\\(\"(.*)\"\\)").unwrap();
+    for capture in regex.captures_iter(&text) {
+        let Some(json) = capture.get(1) else {
+            continue;
+        };
+        let json = unescape(json.as_str(), &['"', '\\']);
+        let json: HashMap<String, String> = serde_json::from_str(&json)?;
+        messages.extend(json.into_iter().map(|(key, value)| (key, (value, None))));
+    }
+
+    Ok(messages)
 }
 
 pub fn parse_mastodon_json(text: String) -> anyhow::Result<TranslationMessages> {

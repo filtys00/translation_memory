@@ -9,7 +9,9 @@ use super::{
     browser_extension::{parse_browser_extension, parse_dark_reader},
     chrome::ChromeProvider,
     dtd::parse_dtd,
-    json::{parse_elementary_json, parse_freeshow_json, parse_mastodon_json},
+    json::{
+        parse_elementary_json, parse_freeshow_json, parse_geogebra_js_json, parse_mastodon_json,
+    },
     lang_id_to_string,
     microsoft::parse_microsoft_tbx,
     minecraft::MinecraftProvider,
@@ -212,7 +214,7 @@ macro_rules! elementary {
 
 macro_rules! geogebra {
     ($id:literal, $name:literal, properties => $file_base:literal) => {
-        duo!(concat!("geogebra-", $id), $name, Some("GeoGebra"), parse_properties, github => {
+        duo!($id, $name, Some("GeoGebra"), parse_properties, github => {
             default_url: concat!("geogebra/geogebra/master/common-jre/src/nonfree/resources/org/geogebra/common/jre/properties/", $file_base, ".properties"),
                     url: concat!("geogebra/geogebra/master/common-jre/src/nonfree/resources/org/geogebra/common/jre/properties/", $file_base, "_{}.properties"),
             lang_id: "_", true, "_", false,
@@ -371,12 +373,18 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         // GeoGebra
 
-        geogebra!("colors",  "GeoGebra colors",  properties => "colors"),
-        geogebra!("command", "GeoGebra command", properties => "command"),
-        geogebra!("error",   "GeoGebra error",   properties => "error"),
-        geogebra!("javaui",  "GeoGebra javaui",  properties => "javaui"),
-        geogebra!("menu",    "GeoGebra menu",    properties => "menu"),
-        geogebra!("symbols", "GeoGebra symbols", properties => "symbols"),
+        duo!("geogebra-web", "GeoGebra web", Some("GeoGebra"), parse_geogebra_js_json, github => {
+            default_url: "geogebra/geogebra/master/web/src/nonfree/resources/org/geogebra/web/pub/js/properties_keys_en.js",
+                    url: "geogebra/geogebra/master/web/src/nonfree/resources/org/geogebra/web/pub/js/properties_keys_{}.js",
+            lang_id: "-", true, "-", false,
+        }),
+
+        geogebra!("geogebra-colors",  "GeoGebra colors",  properties => "colors"),
+        geogebra!("geogebra-command", "GeoGebra command", properties => "command"),
+        geogebra!("geogebra-error",   "GeoGebra error",   properties => "error"),
+        geogebra!("geogebra-javaui",  "GeoGebra javaui",  properties => "javaui"),
+        geogebra!("geogebra-menu",    "GeoGebra menu",    properties => "menu"),
+        geogebra!("geogebra-symbols", "GeoGebra symbols", properties => "symbols"),
 
         // Mastodon
 
