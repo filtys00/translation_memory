@@ -779,8 +779,11 @@ pub enum SimpleProvider {
 #[rustfmt::skip]
 pub fn simple_provider(type_name: &str) -> Option<SimpleProvider> {
     match type_name {
-          "androidxml" => Some(SimpleProvider::Duo(parse_android)),
-        "microsofttbx" => Some(SimpleProvider::Mono(parse_microsoft_tbx)),
+               "androidxml" => Some(SimpleProvider::Duo(parse_android)),
+        "browser_extension" => Some(SimpleProvider::Duo(parse_browser_extension)),
+             "microsofttbx" => Some(SimpleProvider::Mono(parse_microsoft_tbx)),
+                       "po" => Some(SimpleProvider::Mono(parse_po)),
+               "properties" => Some(SimpleProvider::Duo(parse_properties)),
         _ => None,
     }
 }
