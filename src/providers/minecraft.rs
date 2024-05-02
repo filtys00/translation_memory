@@ -83,16 +83,12 @@ impl TranslationProvider for MinecraftProvider {
                 translations.insert(lang_id, None);
                 continue;
             };
-            let assets: HashMap<String, String> = client
-                .get(&format!(
-                    "https://resources.download.minecraft.net/{}/{}",
-                    object.hash.get(0..2).unwrap_or(""),
-                    object.hash
-                ))
-                .send()
-                .await?
-                .json()
-                .await?;
+            let url = format!(
+                "https://resources.download.minecraft.net/{}/{}",
+                object.hash.get(0..2).unwrap_or(""),
+                object.hash,
+            );
+            let assets: HashMap<String, String> = client.get(&url).send().await?.json().await?;
 
             let mut t = Vec::with_capacity(assets.len());
             for (key, value) in assets {
@@ -103,8 +99,10 @@ impl TranslationProvider for MinecraftProvider {
 
                 t.push(Translation {
                     original: original.clone(),
-                    translation: value.clone(),
-                    comment: Some(key),
+                    translation: value,
+                    comment: None,
+                    key: Some(key),
+                    source: url.clone(),
                 });
             }
             translations.insert(lang_id, Some(t));

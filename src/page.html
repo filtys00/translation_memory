@@ -1098,7 +1098,11 @@
 					const scope = scopeNames[translation.scope];
 
 					let li = document.createElement("li");
-					li.title = `${translation.language} - ${scope?.name ? scope.name : translation.scope}${scope?.groupName ? ` (${scope.groupName})` : ""}\n${translation.comment ? translation.comment : ""}`;
+					li.title = `${translation.language} - ${scope?.name ?? translation.scope}`
+								 + `${scope?.groupName ? ` (${scope.groupName})` : ""}`
+							 + `\nKjelde: ${translation.source}`
+							 + `${translation.key ? `\nNøkkel: ${translation.key}` : ""}`
+							 + `${translation.comment ? `\nComment:\n${translation.comment}` : ""}`;
 					li.classList.add("translation");
 
 					let originalText = document.createElement("p");

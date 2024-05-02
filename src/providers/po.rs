@@ -89,7 +89,7 @@ where
                         let Some(text) = download_text(&url, &client).await? else {
                             bail!("not found\n{url}");
                         };
-                        let mut translations = parse_po(text)?;
+                        let mut translations = parse_po(text, &url)?;
                         if let Some(remove_char) = remove_char {
                             translations.iter_mut().for_each(|translation| {
                                 translation.original =
@@ -132,7 +132,7 @@ where
     }
 }
 
-pub fn parse_po(text: String) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_po(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let mut translations = Vec::new();
 
     let mut values: HashMap<&str, String> = HashMap::new();
@@ -167,6 +167,8 @@ pub fn parse_po(text: String) -> anyhow::Result<Vec<Translation>> {
                     unescape(&msgstr, &['n', 'u', 't', '"'])
                 },
                 comment: values.remove("#.").or_else(|| values.remove("msgctxt")),
+                key: None,
+                source: source.to_string(),
             });
 
             values.clear();

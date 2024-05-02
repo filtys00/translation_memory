@@ -771,7 +771,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
 /// A function that parses a translation file.
 pub enum SimpleProvider {
-    Mono(fn(String) -> anyhow::Result<Vec<Translation>>),
+    Mono(fn(String, &str) -> anyhow::Result<Vec<Translation>>),
     Duo(fn(String) -> anyhow::Result<TranslationMessages>),
 }
 

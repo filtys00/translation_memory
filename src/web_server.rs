@@ -468,9 +468,13 @@ async fn query_api(
             "language": lang_id,
             "original": regex_parse(original_regex, &translation.original),
             "translation": regex_parse(translation_regex, &translation.translation),
+            "source": translation.source,
         });
         if let Some(comment) = &translation.comment {
             json["comment"] = json!(comment);
+        }
+        if let Some(key) = &translation.key {
+            json["key"] = json!(key);
         }
         json
     });

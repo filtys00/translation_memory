@@ -146,6 +146,8 @@ impl TranslationProvider for ChromeProvider {
                         original: unescape(translation_en, &['n', 'u']),
                         translation: unescape(&translation, &['n', 'u']),
                         comment: None,
+                        key: Some(id.to_string()),
+                        source: url.clone(),
                     })
                 }
             }

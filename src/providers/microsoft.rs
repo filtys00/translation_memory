@@ -8,7 +8,7 @@ use unic_langid::LanguageIdentifier;
 
 use crate::Translation;
 
-pub fn parse_microsoft_tbx(text: String) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let translations: MicrosoftTranslations = quick_xml::de::from_str(&text)?;
 
     let en_us: LanguageIdentifier = "en-US".parse()?;
@@ -67,6 +67,8 @@ pub fn parse_microsoft_tbx(text: String) -> anyhow::Result<Vec<Translation>> {
                     .descrip_grp
                     .as_ref()
                     .map(|descrip_grp| descrip_grp.descrip.text.clone()),
+                key: None,
+                source: source.to_string(),
             })
         })
         .collect();

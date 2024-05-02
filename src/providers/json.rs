@@ -9,7 +9,7 @@ use regex::Regex;
 use super::{unescape, TranslationMessages};
 use crate::Translation;
 
-pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let json: HashMap<String, String> = serde_json::from_str(&text)?;
 
     let mut translations = Vec::new();
@@ -21,6 +21,8 @@ pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<Translation>> {
             original,
             translation,
             comment: None,
+            key: None,
+            source: source.to_string(),
         });
     }
     Ok(translations)

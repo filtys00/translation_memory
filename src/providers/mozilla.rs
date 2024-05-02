@@ -76,6 +76,8 @@ impl TranslationProvider for MozillaProvider {
                         original: tuv_en.seg.clone(),
                         translation: tuv.seg.clone(),
                         comment: Some(tu.id.clone()),
+                        key: None,
+                        source: url.clone(),
                     })
                 })
                 .collect();

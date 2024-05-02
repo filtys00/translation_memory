@@ -166,9 +166,12 @@ fn unescape(text: &str, allowed_escapes: &[char]) -> String {
 type TranslationMessages = HashMap<String, (String, Option<String>)>;
 
 /// Returns a vector of `Translation`s by merging the translated `messages` and the English `messages_en`.
+///
+/// `source` is used to set `Translation.source` on all the returned `Translation`s.
 pub fn merge_messages(
     messages: TranslationMessages,
     messages_en: &TranslationMessages,
+    source: &str,
 ) -> Vec<Translation> {
     let mut translations = Vec::with_capacity(messages.len());
 
@@ -176,15 +179,12 @@ pub fn merge_messages(
         let Some((original, comment_en)) = messages_en.get(&key) else {
             continue;
         };
-        let comment = match (comment_en, comment) {
-            (Some(comment), _) => format!("Key: {key}\n{comment}"),
-            (None, Some(comment)) => format!("Key: {key}\n{comment}"),
-            (None, None) => format!("Key: {key}"),
-        };
         translations.push(Translation {
             original: original.clone(),
             translation,
-            comment: Some(comment),
+            comment: comment.or_else(|| comment_en.as_ref().cloned()),
+            key: Some(key),
+            source: source.to_string(),
         });
     }
 
@@ -196,7 +196,7 @@ pub fn merge_messages(
 pub struct MonoProvider<U, P>
 where
     U: Fn(&LanguageIdentifier) -> String + Send + Sync,
-    P: Fn(String) -> anyhow::Result<Vec<Translation>> + Send + Sync,
+    P: Fn(String, &str) -> anyhow::Result<Vec<Translation>> + Send + Sync,
 {
     pub id: &'static str,
     pub name: &'static str,
@@ -210,7 +210,7 @@ where
 impl<U, P> TranslationProvider for MonoProvider<U, P>
 where
     U: Fn(&LanguageIdentifier) -> String + Send + Sync,
-    P: Fn(String) -> anyhow::Result<Vec<Translation>> + Send + Sync,
+    P: Fn(String, &str) -> anyhow::Result<Vec<Translation>> + Send + Sync,
 {
     fn id(&self) -> &str {
         self.id
@@ -236,7 +236,7 @@ where
             let text = download_text(&url, &client).await?;
 
             if let Some(text) = text {
-                let mut t = (self.parse)(text)?;
+                let mut t = (self.parse)(text, &url)?;
                 if let Some(remove_char) = &self.remove_char {
                     t.iter_mut().for_each(|translation| {
                         translation.original = translation.original.replace(*remove_char, "");
@@ -306,7 +306,7 @@ where
             };
             let messages = (self.parse)(text)?;
 
-            translations.insert(lang_id, Some(merge_messages(messages, &messages_en)));
+            translations.insert(lang_id, Some(merge_messages(messages, &messages_en, &url)));
         }
 
         Ok(translations)

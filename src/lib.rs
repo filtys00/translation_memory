@@ -32,6 +32,8 @@ pub struct Translation {
     pub original: String,
     pub translation: String,
     pub comment: Option<String>,
+    pub key: Option<String>,
+    pub source: String,
 }
 
 pub struct TranslationStore {
@@ -165,7 +167,7 @@ impl TranslationStore {
                         .map_or(0, |metadata| metadata.len() as usize),
                 );
                 file.read_to_string(&mut text)?;
-                texts.insert(entry.language.clone(), text);
+                texts.insert(&entry.language, (text, &entry.path));
             }
             config_texts.push((entry, texts));
         }
@@ -179,6 +181,7 @@ impl TranslationStore {
 
                     let text = texts
                         .get(&en)
+                        .map(|(text, _)| text)
                         .ok_or_else(|| anyhow!("Entry '{}' has no language 'en'", entry.name))?
                         .to_string();
                     let messages_en = parse(text).map_err(|e| {
@@ -188,8 +191,8 @@ impl TranslationStore {
                         )
                     })?;
 
-                    for (lang_id, text) in texts {
-                        if lang_id == en {
+                    for (lang_id, (text, path)) in texts {
+                        if *lang_id == en {
                             continue;
                         }
                         let messages = parse(text).map_err(|e| {
@@ -199,7 +202,10 @@ impl TranslationStore {
                             )
                         })?;
 
-                        translations.insert(lang_id, Some(merge_messages(messages, &messages_en)));
+                        translations.insert(
+                            lang_id.clone(),
+                            Some(merge_messages(messages, &messages_en, path)),
+                        );
                     }
 
                     translations
@@ -207,14 +213,14 @@ impl TranslationStore {
                 Some(SimpleProvider::Mono(parse)) => {
                     let mut translations = BTreeMap::new();
 
-                    for (lang_id, text) in texts {
-                        let t = parse(text).map_err(|e| {
+                    for (lang_id, (text, path)) in texts {
+                        let t = parse(text, path).map_err(|e| {
                             anyhow!(
                                 "Could not parse language '{lang_id}' in entry '{}': {e}",
                                 entry.name
                             )
                         })?;
-                        translations.insert(lang_id, Some(t));
+                        translations.insert(lang_id.clone(), Some(t));
                     }
 
                     translations
