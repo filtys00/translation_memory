@@ -307,6 +307,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             remove_char: Some('_'),
         }),
 
+        mono!("arduino",     "Arduino IDE",        None,                       parse_po, None,     github => {
+            url: "arduino/Arduino/master/arduino-core/src/processing/app/i18n/Resources_{}.po",
+            lang_id: "_", true, "@", false,
+        }),
         duo!( "dark-reader", "Dark Reader",        Some("Browser extensions"), parse_dark_reader,  github => {
             default_url: "darkreader/darkreader/main/src/_locales/en.config",
                     url: "darkreader/darkreader/main/src/_locales/{}.config",
