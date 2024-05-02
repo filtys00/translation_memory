@@ -6,13 +6,13 @@ use std::collections::HashMap;
 
 use anyhow::bail;
 
-use super::TranslationMessages;
+use super::{unescape, TranslationMessages};
 
 pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
     let mut translations = HashMap::new();
 
     let mut comment = None;
-    for mut line in text.split('\n') {
+    for mut line in text.lines() {
         if line.is_empty() {
             continue;
         }
@@ -32,12 +32,10 @@ pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
         if translations.contains_key(key) {
             bail!("Duplicate key: {key}");
         }
+        let value = unescape(value, &['\n']);
         translations.insert(
             key.to_string(),
-            (
-                value.to_string(),
-                comment.map(|comment| comment.to_string()),
-            ),
+            (value, comment.map(|comment| comment.to_string())),
         );
     }
 
