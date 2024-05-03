@@ -15,7 +15,7 @@ use super::{
     lang_id_to_string,
     microsoft::parse_microsoft_tbx,
     minecraft::MinecraftProvider,
-    mozilla::MozillaProvider,
+    mozilla::{parse_mozilla_tbx, parse_mozilla_tmx},
     po::{
         gnome::graphql_gnome, kde::graphql_kde, libreoffice::crawl_libreoffice, parse_po,
         NetPoProvider,
@@ -287,7 +287,32 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
         Arc::new(ChromeProvider),
         Arc::new(MinecraftProvider),
-        Arc::new(MozillaProvider),
+        Arc::new(MonoProvider {
+            id: "mozilla-terminology",
+            name: "Mozilla terminology",
+            parse: parse_mozilla_tbx,
+            remove_char: None,
+            group_name: None,
+            url: |lang_id| {
+                format!(
+                    "https://pontoon.mozilla.org/terminology/{}.tbx",
+                    lang_id_to_string(lang_id, "-", true, "-", false),
+                )
+            },
+        }),
+        Arc::new(MonoProvider {
+            id: "mozilla",
+            name: "Mozilla",
+            parse: parse_mozilla_tmx,
+            remove_char: None,
+            group_name: None,
+            url: |lang_id| {
+                format!(
+                    "https://pontoon.mozilla.org/translation-memory/{}.all-projects.tmx",
+                    lang_id_to_string(lang_id, "-", true, "-", false),
+                )
+            },
+        }),
         Arc::new(NetPoProvider {
             id: "gnome",
             name: "GNOME",
