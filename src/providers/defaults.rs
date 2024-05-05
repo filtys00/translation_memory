@@ -92,7 +92,7 @@ macro_rules! browser_extension {
 }
 
 macro_rules! mono {
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, github => {
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, url => {
         url: $url:expr,
         lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
     }) => {
@@ -104,7 +104,7 @@ macro_rules! mono {
             remove_char: $remove_char,
             url: |lang_id| {
                 format!(
-                    concat!("https://raw.githubusercontent.com/", $url),
+                    $url,
                     lang_id_to_string(
                         lang_id,
                         $region_binder,
@@ -114,6 +114,15 @@ macro_rules! mono {
                     ),
                 )
             },
+        })
+    };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, github => {
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        mono!($id, $name, $group_name, $parse, $remove_char, url => {
+            url: concat!("https://raw.githubusercontent.com/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
         })
     };
     ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, gitlab => {
@@ -121,30 +130,15 @@ macro_rules! mono {
         url: $url:expr,
         lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
     }) => {
-        Arc::new(MonoProvider {
-            id: $id,
-            name: $name,
-            group_name: $group_name,
-            parse: $parse,
-            remove_char: $remove_char,
-            url: |lang_id| {
-                format!(
-                    concat!("https://", $base_url, "/-/raw/", $url),
-                    lang_id_to_string(
-                        lang_id,
-                        $region_binder,
-                        $uppercase_region,
-                        $variant_binder,
-                        $uppercase_variant
-                    ),
-                )
-            },
+        mono!($id, $name, $group_name, $parse, $remove_char, url => {
+            url: concat!("https://", $base_url, "/-/raw/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
         })
     };
 }
 
 macro_rules! duo {
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, github => {
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, url => {
         default_url: $default_url:expr,
         url: $url:expr,
         lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
@@ -154,10 +148,10 @@ macro_rules! duo {
             name: $name,
             group_name: $group_name,
             parse: $parse,
-            default_url: concat!("https://raw.githubusercontent.com/", $default_url),
+            default_url: $default_url,
             url: |lang_id| {
                 format!(
-                    concat!("https://raw.githubusercontent.com/", $url),
+                    $url,
                     lang_id_to_string(
                         lang_id,
                         $region_binder,
@@ -167,6 +161,17 @@ macro_rules! duo {
                     ),
                 )
             },
+        })
+    };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, github => {
+        default_url: $default_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        duo!($id, $name, $group_name, $parse, url => {
+            default_url: concat!("https://raw.githubusercontent.com/", $default_url),
+            url: concat!("https://raw.githubusercontent.com/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
         })
     };
     ($id:expr, $name:expr, $group_name:expr, $parse:ident, gitlab => {
@@ -175,24 +180,10 @@ macro_rules! duo {
         url: $url:expr,
         lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
     }) => {
-        Arc::new(DuoProvider {
-            id: $id,
-            name: $name,
-            group_name: $group_name,
-            parse: $parse,
+        duo!($id, $name, $group_name, $parse, url => {
             default_url: concat!("https://", $base_url, "/-/raw/", $default_url),
-            url: |lang_id| {
-                format!(
-                    concat!("https://", $base_url, "/-/raw/", $url),
-                    lang_id_to_string(
-                        lang_id,
-                        $region_binder,
-                        $uppercase_region,
-                        $variant_binder,
-                        $uppercase_variant
-                    ),
-                )
-            },
+            url: concat!("https://", $base_url, "/-/raw/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
         })
     };
 }
