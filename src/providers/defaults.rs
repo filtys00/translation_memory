@@ -327,13 +327,37 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             url: "arduino/Arduino/master/arduino-core/src/processing/app/i18n/Resources_{}.po",
             lang_id: "_", true, "@", false,
         }),
+        mono!("audacity",    "Audacity",           None,                       parse_po, None,     github => {
+            url: "audacity/audacity/master/locale/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("bottles",     "Bottles",            None,                       parse_po, None,     github => {
+            url: "bottlesdevs/Bottles/main/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
         duo!( "dark-reader", "Dark Reader",        Some("Browser extensions"), parse_dark_reader,  github => {
             default_url: "darkreader/darkreader/main/src/_locales/en.config",
                     url: "darkreader/darkreader/main/src/_locales/{}.config",
             lang_id: "-", true, "@", false,
         }),
+        mono!("darktable",   "Darktable",          None,                       parse_po, None,      github => {
+            url: "darktable-org/darktable/master/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("dolphin-emulator", "Dolphin",       None,                       parse_po, None,      github => {
+            url: "dolphin-emu/dolphin/master/Languages/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
         mono!("duckduckgo",  "DuckDuckGo",         None,                       parse_po, None,      github => {
             url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("extension-manager", "Extension Manager", None,                  parse_po, None,      github => {
+            url: "mjakeman/extension-manager/master/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("flatseal",    "Flatseal",           None,                       parse_po, None,      github => {
+            url: "tchx84/Flatseal/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
         duo!( "freeshow",    "FreeShow",           None,                       parse_freeshow_json, github => {
@@ -350,6 +374,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
             lang_id: "_", true, "_", true,
         }),
+        mono!("lyx",         "LyX",                None,                       parse_po, Some('&'), url => {
+            url: "https://git.lyx.org/gitweb/?p=lyx.git;a=blob_plain;f=po/{}.po;hb=HEAD",
+            lang_id: "_", true, "@", true,
+        }),
         mono!("pacman",      "Pacman",             None,                       parse_po, None,      gitlab => {
             base_url: "gitlab.archlinux.org/pacman/pacman",
             url: "master/src/pacman/po/{}.po",
@@ -357,6 +385,26 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         }),
         mono!("poedit",      "Poedit",             None,                       parse_po, None,      github => {
             url: "vslavik/poedit/master/locales/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("strawberry",  "Strawberry",         None,                       parse_po, None,      github => {
+            url: "strawberrymusicplayer/strawberry/master/src/translations/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("trac",        "Trac",               Some("Trac"),               parse_po, None,      url => {
+            url: "https://trac.edgewall.org/browser/trunk/trac/locale/{}/LC_MESSAGES/messages.po?format=txt",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("trac-js",     "Trac JavaScript",    Some("Trac"),               parse_po, None,      url => {
+            url: "https://trac.edgewall.org/browser/trunk/trac/locale/{}/LC_MESSAGES/messages-js.po?format=txt",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("trac-ini",    "Trac INI",           Some("Trac"),               parse_po, None,      url => {
+            url: "https://trac.edgewall.org/browser/trunk/trac/locale/{}/LC_MESSAGES/tracini.po?format=txt",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("vlc",         "VLC",                None,                       parse_po, None,      github => {
+            url: "videolan/vlc/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
         mono!("weblate",     "Weblate",            Some("Weblate"),            parse_po, None,      github => {
@@ -369,6 +417,11 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         }),
         mono!("wine",        "Wine",               None,                       parse_po, Some('&'), gitlab => {
             base_url: "gitlab.winehq.org/wine/wine",
+            url: "master/po/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("xdg-shared-mime-info", "XDG shared mime info", None, parse_po, None, gitlab => {
+            base_url: "gitlab.freedesktop.org/xdg/shared-mime-info",
             url: "master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
