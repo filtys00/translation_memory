@@ -9,6 +9,7 @@ use super::{
     browser_extension::{parse_browser_extension, parse_dark_reader},
     chrome::ChromeProvider,
     dtd::parse_dtd,
+    eu::EuProvider,
     json::{parse_elementary_json, parse_geogebra_js_json, parse_json},
     lang_id_to_string,
     microsoft::parse_microsoft_tbx,
@@ -275,6 +276,7 @@ macro_rules! tor {
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
         Arc::new(ChromeProvider),
+        Arc::new(EuProvider),
         Arc::new(MinecraftProvider),
         Arc::new(MonoProvider {
             id: "mozilla-terminology",

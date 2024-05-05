@@ -7,6 +7,7 @@ mod browser_extension;
 mod chrome;
 mod defaults;
 mod dtd;
+mod eu;
 mod json;
 mod microsoft;
 mod minecraft;
