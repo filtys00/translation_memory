@@ -783,7 +783,7 @@
 						for (const [scope, error] of Object.entries(errors)) {
 							if (error === null) { continue; }
 
-							pushError(error, `Klarte ikkje lasta ned manglande vidd «${scope}»`)
+							pushError(error, `Klarte ikkje lasta ned manglande vidd «${scopeNames[scope]?.name ?? scope}»`)
 						}
 
 						languagesAndScopes.classList.remove("loading");
