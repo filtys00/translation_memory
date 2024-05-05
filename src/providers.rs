@@ -15,6 +15,7 @@ mod mozilla;
 mod po;
 mod properties;
 mod srt;
+mod ts;
 mod yaml;
 
 pub use defaults::{default_providers, simple_provider, SimpleProvider};

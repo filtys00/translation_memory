@@ -21,6 +21,7 @@ use super::{
     },
     properties::parse_properties,
     srt::parse_srt,
+    ts::parse_qbittorrent_ts,
     yaml::parse_mastodon_yaml,
     DuoProvider, MonoProvider, TranslationMessages, TranslationProvider,
 };
@@ -390,6 +391,10 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         }),
         mono!("poedit",      "Poedit",             None,                       parse_po, None,      github => {
             url: "vslavik/poedit/master/locales/{}.po",
+            lang_id: "_", true, "@", false,
+        }),
+        mono!("qbittorrent", "qBittorrent",        None,                       parse_qbittorrent_ts, None, github => {
+            url: "qbittorrent/qBittorrent/master/src/lang/qbittorrent_{}.ts",
             lang_id: "_", true, "@", false,
         }),
         mono!("strawberry",  "Strawberry",         None,                       parse_po, None,      github => {
