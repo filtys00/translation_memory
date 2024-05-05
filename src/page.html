@@ -908,7 +908,7 @@
 					} else {
 						input.checked = scope.id ?
 							scopeFilters[scope.id] :
-							scope.scopes.reduce((prev, curr) => prev || curr);
+							scope.scopes.reduce((acc, scope) => acc || scopeFilters[scope.id], false);
 					}
 					input.oninput = e => {
 						if (scope.id) {
