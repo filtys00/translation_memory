@@ -721,10 +721,14 @@ async fn update_api(
         Ok(errors) => errors,
     };
 
-    debug!("Writing translations to disk");
-    if let Err(e) = store.save_translations() {
-        error!("Could not save transaltions: {e}");
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    if errors.values().any(|error| error.is_none()) {
+        debug!("Writing translations to disk");
+        if let Err(e) = store.save_translations() {
+            error!("Could not save translations: {e}");
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    } else {
+        debug!("Skipping writing translations to disk; no translations were updated");
     }
 
     Ok(Json(errors))
@@ -784,10 +788,14 @@ async fn update_all_api(
         }
     };
 
-    debug!("Writing translations to disk");
-    if let Err(e) = store.save_translations() {
-        error!("Could not save transaltions: {e}");
-        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    if errors.values().any(|error| error.is_none()) {
+        debug!("Writing translations to disk");
+        if let Err(e) = store.save_translations() {
+            error!("Could not save translations: {e}");
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+        }
+    } else {
+        debug!("Skipping writing translations to disk; no translations were updated");
     }
 
     Ok(Json(errors))

@@ -184,11 +184,15 @@ async fn main() {
         if lang_ids.is_empty() {
             error!("No languages are specified");
         }
-        if let Err(e) = store.generate(lang_ids, args.generate.clone(), false).await {
-            error!("{e}");
-        }
-        if let Err(e) = store.save_translations() {
-            error!("{e}");
+        match store.generate(lang_ids, args.generate.clone(), false).await {
+            Ok(errors) => {
+                if errors.values().any(|error| error.is_none()) {
+                    if let Err(e) = store.save_translations() {
+                        error!("{e}");
+                    }
+                }
+            }
+            Err(e) => error!("{e}"),
         }
     }
 
