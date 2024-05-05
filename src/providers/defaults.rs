@@ -9,9 +9,7 @@ use super::{
     browser_extension::{parse_browser_extension, parse_dark_reader},
     chrome::ChromeProvider,
     dtd::parse_dtd,
-    json::{
-        parse_elementary_json, parse_freeshow_json, parse_geogebra_js_json, parse_mastodon_json,
-    },
+    json::{parse_elementary_json, parse_geogebra_js_json, parse_json},
     lang_id_to_string,
     microsoft::parse_microsoft_tbx,
     minecraft::MinecraftProvider,
@@ -360,7 +358,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             url: "tchx84/Flatseal/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        duo!( "freeshow",    "FreeShow",           None,                       parse_freeshow_json, github => {
+        duo!( "freeshow",    "FreeShow",           None,                       parse_json,          github => {
             default_url: "ChurchApps/FreeShow/main/public/lang/en.json",
                     url: "ChurchApps/FreeShow/main/public/lang/{}.json",
             lang_id: "_", true, "@", false,
@@ -377,6 +375,11 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         mono!("lyx",         "LyX",                None,                       parse_po, Some('&'), url => {
             url: "https://git.lyx.org/gitweb/?p=lyx.git;a=blob_plain;f=po/{}.po;hb=HEAD",
             lang_id: "_", true, "@", true,
+        }),
+        duo!( "obsidian",    "Obsidian",           None,                       parse_json,          github => {
+            default_url: "obsidianmd/obsidian-translations/master/en.json",
+                    url: "obsidianmd/obsidian-translations/master/{}.json",
+            lang_id: "-", true, "-", false,
         }),
         mono!("pacman",      "Pacman",             None,                       parse_po, None,      gitlab => {
             base_url: "gitlab.archlinux.org/pacman/pacman",
@@ -461,7 +464,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         // Mastodon
 
-        duo!("mastodon-javascript", "Mastodon JavaScript", Some("Mastodon"), parse_mastodon_json, github => {
+        duo!("mastodon-javascript", "Mastodon JavaScript", Some("Mastodon"), parse_json, github => {
             default_url: "mastodon/mastodon/main/app/javascript/mastodon/locales/en.json",
                     url: "mastodon/mastodon/main/app/javascript/mastodon/locales/{}.json",
             lang_id: "-", true, "-", false,

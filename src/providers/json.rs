@@ -4,10 +4,48 @@
 
 use std::collections::HashMap;
 
+use anyhow::bail;
 use regex::Regex;
 
 use super::{unescape, TranslationMessages};
 use crate::Translation;
+
+pub fn parse_json(text: String) -> anyhow::Result<TranslationMessages> {
+    let yaml: HashMap<String, serde_json::Value> = serde_json::from_str(&text)?;
+    let mut translations = HashMap::new();
+    let mut place = Vec::new();
+
+    for (key, value) in yaml {
+        place.push(key.to_string());
+        parse_recursive(&value, &mut place, &mut translations)?;
+        place.pop();
+    }
+
+    Ok(translations)
+}
+
+fn parse_recursive(
+    value: &serde_json::Value,
+    place: &mut Vec<String>,
+    translations: &mut TranslationMessages,
+) -> anyhow::Result<()> {
+    if let Some(value) = value.as_str() {
+        translations.insert(place.join("."), (value.to_string(), None));
+        return Ok(());
+    }
+
+    let Some(value) = value.as_object() else {
+        bail!("Unsupported type: {value:?}, supported types are 'string' and 'object'");
+    };
+
+    for (key, value) in value {
+        place.push(key.to_string());
+        parse_recursive(value, place, translations)?;
+        place.pop();
+    }
+
+    Ok(())
+}
 
 pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let json: HashMap<String, String> = serde_json::from_str(&text)?;
@@ -28,18 +66,6 @@ pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<T
     Ok(translations)
 }
 
-pub fn parse_freeshow_json(text: String) -> anyhow::Result<TranslationMessages> {
-    let json: HashMap<String, HashMap<String, String>> = serde_json::from_str(&text)?;
-
-    let mut translations = HashMap::new();
-    for (category_key, strings) in json {
-        for (key, string) in strings {
-            translations.insert(format!("{category_key}.{key}"), (string, None));
-        }
-    }
-    Ok(translations)
-}
-
 pub fn parse_geogebra_js_json(text: String) -> anyhow::Result<TranslationMessages> {
     let mut messages = TranslationMessages::new();
 
@@ -54,13 +80,4 @@ pub fn parse_geogebra_js_json(text: String) -> anyhow::Result<TranslationMessage
     }
 
     Ok(messages)
-}
-
-pub fn parse_mastodon_json(text: String) -> anyhow::Result<TranslationMessages> {
-    let json: HashMap<String, String> = serde_json::from_str(&text)?;
-    let translations = json
-        .into_iter()
-        .map(|(key, value)| (key, (value, None)))
-        .collect();
-    Ok(translations)
 }
