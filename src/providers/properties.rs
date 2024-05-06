@@ -32,7 +32,7 @@ pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
         if translations.contains_key(key) {
             bail!("Duplicate key: {key}");
         }
-        let value = unescape(value, &['\n']);
+        let value = unescape(value, &['n']);
         translations.insert(
             key.to_string(),
             (value, comment.map(|comment| comment.to_string())),
