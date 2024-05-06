@@ -518,10 +518,14 @@ enum SearchFilterMode {
 
 fn parse_search(search: &str) -> anyhow::Result<Vec<(SearchFilter, SearchFilterMode)>> {
     if !search.contains(':') {
-        return Ok(vec![(
-            SearchFilter::EitherRegex(Regex::new(&format!("(?i){search}"))?),
-            SearchFilterMode::Require,
-        )]);
+        if search.is_empty() {
+            return Ok(vec![]);
+        } else {
+            return Ok(vec![(
+                SearchFilter::EitherRegex(Regex::new(&format!("(?i){search}"))?),
+                SearchFilterMode::Require,
+            )]);
+        }
     }
 
     let mut search_filters = Vec::new();
