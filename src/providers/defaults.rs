@@ -19,7 +19,7 @@ use super::{
         gnome::graphql_gnome, kde::graphql_kde, libreoffice::crawl_libreoffice, parse_po,
         NetPoProvider,
     },
-    properties::parse_properties,
+    properties::{parse_obs_studio_ini, parse_properties},
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
     yaml::parse_mastodon_yaml,
@@ -378,6 +378,11 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
         mono!("lyx",         "LyX",                None,                       parse_po, Some('&'), url => {
             url: "https://git.lyx.org/gitweb/?p=lyx.git;a=blob_plain;f=po/{}.po;hb=HEAD",
             lang_id: "_", true, "@", true,
+        }),
+        duo!( "obs-studio",  "OBS Studio",         None,                       parse_obs_studio_ini, github => {
+            default_url: "obsproject/obs-studio/master/UI/data/locale/en-US.ini",
+                    url: "obsproject/obs-studio/master/UI/data/locale/{}.ini",
+            lang_id: "-", true, "-", false,
         }),
         duo!( "obsidian",    "Obsidian",           None,                       parse_json,          github => {
             default_url: "obsidianmd/obsidian-translations/master/en.json",

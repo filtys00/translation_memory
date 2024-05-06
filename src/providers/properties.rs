@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 
 use super::{unescape, TranslationMessages};
 
@@ -37,6 +37,30 @@ pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
             key.to_string(),
             (value, comment.map(|comment| comment.to_string())),
         );
+    }
+
+    Ok(translations)
+}
+
+pub fn parse_obs_studio_ini(text: String) -> anyhow::Result<TranslationMessages> {
+    let mut translations = HashMap::new();
+
+    for line in text.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        if line.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            bail!("Invalid line: {line}");
+        };
+
+        let value = value
+            .get(1..(value.len() - 1))
+            .ok_or_else(|| anyhow!("Invalid value: {value}"))?;
+        translations.insert(key.to_string(), (unescape(value, &['n', '"']), None));
     }
 
     Ok(translations)
