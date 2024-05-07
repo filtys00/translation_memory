@@ -654,6 +654,22 @@
 				if (e.key !== "Enter") { return; }
 				refreshTranslations();
 			}
+			searchField.onkeydown = e => {
+				if (!document.execCommand) { return; }
+				if (e.key !== '"' && e.key !== "'") { return; }
+
+				let [start, end] = [searchField.selectionStart, searchField.selectionEnd];
+				if (start === end) { return; }
+
+				e.preventDefault();
+
+				document.execCommand(
+					"insertText",
+					undefined,
+					`${e.key}${searchField.value.substring(start, end)}${e.key}`,
+				);
+				searchField.setSelectionRange(start + 1, end + 1);
+			}
 
 			search.onclick = e => {
 				if (e.target == searchField) return;
