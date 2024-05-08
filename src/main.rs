@@ -141,7 +141,7 @@ async fn main() {
         }
     }
 
-    info!("Reading cached translations from '{DEFAULT_CACHE_PATH}'...");
+    info!("Reading cached translations...");
     if let Err(e) = store.load_translations() {
         error!("Could not load cached translations: {e}");
         return;
