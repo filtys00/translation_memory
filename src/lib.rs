@@ -8,7 +8,7 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Debug,
     fs::{self, File},
-    io::{BufReader, BufWriter, Read},
+    io::{BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -26,6 +26,9 @@ use unic_langid::LanguageIdentifier;
 use self::providers::{
     default_providers, merge_messages, simple_provider, SimpleProvider, TranslationProvider,
 };
+
+/// The currently used version of the cache file format.
+const CURRENT_CACHE_FILE_VERSION: u8 = 0;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {
@@ -122,7 +125,8 @@ impl TranslationStore {
         let file = File::create(&temp_save_path).map_err(|e| {
             anyhow!("Could not create temporary save file '{temp_save_path:?}': {e}")
         })?;
-        let writer = BufWriter::new(file);
+        let mut writer = BufWriter::new(file);
+        writer.write_all(&[CURRENT_CACHE_FILE_VERSION])?;
         let writer = GzEncoder::new(writer, Compression::fast());
 
         let mut translations: HashMap<
@@ -158,14 +162,30 @@ impl TranslationStore {
         }
 
         let now = Instant::now();
+
         let file = File::open(&self.save_path)
             .map_err(|e| anyhow!("Could not open file {:?}: {e}", self.save_path))?;
-        let reader = BufReader::new(file);
+        let mut reader = BufReader::new(file);
+
+        let mut version = [0; 1];
+        reader.read_exact(&mut version)?;
         let reader = GzDecoder::new(reader);
-        let mut translations: HashMap<
-            String,
-            BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
-        > = bincode::deserialize_from(reader)?;
+        let mut translations = match version[0] {
+            0 => {
+                let translations: HashMap<
+                    String,
+                    BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
+                > = bincode::deserialize_from(reader)?;
+                translations
+            }
+            version if version > CURRENT_CACHE_FILE_VERSION => {
+                bail!("Cache file version '{version}' is too new");
+            }
+            version => {
+                bail!("Cache file version '{version}' is unsupported");
+            }
+        };
+
         debug!("Read cache file in {} seconds", now.elapsed().as_secs());
 
         translations.retain(|scope, _| {

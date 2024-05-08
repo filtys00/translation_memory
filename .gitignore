@@ -5,6 +5,6 @@
 /.vscode
 
 # Used by program
-/translations.bin.gz
+/translations.bin
 /translations.toml
 /translations
