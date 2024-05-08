@@ -109,6 +109,46 @@ impl TranslationStore {
         }
     }
 
+    /// Write translations to the save path.
+    pub fn save_translations(&self) -> anyhow::Result<()> {
+        let now = Instant::now();
+
+        let mut temp_save_path = self.save_path.clone();
+        let Some(file_name) = self.save_path.file_name() else {
+            bail!("Save path has no file name: {:?}", self.save_path);
+        };
+        temp_save_path.set_file_name(format!("~{}", file_name.to_string_lossy()));
+
+        let file = File::create(&temp_save_path).map_err(|e| {
+            anyhow!("Could not create temporary save file '{temp_save_path:?}': {e}")
+        })?;
+        let writer = BufWriter::new(file);
+        let writer = GzEncoder::new(writer, Compression::fast());
+
+        let mut translations: HashMap<
+            &String,
+            &BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
+        > = self.translations.iter().collect();
+        translations.retain(|scope, _| {
+            self.providers
+                .iter()
+                .find(|provider| provider.id() == *scope)
+                .map_or(false, |provider| !provider.temporary())
+        });
+
+        bincode::serialize_into(writer, &translations)?;
+
+        fs::rename(&temp_save_path, &self.save_path).map_err(|e| {
+            anyhow!(
+                "Could not move temporary save file from '{temp_save_path:?}' to '{:?}': {e}",
+                self.save_path
+            )
+        })?;
+
+        debug!("Wrote cache file in {} seconds", now.elapsed().as_secs());
+        Ok(())
+    }
+
     /// Load translations from the save path.
     ///
     /// Returns `false` if no file were found at the save path.
@@ -250,44 +290,28 @@ impl TranslationStore {
         Ok(())
     }
 
-    /// Write translations to the save path.
-    pub fn save_translations(&self) -> anyhow::Result<()> {
-        let now = Instant::now();
+    pub fn provider(&self, id: &str) -> Option<&Arc<dyn TranslationProvider + Send + Sync>> {
+        self.providers.iter().find(|provider| provider.id() == id)
+    }
 
-        let mut temp_save_path = self.save_path.clone();
-        let Some(file_name) = self.save_path.file_name() else {
-            bail!("Save path has no file name: {:?}", self.save_path);
-        };
-        temp_save_path.set_file_name(format!("~{}", file_name.to_string_lossy()));
+    pub fn providers(&self) -> &[Arc<dyn TranslationProvider + Send + Sync>] {
+        &self.providers
+    }
 
-        let file = File::create(&temp_save_path).map_err(|e| {
-            anyhow!("Could not create temporary save file '{temp_save_path:?}': {e}")
-        })?;
-        let writer = BufWriter::new(file);
-        let writer = GzEncoder::new(writer, Compression::fast());
+    pub fn languages(&self) -> HashSet<&LanguageIdentifier> {
+        self.translations
+            .iter()
+            .flat_map(|(_, t)| t.iter())
+            .map(|(lang_id, _)| lang_id)
+            .collect()
+    }
 
-        let mut translations: HashMap<
-            &String,
-            &BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
-        > = self.translations.iter().collect();
-        translations.retain(|scope, _| {
-            self.providers
-                .iter()
-                .find(|provider| provider.id() == *scope)
-                .map_or(false, |provider| !provider.temporary())
-        });
-
-        bincode::serialize_into(writer, &translations)?;
-
-        fs::rename(&temp_save_path, &self.save_path).map_err(|e| {
-            anyhow!(
-                "Could not move temporary save file from '{temp_save_path:?}' to '{:?}': {e}",
-                self.save_path
-            )
-        })?;
-
-        debug!("Wrote cache file in {} seconds", now.elapsed().as_secs());
-        Ok(())
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
+        self.translations
+            .iter()
+            .flat_map(|(scope, t)| t.iter().map(move |t| (scope, t)))
+            .filter_map(|(scope, (lang_id, t))| t.as_ref().map(|t| (scope, lang_id, t)))
+            .flat_map(|(scope, lang_id, t)| t.iter().map(move |t| (scope, lang_id, t)))
     }
 
     pub async fn generate(
@@ -373,29 +397,5 @@ impl TranslationStore {
         }
 
         Ok(errors)
-    }
-
-    pub fn providers(&self) -> &[Arc<dyn TranslationProvider + Send + Sync>] {
-        &self.providers
-    }
-
-    pub fn provider(&self, id: &str) -> Option<&Arc<dyn TranslationProvider + Send + Sync>> {
-        self.providers.iter().find(|provider| provider.id() == id)
-    }
-
-    pub fn languages(&self) -> HashSet<&LanguageIdentifier> {
-        self.translations
-            .iter()
-            .flat_map(|(_, t)| t.iter())
-            .map(|(lang_id, _)| lang_id)
-            .collect()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
-        self.translations
-            .iter()
-            .flat_map(|(scope, t)| t.iter().map(move |t| (scope, t)))
-            .filter_map(|(scope, (lang_id, t))| t.as_ref().map(|t| (scope, lang_id, t)))
-            .flat_map(|(scope, lang_id, t)| t.iter().map(move |t| (scope, lang_id, t)))
     }
 }
