@@ -135,11 +135,17 @@ async fn main() {
 
     if !args.no_config && Path::new(CONFIG_PATH).exists() {
         info!("Reading config from '{CONFIG_PATH}'...");
-        store.load_config(CONFIG_PATH).unwrap();
+        if let Err(e) = store.load_config(CONFIG_PATH) {
+            error!("Could not load config file ({CONFIG_PATH}): {e}");
+            return;
+        }
     }
 
     info!("Reading cached translations from '{DEFAULT_CACHE_PATH}'...");
-    store.load_translations().unwrap();
+    if let Err(e) = store.load_translations() {
+        error!("Could not load cached translations: {e}");
+        return;
+    }
 
     if !args.remove.is_empty() {
         for name in &args.remove {
