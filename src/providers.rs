@@ -31,7 +31,7 @@ use log::trace;
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
 
-use super::Translation;
+use crate::{ProviderCache, ProviderCacheMultiple, Translation};
 
 #[async_trait]
 pub trait TranslationProvider {
@@ -48,11 +48,16 @@ pub trait TranslationProvider {
         false
     }
 
+    /// Returns a `ProviderCache` with translations for the languages in `lang_ids`.
+    ///
+    /// If this function returns `ProviderCache::Multiple(multiple)` with `multiple.finished` set to `false`,
+    /// then `multiple` is given back in `previous` the next time `generate` is invoced.
     async fn generate(
         &self,
+        previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error>;
+    ) -> anyhow::Result<ProviderCache>;
 }
 
 /// Returns a string version of `lang_id`.
@@ -228,9 +233,10 @@ where
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+    ) -> anyhow::Result<ProviderCache> {
         let mut translations = BTreeMap::new();
 
         for lang_id in lang_ids {
@@ -251,7 +257,7 @@ where
             }
         }
 
-        Ok(translations)
+        Ok(ProviderCache::Single(translations))
     }
 }
 
@@ -290,9 +296,10 @@ where
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+    ) -> anyhow::Result<ProviderCache> {
         let mut translations = BTreeMap::new();
 
         let text_en = download_text(self.default_url, &client)
@@ -311,6 +318,6 @@ where
             translations.insert(lang_id, Some(merge_messages(messages, &messages_en, &url)));
         }
 
-        Ok(translations)
+        Ok(ProviderCache::Single(translations))
     }
 }

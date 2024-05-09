@@ -17,7 +17,7 @@ use unic_langid::LanguageIdentifier;
 use zip::ZipArchive;
 
 use super::lang_id_to_string;
-use crate::{Translation, TranslationProvider};
+use crate::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider};
 
 pub struct MinecraftProvider;
 
@@ -33,9 +33,10 @@ impl TranslationProvider for MinecraftProvider {
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+    ) -> anyhow::Result<ProviderCache> {
         let manifest: Manifest = client
             .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
             .send()
@@ -108,7 +109,7 @@ impl TranslationProvider for MinecraftProvider {
             translations.insert(lang_id, Some(t));
         }
 
-        Ok(translations)
+        Ok(ProviderCache::Single(translations))
     }
 }
 

@@ -150,7 +150,7 @@ async fn main() {
     if !args.remove.is_empty() {
         for name in &args.remove {
             if args.languages.is_empty() {
-                match store.translations.remove(name) {
+                match store.provider_caches.remove(name) {
                     Some(_) => info!("Removed scope '{name}'"),
                     None => match store.provider(name) {
                         Some(_) => warn!("Scope '{name}' has no generated translations"),
@@ -158,7 +158,7 @@ async fn main() {
                     },
                 }
             } else {
-                let Some(scope) = store.translations.get_mut(name) else {
+                let Some(provider_cache) = store.provider_caches.get_mut(name) else {
                     match store.provider(name) {
                         Some(_) => warn!("Scope '{name}' has no generated translations"),
                         None => warn!("Scope '{name}' was not found"),
@@ -166,9 +166,19 @@ async fn main() {
                     continue;
                 };
                 for lang in &args.languages {
-                    match scope.remove(lang) {
-                        Some(Some(_)) => info!("Removed language '{lang}' from scope '{name}'"),
-                        Some(None) => {
+                    let removed_translations = provider_cache
+                        .translation_bundles_mut()
+                        .map(|bundle| bundle.remove(lang))
+                        .fold(None, |acc, translations| {
+                            match (acc, translations.map(|t| t.is_some())) {
+                                (Some(true), _) | (_, Some(true)) => Some(true),
+                                (Some(false), _) | (_, Some(false)) => Some(false),
+                                (None, None) => None,
+                            }
+                        });
+                    match removed_translations {
+                        Some(true) => info!("Removed language '{lang}' from scope '{name}'"),
+                        Some(false) => {
                             warn!("Scope '{name}' has no translations for language '{lang}'")
                         }
                         None => warn!("Scope '{name}' has not generated language '{lang}'"),
@@ -248,79 +258,58 @@ async fn main() {
             store
                 .providers()
                 .iter()
-                .filter(|provider| store.translations.contains_key(provider.id()))
+                .filter(|provider| store.provider_caches.contains_key(provider.id()))
                 .count()
         );
-        println!(
-            "    empty: {} scopes",
+        let empty = store.providers().iter().filter(|provider| {
             store
-                .providers()
-                .iter()
-                .filter(|provider| store
-                    .translations
-                    .get(provider.id())
-                    .map_or(false, |scope| scope
-                        .values()
-                        .all(|t| t.as_ref().map_or(true, |t| t.is_empty()))))
-                .count()
-        );
-        for provider in store.providers().iter().filter(|provider| {
-            store
-                .translations
+                .provider_caches
                 .get(provider.id())
-                .map_or(false, |scope| {
-                    scope
-                        .values()
-                        .all(|t| t.as_ref().map_or(true, |t| t.is_empty()))
+                .map_or(false, |provider_cache| {
+                    provider_cache
+                        .translation_bundles()
+                        .flat_map(|bundle| bundle.values())
+                        .filter_map(|translations| translations.as_ref())
+                        .all(|translations| translations.is_empty())
                 })
-        }) {
+        });
+        println!("    empty: {} scopes", empty.clone().count());
+        for provider in empty {
             println!("      {}", provider.id());
         }
-        println!(
-            "  not generated: {} scopes",
-            store
-                .providers()
-                .iter()
-                .filter(|provider| !store.translations.contains_key(provider.id()))
-                .count()
-        );
-        for provider in store
+        let not_generated = store
             .providers()
             .iter()
-            .filter(|provider| !store.translations.contains_key(provider.id()))
-        {
+            .filter(|provider| !store.provider_caches.contains_key(provider.id()));
+        println!("  not generated: {} scopes", not_generated.clone().count());
+        for provider in not_generated {
             println!("    {}", provider.id());
         }
 
         println!("In total {} translations", store.iter().count());
-        for lang in store.languages() {
+        for lang_id in store.languages() {
+            let provider_caches = store.provider_caches.iter().filter(|(_, provider_cache)| {
+                provider_cache
+                    .translation_bundles()
+                    .filter_map(|bundle| bundle.get(lang_id))
+                    .any(|translations| translations.is_some())
+            });
             println!(
-                "  {lang}: {} translations, {} / {} scopes",
-                store.iter().filter(|(_, l, _)| *l == lang).count(),
-                store
-                    .translations
-                    .values()
-                    .filter(|scope| scope.get(lang).map_or(false, |scope| scope.is_some()))
-                    .count(),
-                store.translations.len(),
+                "  {lang_id}: {} translations, {} / {} scopes",
+                store.iter().filter(|(_, l, _)| *l == lang_id).count(),
+                provider_caches.clone().count(),
+                store.providers().len(),
             );
-            if store
-                .translations
-                .values()
-                .filter(|scope| scope.get(lang).map_or(false, |scope| scope.is_some()))
-                .count()
-                <= 10
-            {
-                for (name, translations) in store
-                    .translations
-                    .iter()
-                    .filter(|(_, scope)| scope.get(lang).map_or(false, |scope| scope.is_some()))
-                {
+            if provider_caches.clone().count() <= 10 {
+                for (provider_id, provider_cache) in provider_caches {
                     println!(
-                        "    {name}: {} translations",
-                        translations
-                            .get(lang)
-                            .map_or(0, |t| t.as_ref().map_or(0, |t| t.len()))
+                        "    {provider_id}: {} translations",
+                        provider_cache
+                            .translation_bundles()
+                            .filter_map(|bundle| bundle.get(lang_id))
+                            .filter_map(|translations| translations.as_ref())
+                            .flatten()
+                            .count(),
                     );
                 }
             }
@@ -334,24 +323,26 @@ async fn main() {
                     .iter()
                     .map(|lang_id| lang_id.to_string())
                     .reduce(|acc, lang_id| acc + ", " + &lang_id)
-                    .unwrap_or_else(String::new)
+                    .unwrap_or_default()
             );
-            let mut counts = Vec::with_capacity(store.translations.len());
-            for (name, translations) in &store.translations {
+            let mut counts = Vec::with_capacity(store.provider_caches.len());
+            for (provider_id, provider_cache) in &store.provider_caches {
                 let mut count = 0;
                 for lang_id in &args.languages {
-                    let Some(Some(translations)) = translations.get(lang_id) else {
-                        continue;
-                    };
-                    count += translations.len();
+                    count += provider_cache
+                        .translation_bundles()
+                        .filter_map(|bundle| bundle.get(lang_id))
+                        .filter_map(|translations| translations.as_ref())
+                        .flatten()
+                        .count();
                 }
                 if count > 0 {
-                    counts.push((name, count));
+                    counts.push((provider_id, count));
                 }
             }
-            counts.sort_by_key(|(name, count)| (*count, *name));
-            for (name, count) in counts {
-                println!("  {name}: {count}");
+            counts.sort_by_key(|(provider_id, count)| (*count, *provider_id));
+            for (provider_id, count) in counts {
+                println!("  {provider_id}: {count}");
             }
         }
     }

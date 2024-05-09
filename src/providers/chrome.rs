@@ -22,7 +22,9 @@ use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
 use super::unescape;
-use crate::{Translation, TranslationProvider};
+use crate::{
+    ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle, TranslationProvider,
+};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
@@ -50,9 +52,10 @@ impl TranslationProvider for ChromeProvider {
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+    ) -> anyhow::Result<ProviderCache> {
         trace!("Downloading translation expectations...");
 
         let url = "https://chromium.googlesource.com/chromium/src/+/main/tools/gritsettings/translation_expectations.pyl?format=TEXT";
@@ -85,8 +88,7 @@ impl TranslationProvider for ChromeProvider {
 
         trace!("Downloaded {} Grit files", grits.len());
 
-        let mut translations: BTreeMap<LanguageIdentifier, Option<Vec<Translation>>> =
-            BTreeMap::new();
+        let mut translations: TranslationBundle = BTreeMap::new();
 
         for (path, grit) in &grits {
             let Some(translation_en) = grit
@@ -157,7 +159,7 @@ impl TranslationProvider for ChromeProvider {
             translations.entry(lang_id).or_insert(None);
         }
 
-        Ok(translations)
+        Ok(ProviderCache::Single(translations))
     }
 }
 

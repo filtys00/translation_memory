@@ -9,6 +9,7 @@ use std::{
     fmt::Debug,
     fs::{self, File},
     io::{BufReader, BufWriter, Read, Write},
+    iter,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -28,7 +29,32 @@ use self::providers::{
 };
 
 /// The currently used version of the cache file format.
-const CURRENT_CACHE_FILE_VERSION: u8 = 0;
+///
+/// # Version changes
+/// - `0` => `1`:
+///   Add `ProviderCache` together with `ProviderCache::Multiple`
+const CURRENT_CACHE_FILE_VERSION: u8 = 1;
+
+pub struct TranslationStore {
+    providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
+    save_path: PathBuf,
+    pub provider_caches: BTreeMap<String, ProviderCache>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub enum ProviderCache {
+    Single(TranslationBundle),
+    Multiple(ProviderCacheMultiple),
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ProviderCacheMultiple {
+    /// If all available translation bundles have been added to `translation_bundles`.
+    finished: bool,
+    translation_bundles: BTreeMap<String, TranslationBundle>,
+}
+
+type TranslationBundle = BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {
@@ -39,12 +65,24 @@ pub struct Translation {
     pub source: String,
 }
 
-pub struct TranslationStore {
-    providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
+impl ProviderCache {
+    /// Returns an iterator over the cached translation bundles.
+    pub fn translation_bundles(&self) -> Box<dyn Iterator<Item = &TranslationBundle> + '_> {
+        match self {
+            Self::Single(translation_bundle) => Box::new(iter::once(translation_bundle)),
+            Self::Multiple(multiple) => Box::new(multiple.translation_bundles.values()),
+        }
+    }
 
-    save_path: PathBuf,
-
-    pub translations: BTreeMap<String, BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>>,
+    /// Returns a mutable iterator over the cached translation bundles.
+    pub fn translation_bundles_mut(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = &mut TranslationBundle> + '_> {
+        match self {
+            Self::Single(translation_bundle) => Box::new(iter::once(translation_bundle)),
+            Self::Multiple(multiple) => Box::new(multiple.translation_bundles.values_mut()),
+        }
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -95,9 +133,10 @@ impl TranslationProvider for DummyProvider {
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         _lang_ids: Vec<LanguageIdentifier>,
         _client: Arc<Client>,
-    ) -> anyhow::Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>> {
+    ) -> anyhow::Result<ProviderCache> {
         bail!("Should already be generated: {}", &self.id)
     }
 }
@@ -108,7 +147,7 @@ impl TranslationStore {
         Self {
             providers: default_providers(),
             save_path,
-            translations: BTreeMap::new(),
+            provider_caches: BTreeMap::new(),
         }
     }
 
@@ -129,16 +168,14 @@ impl TranslationStore {
         writer.write_all(&[CURRENT_CACHE_FILE_VERSION])?;
         let writer = GzEncoder::new(writer, Compression::fast());
 
-        let mut translations: HashMap<
-            &String,
-            &BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
-        > = self.translations.iter().collect();
-        translations.retain(|scope, _| {
-            self.providers
-                .iter()
-                .find(|provider| provider.id() == *scope)
-                .map_or(false, |provider| !provider.temporary())
-        });
+        let translations: HashMap<&String, &ProviderCache> = self
+            .provider_caches
+            .iter()
+            .filter(|(provider_id, _)| {
+                self.provider(provider_id)
+                    .map_or(false, |provider| !provider.temporary())
+            })
+            .collect();
 
         bincode::serialize_into(writer, &translations)?;
 
@@ -170,12 +207,20 @@ impl TranslationStore {
         let mut version = [0; 1];
         reader.read_exact(&mut version)?;
         let reader = GzDecoder::new(reader);
-        let mut translations = match version[0] {
+        let mut provider_caches = match version[0] {
             0 => {
                 let translations: HashMap<
                     String,
                     BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
                 > = bincode::deserialize_from(reader)?;
+                translations
+                    .into_iter()
+                    .map(|(id, scope)| (id, ProviderCache::Single(scope)))
+                    .collect()
+            }
+            CURRENT_CACHE_FILE_VERSION => {
+                let translations: HashMap<String, ProviderCache> =
+                    bincode::deserialize_from(reader)?;
                 translations
             }
             version if version > CURRENT_CACHE_FILE_VERSION => {
@@ -188,7 +233,7 @@ impl TranslationStore {
 
         debug!("Read cache file in {} seconds", now.elapsed().as_secs());
 
-        translations.retain(|scope, _| {
+        provider_caches.retain(|scope, _| {
             let retain = self.providers.iter().any(|provider| provider.id() == scope);
             if !retain {
                 warn!("Unknown provider in translation cache: {scope}");
@@ -196,7 +241,7 @@ impl TranslationStore {
             retain
         });
 
-        self.translations.extend(translations);
+        self.provider_caches.extend(provider_caches);
 
         Ok(true)
     }
@@ -233,7 +278,7 @@ impl TranslationStore {
         }
 
         for (i, (entry, texts)) in config_texts.into_iter().enumerate() {
-            let translations = match simple_provider(&entry.type_name) {
+            let translation_bundle = match simple_provider(&entry.type_name) {
                 Some(SimpleProvider::Duo(parse)) => {
                     let mut translations = BTreeMap::new();
 
@@ -292,13 +337,14 @@ impl TranslationStore {
             trace!(
                 "Read config entry '{}' (ID {id}): {} translations",
                 entry.name,
-                translations
-                    .iter()
-                    .filter_map(|(_, translations)| translations.as_ref())
+                translation_bundle
+                    .values()
+                    .filter_map(|translations| translations.as_ref())
                     .flatten()
                     .count(),
             );
-            self.translations.entry(id.clone()).or_insert(translations);
+            self.provider_caches
+                .insert(id.clone(), ProviderCache::Single(translation_bundle));
             self.providers.push(Arc::new(DummyProvider {
                 id,
                 name: entry.name.clone(),
@@ -319,19 +365,36 @@ impl TranslationStore {
     }
 
     pub fn languages(&self) -> HashSet<&LanguageIdentifier> {
-        self.translations
-            .iter()
-            .flat_map(|(_, t)| t.iter())
-            .map(|(lang_id, _)| lang_id)
+        self.provider_caches
+            .values()
+            .flat_map(|provider_cache| provider_cache.translation_bundles())
+            .flat_map(|bundle| bundle.keys())
             .collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
-        self.translations
+        self.provider_caches
             .iter()
-            .flat_map(|(scope, t)| t.iter().map(move |t| (scope, t)))
-            .filter_map(|(scope, (lang_id, t))| t.as_ref().map(|t| (scope, lang_id, t)))
-            .flat_map(|(scope, lang_id, t)| t.iter().map(move |t| (scope, lang_id, t)))
+            .flat_map(|(id, provider_cache)| {
+                provider_cache
+                    .translation_bundles()
+                    .map(move |bundle| (id, bundle))
+            })
+            .flat_map(|(id, bundle)| {
+                bundle
+                    .iter()
+                    .map(move |(lang_id, translations)| (id, lang_id, translations))
+            })
+            .filter_map(|(id, lang_id, translations)| {
+                translations
+                    .as_ref()
+                    .map(|translations| (id, lang_id, translations))
+            })
+            .flat_map(|(id, lang_id, translations)| {
+                translations
+                    .iter()
+                    .map(move |translation| (id, lang_id, translation))
+            })
     }
 
     pub async fn generate(
@@ -370,10 +433,26 @@ impl TranslationStore {
                 continue;
             }
 
+            let unfinished = self
+                .provider_caches
+                .get(&id)
+                .map_or(false, |provider_cache| match provider_cache {
+                    ProviderCache::Single(_) => false,
+                    ProviderCache::Multiple(multiple) => !multiple.finished,
+                });
+            let previous = if unfinished {
+                let previous = self.provider_caches.remove(&id);
+                match previous {
+                    Some(ProviderCache::Multiple(multiple)) => Some(multiple),
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let client = client.clone();
             let lang_ids = lang_ids.clone();
             join_set.spawn(timeout(Duration::from_secs(60), async move {
-                (id, provider.generate(lang_ids, client).await)
+                (id, provider.generate(previous, lang_ids, client).await)
             }));
         }
 
@@ -391,12 +470,12 @@ impl TranslationStore {
                     continue;
                 }
             };
-            let t = match result {
-                Ok(t) => t,
+            let provider_cache = match result {
+                Ok(provider_cache) => provider_cache,
                 Err(e) => {
                     error!("Could not generate '{id}': {e}");
                     if remove_failed {
-                        self.translations.remove(&id);
+                        self.provider_caches.remove(&id);
                     }
                     errors.insert(id, Some(e.to_string()));
                     continue;
@@ -404,16 +483,22 @@ impl TranslationStore {
             };
 
             debug!(
-                "Generated '{id}': up to {} translations for each language",
-                t.iter()
-                    .filter_map(|(_, t)| t.as_ref())
-                    .map(|t| t.len())
-                    .max()
-                    .unwrap_or(0)
+                "Generated '{id}': possibly up to {} translations per language",
+                provider_cache
+                    .translation_bundles()
+                    .map(|bundle| {
+                        bundle
+                            .values()
+                            .filter_map(|translations| translations.as_ref())
+                            .map(|translations| translations.len())
+                            .max()
+                            .unwrap_or(0)
+                    })
+                    .sum::<usize>()
             );
 
             errors.insert(id.clone(), None);
-            self.translations.insert(id, t);
+            self.provider_caches.insert(id, provider_cache);
         }
 
         Ok(errors)

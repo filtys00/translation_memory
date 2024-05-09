@@ -442,7 +442,7 @@ async fn metadata_api(
             scopes.push(json!({
                 "id": provider.id(),
                 "name": provider.name(),
-                "downloaded": store.translations.contains_key(provider.id()),
+                "downloaded": store.provider_caches.contains_key(provider.id()),
             }));
         } else {
             scopes.insert(provider.name(), json!(provider.id()));
@@ -452,7 +452,7 @@ async fn metadata_api(
         .iter()
         .map(|(group_name, value)| {
             if let Some(id) = value.as_str() {
-                json!({ "name": group_name, "id": id, "downloaded": store.translations.contains_key(id), })
+                json!({ "name": group_name, "id": id, "downloaded": store.provider_caches.contains_key(id), })
             } else {
                 json!({ "name": group_name, "scopes": value })
             }
@@ -559,8 +559,10 @@ async fn update_all_api(
         == 0
     {
         debug!("Fullfilling request by removal");
-        for translations in store.translations.values_mut() {
-            translations.retain(|lang_id, _| payload.languages.contains(lang_id));
+        for provider_cache in store.provider_caches.values_mut() {
+            for translation_bundle in provider_cache.translation_bundles_mut() {
+                translation_bundle.retain(|lang_id, _| payload.languages.contains(lang_id));
+            }
         }
         scopes.into_iter().map(|scope| (scope, None)).collect()
     } else {

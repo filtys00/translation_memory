@@ -21,7 +21,7 @@ use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
 use super::{download_text, unescape};
-use crate::{Translation, TranslationProvider};
+use crate::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider};
 
 pub struct NetPoProvider<F, U>
 where
@@ -54,9 +54,10 @@ where
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>, anyhow::Error> {
+    ) -> anyhow::Result<ProviderCache> {
         let mut translations = BTreeMap::new();
 
         let mut join_set: JoinSet<anyhow::Result<(LanguageIdentifier, Option<Vec<Translation>>)>> =
@@ -128,7 +129,7 @@ where
 
         join_set.abort_all();
 
-        Ok(translations)
+        Ok(ProviderCache::Single(translations))
     }
 }
 

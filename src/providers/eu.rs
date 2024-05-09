@@ -16,7 +16,7 @@ use unic_langid::LanguageIdentifier;
 use zip::{read::ZipFile, ZipArchive};
 
 use super::TranslationProvider;
-use crate::Translation;
+use crate::{ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle};
 
 // https://joint-research-centre.ec.europa.eu/language-technology-resources_en
 
@@ -34,13 +34,14 @@ impl TranslationProvider for EuProvider {
 
     async fn generate(
         &self,
+        _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
-    ) -> anyhow::Result<BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>> {
+    ) -> anyhow::Result<ProviderCache> {
         fn parse_tmx(
             zip_file: ZipFile,
             lang_ids: &[LanguageIdentifier],
-            translations: &mut BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
+            translations: &mut TranslationBundle,
             en: &LanguageIdentifier,
             url: &str,
         ) -> anyhow::Result<()> {
@@ -111,7 +112,7 @@ impl TranslationProvider for EuProvider {
         )
         .map_err(|e| anyhow!("could not parse file 'ECDC-TM/ECDC.tmx': {e}"))?;
 
-        Ok(translations)
+        Ok(ProviderCache::Single(translations))
     }
 }
 
