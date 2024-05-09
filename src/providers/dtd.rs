@@ -43,12 +43,10 @@ pub fn parse_dtd(text: String) -> anyhow::Result<TranslationMessages> {
                     }
                     if let Some(value) = value.trim_start().strip_prefix('"') {
                         if let Some(value) = value.trim_end().strip_suffix('"') {
-                            let mut c = key.to_string();
-                            if let Some(comment) = &comment.1 {
-                                c.push('\n');
-                                c.push_str(comment);
-                            }
-                            messages.insert(key.to_string(), (value.to_string(), Some(c)));
+                            messages.insert(
+                                key.to_string(),
+                                (value.to_string(), comment.1.map(|c| c.to_string())),
+                            );
                             comment = (false, None);
                             continue;
                         }
