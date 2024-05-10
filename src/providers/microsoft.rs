@@ -9,10 +9,10 @@ use unic_langid::LanguageIdentifier;
 use crate::Translation;
 
 pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
-    let translations: MicrosoftTranslations = quick_xml::de::from_str(&text)?;
+    let tbx: Tbx = quick_xml::de::from_str(&text)?;
 
     let en_us: LanguageIdentifier = "en-US".parse()?;
-    let lang_id = translations
+    let lang_id = tbx
         .text
         .body
         .term_entries
@@ -25,7 +25,7 @@ pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Tra
             lang_set.map(|lang_set| &lang_set.lang)
         })
         .ok_or_else(|| anyhow!("Could not find any language other than '{en_us}'"))?;
-    let lang_ids: Vec<&LanguageIdentifier> = translations
+    let lang_ids: Vec<&LanguageIdentifier> = tbx
         .text
         .body
         .term_entries
@@ -45,7 +45,7 @@ pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Tra
         );
     }
 
-    let translations = translations
+    let translations = tbx
         .text
         .body
         .term_entries
@@ -77,7 +77,7 @@ pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Tra
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct MicrosoftTranslations {
+struct Tbx {
     text: Text,
 }
 

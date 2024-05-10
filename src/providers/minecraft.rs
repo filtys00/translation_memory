@@ -60,9 +60,9 @@ impl TranslationProvider for MinecraftProvider {
             .json()
             .await?;
 
-        let mut translations = BTreeMap::new();
+        let mut translation_bundle = BTreeMap::new();
 
-        let assets_en: HashMap<String, String> = {
+        let messages_en: HashMap<String, String> = {
             let bytes = client
                 .get(&version.downloads.client.url)
                 .send()
@@ -81,7 +81,7 @@ impl TranslationProvider for MinecraftProvider {
             );
 
             let Some(object) = asset_index.objects.get(&key) else {
-                translations.insert(lang_id, None);
+                translation_bundle.insert(lang_id, None);
                 continue;
             };
             let url = format!(
@@ -89,27 +89,27 @@ impl TranslationProvider for MinecraftProvider {
                 object.hash.get(0..2).unwrap_or(""),
                 object.hash,
             );
-            let assets: HashMap<String, String> = client.get(&url).send().await?.json().await?;
+            let messages: HashMap<String, String> = client.get(&url).send().await?.json().await?;
 
-            let mut t = Vec::with_capacity(assets.len());
-            for (key, value) in assets {
-                let Some(original) = assets_en.get(&key) else {
+            let mut translations = Vec::with_capacity(messages.len());
+            for (key, message) in messages {
+                let Some(message_en) = messages_en.get(&key) else {
                     trace!("Translation key '{key}' were found in '{lang_id}' translation but not in default translation");
                     continue;
                 };
 
-                t.push(Translation {
-                    original: original.clone(),
-                    translation: value,
+                translations.push(Translation {
+                    original: message_en.clone(),
+                    translation: message,
                     comment: None,
                     key: Some(key),
                     source: url.clone(),
                 });
             }
-            translations.insert(lang_id, Some(t));
+            translation_bundle.insert(lang_id, Some(translations));
         }
 
-        Ok(ProviderCache::Single(translations))
+        Ok(ProviderCache::Single(translation_bundle))
     }
 }
 

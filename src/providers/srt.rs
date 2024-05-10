@@ -6,6 +6,7 @@ use super::TranslationMessages;
 
 pub fn parse_srt(text: String) -> anyhow::Result<TranslationMessages> {
     let mut subtitles = Vec::new();
+
     let mut current_subtitle = String::new();
     let mut skip = 2;
     for line in text.lines() {
@@ -32,11 +33,11 @@ pub fn parse_srt(text: String) -> anyhow::Result<TranslationMessages> {
         subtitles.push(current_subtitle);
     }
 
-    let subtitles = subtitles
+    let messages = subtitles
         .into_iter()
         .enumerate()
         .map(|(i, subtitle)| (i.to_string(), (subtitle, None)))
         .collect();
 
-    Ok(subtitles)
+    Ok(messages)
 }

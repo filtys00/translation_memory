@@ -58,7 +58,7 @@ where
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
     ) -> anyhow::Result<ProviderCache> {
-        let mut translations = BTreeMap::new();
+        let mut translation_bundle = BTreeMap::new();
 
         let mut join_set: JoinSet<anyhow::Result<(LanguageIdentifier, Option<Vec<Translation>>)>> =
             JoinSet::new();
@@ -104,8 +104,8 @@ where
                 }
 
                 while let Some(result) = join_set.join_next().await {
-                    let mut result = match result {
-                        Ok(Ok(result)) => result,
+                    let mut t = match result {
+                        Ok(Ok(t)) => t,
                         Ok(Err(e)) => {
                             error!("Could not get translation file: {e}");
                             continue;
@@ -115,7 +115,7 @@ where
                             continue;
                         }
                     };
-                    translations.append(&mut result);
+                    translations.append(&mut t);
                 }
 
                 Ok((lang_id, Some(translations)))
@@ -123,13 +123,13 @@ where
         }
 
         while let Some(result) = join_set.join_next().await {
-            let (lang_id, t) = result??;
-            translations.insert(lang_id, t);
+            let (lang_id, translations) = result??;
+            translation_bundle.insert(lang_id, translations);
         }
 
         join_set.abort_all();
 
-        Ok(ProviderCache::Single(translations))
+        Ok(ProviderCache::Single(translation_bundle))
     }
 }
 

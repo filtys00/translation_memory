@@ -9,8 +9,9 @@ use serde::{Deserialize, Serialize};
 use super::TranslationMessages;
 
 pub fn parse_browser_extension(text: String) -> anyhow::Result<TranslationMessages> {
-    let messages: HashMap<String, Message> = serde_json::from_str(&text)?;
-    let messages = messages
+    let json: HashMap<String, Message> = serde_json::from_str(&text)?;
+
+    let messages = json
         .into_iter()
         .map(|(key, message)| {
             let mut comment = key.clone();
@@ -30,6 +31,7 @@ pub fn parse_browser_extension(text: String) -> anyhow::Result<TranslationMessag
             (key, (message.message, Some(comment)))
         })
         .collect();
+
     Ok(messages)
 }
 

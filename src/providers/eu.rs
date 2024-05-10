@@ -41,7 +41,7 @@ impl TranslationProvider for EuProvider {
         fn parse_tmx(
             zip_file: ZipFile,
             lang_ids: &[LanguageIdentifier],
-            translations: &mut TranslationBundle,
+            translation_bundle: &mut TranslationBundle,
             en: &LanguageIdentifier,
             url: &str,
         ) -> anyhow::Result<()> {
@@ -54,7 +54,7 @@ impl TranslationProvider for EuProvider {
                     let Some(tuv) = tu.entries.iter().find(|tuv| tuv.lang == *lang_id) else {
                         continue;
                     };
-                    let Some(translations) = translations
+                    let Some(translations) = translation_bundle
                         .entry(lang_id.clone())
                         .or_insert_with(|| Some(Vec::new()))
                     else {
@@ -73,7 +73,7 @@ impl TranslationProvider for EuProvider {
         }
 
         let en: LanguageIdentifier = "en".parse().unwrap();
-        let mut translations = BTreeMap::new();
+        let mut translation_bundle = BTreeMap::new();
 
         let url = "https://wt-public.emm4u.eu/Resources/EAC-TM/EAC-TM-all.zip";
         let response = client.get(url).send().await?;
@@ -83,7 +83,7 @@ impl TranslationProvider for EuProvider {
             zip.by_name("EAC_REFRENCE_DATA.tmx")
                 .map_err(|e| anyhow!("could not get file 'EAC_REFRENCE_DATA.tmx': {e}"))?,
             &lang_ids,
-            &mut translations,
+            &mut translation_bundle,
             &en,
             url,
         )
@@ -92,7 +92,7 @@ impl TranslationProvider for EuProvider {
             zip.by_name("EAC_FORMS.tmx")
                 .map_err(|e| anyhow!("could not get file 'EAC_FORMS.tmx': {e}"))?,
             &lang_ids,
-            &mut translations,
+            &mut translation_bundle,
             &en,
             url,
         )
@@ -106,13 +106,13 @@ impl TranslationProvider for EuProvider {
             zip.by_name("ECDC-TM/ECDC.tmx")
                 .map_err(|e| anyhow!("could not get file 'ECDC-TM/ECDC.tmx': {e}"))?,
             &lang_ids,
-            &mut translations,
+            &mut translation_bundle,
             &en,
             url,
         )
         .map_err(|e| anyhow!("could not parse file 'ECDC-TM/ECDC.tmx': {e}"))?;
 
-        Ok(ProviderCache::Single(translations))
+        Ok(ProviderCache::Single(translation_bundle))
     }
 }
 

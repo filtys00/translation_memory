@@ -9,7 +9,7 @@ use anyhow::{anyhow, bail};
 use super::{unescape, TranslationMessages};
 
 pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
-    let mut translations = HashMap::new();
+    let mut messages = HashMap::new();
 
     let mut comment = None;
     for mut line in text.lines() {
@@ -23,27 +23,27 @@ pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
             continue;
         }
 
-        let Some((mut key, mut value)) = line.split_once('=') else {
+        let Some((mut key, mut message)) = line.split_once('=') else {
             bail!("Invalid line: {line}");
         };
         key = key.trim_end();
-        value = value.trim_start();
+        message = message.trim_start();
 
-        if translations.contains_key(key) {
+        if messages.contains_key(key) {
             bail!("Duplicate key: {key}");
         }
-        let value = unescape(value, &['n']);
-        translations.insert(
+        let message = unescape(message, &['n']);
+        messages.insert(
             key.to_string(),
-            (value, comment.map(|comment| comment.to_string())),
+            (message, comment.map(|comment| comment.to_string())),
         );
     }
 
-    Ok(translations)
+    Ok(messages)
 }
 
 pub fn parse_obs_studio_ini(text: String) -> anyhow::Result<TranslationMessages> {
-    let mut translations = HashMap::new();
+    let mut messages = HashMap::new();
 
     for line in text.lines() {
         if line.is_empty() {
@@ -53,15 +53,17 @@ pub fn parse_obs_studio_ini(text: String) -> anyhow::Result<TranslationMessages>
             continue;
         }
 
-        let Some((key, value)) = line.split_once('=') else {
+        let Some((key, message)) = line.split_once('=') else {
             bail!("Invalid line: {line}");
         };
 
-        let value = value
-            .get(1..(value.len() - 1))
-            .ok_or_else(|| anyhow!("Invalid value: {value}"))?;
-        translations.insert(key.to_string(), (unescape(value, &['n', '"']), None));
+        let message = message
+            .get(1..(message.len() - 1))
+            .ok_or_else(|| anyhow!("Invalid value: {message}"))?;
+        let message = unescape(message, &['n', '"']);
+
+        messages.insert(key.to_string(), (message, None));
     }
 
-    Ok(translations)
+    Ok(messages)
 }

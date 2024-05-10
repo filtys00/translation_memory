@@ -156,43 +156,47 @@ async fn query_api(
     };
 
     let store = store.lock().await;
-    let translations = store.iter().filter(|(scope, lang_id, translation)| {
-        if !params.languages.contains(lang_id) {
-            return false;
-        }
-        if !params.scopes.contains(scope) {
-            return false;
-        }
-
-        for (filter, filter_mode) in &search_filters {
-            let matches = match filter {
-                SearchFilter::OriginalRegex(regex) => regex.is_match(&translation.original),
-                SearchFilter::TranslationRegex(regex) => regex.is_match(&translation.translation),
-                SearchFilter::EitherRegex(regex) => {
-                    regex.is_match(&translation.original)
-                        || regex.is_match(&translation.translation)
-                }
-                SearchFilter::Scope(s) => {
-                    if s == *scope {
-                        true
-                    } else if let Some(provider) = store.provider(scope) {
-                        provider.name() == s || provider.group_name() == Some(s)
-                    } else {
-                        false
-                    }
-                }
-                SearchFilter::Language(l) => l == *lang_id,
-            };
-            match (filter_mode, matches) {
-                (SearchFilterMode::Require, true) => {}
-                (SearchFilterMode::Require, false) => return false,
-                (SearchFilterMode::Block, true) => return false,
-                (SearchFilterMode::Block, false) => {}
+    let translations = store
+        .translations()
+        .filter(|(scope, lang_id, translation)| {
+            if !params.languages.contains(lang_id) {
+                return false;
             }
-        }
+            if !params.scopes.contains(scope) {
+                return false;
+            }
 
-        true
-    });
+            for (filter, filter_mode) in &search_filters {
+                let matches = match filter {
+                    SearchFilter::OriginalRegex(regex) => regex.is_match(&translation.original),
+                    SearchFilter::TranslationRegex(regex) => {
+                        regex.is_match(&translation.translation)
+                    }
+                    SearchFilter::EitherRegex(regex) => {
+                        regex.is_match(&translation.original)
+                            || regex.is_match(&translation.translation)
+                    }
+                    SearchFilter::Scope(s) => {
+                        if s == *scope {
+                            true
+                        } else if let Some(provider) = store.provider(scope) {
+                            provider.name() == s || provider.group_name() == Some(s)
+                        } else {
+                            false
+                        }
+                    }
+                    SearchFilter::Language(l) => l == *lang_id,
+                };
+                match (filter_mode, matches) {
+                    (SearchFilterMode::Require, true) => {}
+                    (SearchFilterMode::Require, false) => return false,
+                    (SearchFilterMode::Block, true) => return false,
+                    (SearchFilterMode::Block, false) => {}
+                }
+            }
+
+            true
+        });
 
     if params.count.unwrap_or(false) {
         let count = translations.count();

@@ -32,12 +32,12 @@ pub fn parse_android_base64(base64: String) -> anyhow::Result<TranslationMessage
 }
 
 pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
-    let mut resources = HashMap::new();
+    let mut messages = HashMap::new();
 
     let mut reader = Reader::from_str(&text);
     let mut comment: Option<String> = None;
-    let mut name: Option<String> = None;
-    let mut text = String::new();
+    let mut key: Option<String> = None;
+    let mut message = String::new();
     loop {
         match reader.read_event() {
             Err(e) => bail!("{e}"),
@@ -63,39 +63,39 @@ pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
                     comment = None;
                     continue;
                 };
-                name = Some(name_attr);
+                key = Some(name_attr);
             }
-            Ok(Event::Text(e)) if name.is_some() => {
-                text.push_str(String::from_utf8_lossy(&e).trim());
+            Ok(Event::Text(e)) if key.is_some() => {
+                message.push_str(String::from_utf8_lossy(&e).trim());
             }
             Ok(Event::End(e)) if e.name().as_ref() == b"string" => {
-                let Some(name_local) = name else {
+                let Some(key_local) = key else {
                     comment = None;
-                    text.clear();
+                    message.clear();
                     continue;
                 };
 
-                if text.len() > 2
-                    && text.starts_with('"')
-                    && text.ends_with('"')
-                    && !text.ends_with("\\\"")
-                    && !text[1..(text.len() - 1)].contains('"')
+                if message.len() > 2
+                    && message.starts_with('"')
+                    && message.ends_with('"')
+                    && !message.ends_with("\\\"")
+                    && !message[1..(message.len() - 1)].contains('"')
                 {
-                    text.remove(text.len() - 1);
-                    text.remove(0);
+                    message.remove(message.len() - 1);
+                    message.remove(0);
                 }
-                text = unescape(&text, &['n', 'u', 't', '"', '\'', '‘', '’', '?', '%']);
+                message = unescape(&message, &['n', 'u', 't', '"', '\'', '‘', '’', '?', '%']);
 
-                resources.insert(name_local, (text, comment));
+                messages.insert(key_local, (message, comment));
 
                 comment = None;
-                name = None;
-                text = String::new();
+                key = None;
+                message = String::new();
             }
-            _ if name.is_some() => comment = None,
+            _ if key.is_some() => comment = None,
             _ => {}
         }
     }
 
-    Ok(resources)
+    Ok(messages)
 }

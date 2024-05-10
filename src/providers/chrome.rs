@@ -88,10 +88,10 @@ impl TranslationProvider for ChromeProvider {
 
         trace!("Downloaded {} Grit files", grits.len());
 
-        let mut translations: TranslationBundle = BTreeMap::new();
+        let mut translation_bundle: TranslationBundle = BTreeMap::new();
 
         for (path, grit) in &grits {
-            let Some(translation_en) = grit
+            let Some(grit_en) = grit
                 .translations
                 .file
                 .iter()
@@ -102,12 +102,11 @@ impl TranslationProvider for ChromeProvider {
             let url_en = format!(
                 "https://chromium.googlesource.com/chromium/src/+/main/{}/{}?format=TEXT",
                 path.rsplit_once('/').map(|(path, _)| path).unwrap_or(""),
-                translation_en.path
+                grit_en.path
             );
-            let xml_en = download(&url_en, "English translation bundle", &client).await?;
-            let translation_bundle_en = parse_translations(&xml_en).map_err(|e| {
-                anyhow!("Could not parse English translation bundle: {e}\n{url_en}")
-            })?;
+            let xml_en = download(&url_en, "English messages", &client).await?;
+            let messages_en = parse_grit(&xml_en)
+                .map_err(|e| anyhow!("Could not parse English messages: {e}\n{url_en}"))?;
 
             for lang_id in &lang_ids {
                 let Some(translation) = grit
@@ -125,10 +124,10 @@ impl TranslationProvider for ChromeProvider {
                     translation.path
                 );
                 let xml = download(&url, "translation bundle", &client).await?;
-                let translation_bundle = parse_translations(&xml)
-                    .map_err(|e| anyhow!("Could not parse translation bundle: {e}\n{url}"))?;
+                let messages = parse_grit(&xml)
+                    .map_err(|e| anyhow!("Could not parse messages: {e}\n{url}"))?;
 
-                let translations = translations
+                let translations = translation_bundle
                     .entry(lang_id.clone())
                     .and_modify(|entry| {
                         if entry.is_none() {
@@ -139,8 +138,8 @@ impl TranslationProvider for ChromeProvider {
                     .as_mut()
                     .unwrap();
 
-                for (id, translation) in translation_bundle {
-                    let Some(translation_en) = translation_bundle_en.get(&id) else {
+                for (id, translation) in messages {
+                    let Some(translation_en) = messages_en.get(&id) else {
                         continue;
                     };
 
@@ -156,10 +155,10 @@ impl TranslationProvider for ChromeProvider {
         }
 
         for lang_id in lang_ids {
-            translations.entry(lang_id).or_insert(None);
+            translation_bundle.entry(lang_id).or_insert(None);
         }
 
-        Ok(ProviderCache::Single(translations))
+        Ok(ProviderCache::Single(translation_bundle))
     }
 }
 
@@ -188,12 +187,12 @@ async fn download(url: &str, error_file_name: &str, client: &Client) -> anyhow::
     Ok(xml)
 }
 
-fn parse_translations(xml: &str) -> anyhow::Result<HashMap<String, String>> {
-    let mut translations = HashMap::new();
+fn parse_grit(xml: &str) -> anyhow::Result<HashMap<String, String>> {
+    let mut messages = HashMap::new();
 
     let mut reader = Reader::from_str(xml);
-    let mut id: Option<String> = None;
-    let mut text = String::new();
+    let mut key: Option<String> = None;
+    let mut message = String::new();
     loop {
         match reader.read_event()? {
             Event::Eof => break,
@@ -205,10 +204,10 @@ fn parse_translations(xml: &str) -> anyhow::Result<HashMap<String, String>> {
                 else {
                     continue;
                 };
-                id = Some(String::from_utf8(attribute.value.to_vec())?);
-                text.clear();
+                key = Some(String::from_utf8(attribute.value.to_vec())?);
+                message.clear();
             }
-            Event::Text(bytes) => text.push_str(&String::from_utf8(bytes.to_vec())?),
+            Event::Text(bytes) => message.push_str(&String::from_utf8(bytes.to_vec())?),
             Event::Empty(e) if e.name().as_ref() == b"ph" => {
                 let Some(attribute) = e
                     .attributes()
@@ -217,18 +216,18 @@ fn parse_translations(xml: &str) -> anyhow::Result<HashMap<String, String>> {
                 else {
                     continue;
                 };
-                text.push_str(&format!(
+                message.push_str(&format!(
                     "<ph name=\"{}\" />",
                     String::from_utf8(attribute.value.to_vec())?
                 ))
             }
             Event::End(e) if e.name().as_ref() == b"translation" => {
-                if let Some(id) = id {
-                    translations.insert(id, text);
+                if let Some(id) = key {
+                    messages.insert(id, message);
                 }
 
-                id = None;
-                text = String::new();
+                key = None;
+                message = String::new();
             }
 
             Event::Start(e) if e.name().as_ref() == b"translationbundle" => {}
@@ -256,7 +255,7 @@ fn parse_translations(xml: &str) -> anyhow::Result<HashMap<String, String>> {
         }
     }
 
-    Ok(translations)
+    Ok(messages)
 }
 
 #[derive(Debug, Deserialize, Serialize)]

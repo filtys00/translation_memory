@@ -158,17 +158,17 @@ async fn main() {
                     },
                 }
             } else {
-                let Some(provider_cache) = store.provider_caches.get_mut(name) else {
+                let Some(translations) = store.provider_caches.get_mut(name) else {
                     match store.provider(name) {
                         Some(_) => warn!("Scope '{name}' has no generated translations"),
                         None => warn!("Scope '{name}' was not found"),
                     }
                     continue;
                 };
-                for lang in &args.languages {
-                    let removed_translations = provider_cache
+                for lang_id in &args.languages {
+                    let removed_translations = translations
                         .translation_bundles_mut()
-                        .map(|bundle| bundle.remove(lang))
+                        .map(|bundle| bundle.remove(lang_id))
                         .fold(None, |acc, translations| {
                             match (acc, translations.map(|t| t.is_some())) {
                                 (Some(true), _) | (_, Some(true)) => Some(true),
@@ -177,11 +177,11 @@ async fn main() {
                             }
                         });
                     match removed_translations {
-                        Some(true) => info!("Removed language '{lang}' from scope '{name}'"),
+                        Some(true) => info!("Removed language '{lang_id}' from scope '{name}'"),
                         Some(false) => {
-                            warn!("Scope '{name}' has no translations for language '{lang}'")
+                            warn!("Scope '{name}' has no translations for language '{lang_id}'")
                         }
-                        None => warn!("Scope '{name}' has not generated language '{lang}'"),
+                        None => warn!("Scope '{name}' has not generated language '{lang_id}'"),
                     }
                 }
             }
@@ -220,7 +220,7 @@ async fn main() {
     if !args.get.is_empty() {
         for name in &args.get {
             store
-                .iter()
+                .translations()
                 .filter(|(scope, lang_id, _)| {
                     if !args.languages.is_empty() && !args.languages.contains(lang_id) {
                         return false;
@@ -286,7 +286,7 @@ async fn main() {
             println!("    {}", provider.id());
         }
 
-        println!("In total {} translations", store.iter().count());
+        println!("In total {} translations", store.translations().count());
         for lang_id in store.languages() {
             let provider_caches = store.provider_caches.iter().filter(|(_, provider_cache)| {
                 provider_cache
@@ -296,7 +296,10 @@ async fn main() {
             });
             println!(
                 "  {lang_id}: {} translations, {} / {} scopes",
-                store.iter().filter(|(_, l, _)| *l == lang_id).count(),
+                store
+                    .translations()
+                    .filter(|(_, l, _)| *l == lang_id)
+                    .count(),
                 provider_caches.clone().count(),
                 store.providers().len(),
             );

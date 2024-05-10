@@ -280,7 +280,7 @@ impl TranslationStore {
         for (i, (entry, texts)) in config_texts.into_iter().enumerate() {
             let translation_bundle = match simple_provider(&entry.type_name) {
                 Some(SimpleProvider::Duo(parse)) => {
-                    let mut translations = BTreeMap::new();
+                    let mut translation_bundle = BTreeMap::new();
 
                     let en: LanguageIdentifier = "en".parse().unwrap();
 
@@ -307,28 +307,28 @@ impl TranslationStore {
                             )
                         })?;
 
-                        translations.insert(
+                        translation_bundle.insert(
                             lang_id.clone(),
                             Some(merge_messages(messages, &messages_en, path)),
                         );
                     }
 
-                    translations
+                    translation_bundle
                 }
                 Some(SimpleProvider::Mono(parse)) => {
-                    let mut translations = BTreeMap::new();
+                    let mut translation_bundle = BTreeMap::new();
 
                     for (lang_id, (text, path)) in texts {
-                        let t = parse(text, path).map_err(|e| {
+                        let translations = parse(text, path).map_err(|e| {
                             anyhow!(
                                 "Could not parse language '{lang_id}' in entry '{}': {e}",
                                 entry.name
                             )
                         })?;
-                        translations.insert(lang_id.clone(), Some(t));
+                        translation_bundle.insert(lang_id.clone(), Some(translations));
                     }
 
-                    translations
+                    translation_bundle
                 }
                 None => bail!("Type '{}' is not supported", entry.type_name),
             };
@@ -372,7 +372,10 @@ impl TranslationStore {
             .collect()
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
+    /// Returns an iterator over all the translations, together with the provider and language identifiers.
+    pub fn translations(
+        &self,
+    ) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
         self.provider_caches
             .iter()
             .flat_map(|(id, provider_cache)| {
@@ -400,7 +403,7 @@ impl TranslationStore {
     pub async fn generate(
         &mut self,
         lang_ids: Vec<LanguageIdentifier>,
-        ids: Vec<String>,
+        provider_ids: Vec<String>,
         remove_failed: bool,
     ) -> Result<HashMap<String, Option<String>>, anyhow::Error> {
         if lang_ids.is_empty() {
@@ -419,29 +422,29 @@ impl TranslationStore {
 
         let mut join_set = JoinSet::new();
 
-        for id in ids {
+        for provider_id in provider_ids {
             let Some(provider) = self
                 .providers
                 .iter()
-                .find(|provider| provider.id() == id)
+                .find(|provider| provider.id() == provider_id)
                 .cloned()
             else {
-                bail!("Provider not found: {id}");
+                bail!("Provider not found: {provider_id}");
             };
             if provider.temporary() {
                 debug!("Skipping generating temporary provider: {}", provider.id());
                 continue;
             }
 
-            let unfinished = self
-                .provider_caches
-                .get(&id)
-                .map_or(false, |provider_cache| match provider_cache {
-                    ProviderCache::Single(_) => false,
-                    ProviderCache::Multiple(multiple) => !multiple.finished,
-                });
+            let unfinished =
+                self.provider_caches
+                    .get(&provider_id)
+                    .map_or(false, |provider_cache| match provider_cache {
+                        ProviderCache::Single(_) => false,
+                        ProviderCache::Multiple(multiple) => !multiple.finished,
+                    });
             let previous = if unfinished {
-                let previous = self.provider_caches.remove(&id);
+                let previous = self.provider_caches.remove(&provider_id);
                 match previous {
                     Some(ProviderCache::Multiple(multiple)) => Some(multiple),
                     _ => None,
@@ -452,14 +455,17 @@ impl TranslationStore {
             let client = client.clone();
             let lang_ids = lang_ids.clone();
             join_set.spawn(timeout(Duration::from_secs(60), async move {
-                (id, provider.generate(previous, lang_ids, client).await)
+                (
+                    provider_id,
+                    provider.generate(previous, lang_ids, client).await,
+                )
             }));
         }
 
         let mut errors = HashMap::new();
 
         while let Some(join) = join_set.join_next().await {
-            let (id, result) = match join {
+            let (provider_id, provider_cache) = match join {
                 Ok(Ok(t)) => t,
                 Ok(Err(e)) => {
                     error!("Could not generate: {e}");
@@ -470,20 +476,20 @@ impl TranslationStore {
                     continue;
                 }
             };
-            let provider_cache = match result {
+            let provider_cache = match provider_cache {
                 Ok(provider_cache) => provider_cache,
                 Err(e) => {
-                    error!("Could not generate '{id}': {e}");
+                    error!("Could not generate '{provider_id}': {e}");
                     if remove_failed {
-                        self.provider_caches.remove(&id);
+                        self.provider_caches.remove(&provider_id);
                     }
-                    errors.insert(id, Some(e.to_string()));
+                    errors.insert(provider_id, Some(e.to_string()));
                     continue;
                 }
             };
 
             debug!(
-                "Generated '{id}': possibly up to {} translations per language",
+                "Generated '{provider_id}': up to possibly {} translations per language",
                 provider_cache
                     .translation_bundles()
                     .map(|bundle| {
@@ -497,8 +503,8 @@ impl TranslationStore {
                     .sum::<usize>()
             );
 
-            errors.insert(id.clone(), None);
-            self.provider_caches.insert(id, provider_cache);
+            errors.insert(provider_id.clone(), None);
+            self.provider_caches.insert(provider_id, provider_cache);
         }
 
         Ok(errors)

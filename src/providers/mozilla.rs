@@ -8,9 +8,9 @@ use unic_langid::LanguageIdentifier;
 use crate::Translation;
 
 pub fn parse_mozilla_tmx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
-    let translations: tmx::Tmx = quick_xml::de::from_str(&text)?;
+    let tmx: tmx::Tmx = quick_xml::de::from_str(&text)?;
 
-    let lang_id = translations
+    let lang_id = tmx
         .body
         .entries
         .iter()
@@ -19,7 +19,7 @@ pub fn parse_mozilla_tmx(text: String, source: &str) -> anyhow::Result<Vec<Trans
             tuv.map(|tuv| &tuv.lang)
         })
         .ok_or_else(|| anyhow!("Could not find any language other than the source"))?;
-    let lang_ids: Vec<&LanguageIdentifier> = translations
+    let lang_ids: Vec<&LanguageIdentifier> = tmx
         .body
         .entries
         .iter()
@@ -41,7 +41,7 @@ pub fn parse_mozilla_tmx(text: String, source: &str) -> anyhow::Result<Vec<Trans
         );
     }
 
-    let translations = translations
+    let translations = tmx
         .body
         .entries
         .iter()
@@ -104,10 +104,10 @@ mod tmx {
 }
 
 pub fn parse_mozilla_tbx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
-    let translations: tbx::Tbx = quick_xml::de::from_str(&text)?;
+    let tbx: tbx::Tbx = quick_xml::de::from_str(&text)?;
 
     let en_us: LanguageIdentifier = "en-US".parse().unwrap();
-    let lang_id = translations
+    let lang_id = tbx
         .text
         .body
         .entries
@@ -120,7 +120,7 @@ pub fn parse_mozilla_tbx(text: String, source: &str) -> anyhow::Result<Vec<Trans
             lang_sec.map(|lang_sec| &lang_sec.lang)
         })
         .ok_or_else(|| anyhow!("Could not find any language other than '{en_us}'"))?;
-    let lang_ids: Vec<&LanguageIdentifier> = translations
+    let lang_ids: Vec<&LanguageIdentifier> = tbx
         .text
         .body
         .entries
@@ -144,7 +144,7 @@ pub fn parse_mozilla_tbx(text: String, source: &str) -> anyhow::Result<Vec<Trans
         );
     }
 
-    let translations = translations
+    let translations = tbx
         .text
         .body
         .entries

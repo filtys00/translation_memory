@@ -10,6 +10,7 @@ use super::TranslationMessages;
 
 pub fn parse_dtd(text: String) -> anyhow::Result<TranslationMessages> {
     let mut messages = HashMap::new();
+
     let mut comment = (false, None);
     for mut line in text.lines() {
         line = line.trim();
@@ -42,10 +43,10 @@ pub fn parse_dtd(text: String) -> anyhow::Result<TranslationMessages> {
                         bail!("Duplicate key: {key}");
                     }
                     if let Some(value) = value.trim_start().strip_prefix('"') {
-                        if let Some(value) = value.trim_end().strip_suffix('"') {
+                        if let Some(message) = value.trim_end().strip_suffix('"') {
                             messages.insert(
                                 key.to_string(),
-                                (value.to_string(), comment.1.map(|c| c.to_string())),
+                                (message.to_string(), comment.1.map(|c| c.to_string())),
                             );
                             comment = (false, None);
                             continue;

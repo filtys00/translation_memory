@@ -237,27 +237,27 @@ where
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
     ) -> anyhow::Result<ProviderCache> {
-        let mut translations = BTreeMap::new();
+        let mut translation_bundle = BTreeMap::new();
 
         for lang_id in lang_ids {
             let url = (self.url)(&lang_id);
             let text = download_text(&url, &client).await?;
 
             if let Some(text) = text {
-                let mut t = (self.parse)(text, &url)?;
+                let mut translations = (self.parse)(text, &url)?;
                 if let Some(remove_char) = &self.remove_char {
-                    t.iter_mut().for_each(|translation| {
+                    translations.iter_mut().for_each(|translation| {
                         translation.original = translation.original.replace(*remove_char, "");
                         translation.translation = translation.translation.replace(*remove_char, "");
                     });
                 }
-                translations.insert(lang_id, Some(t));
+                translation_bundle.insert(lang_id, Some(translations));
             } else {
-                translations.insert(lang_id, None);
+                translation_bundle.insert(lang_id, None);
             }
         }
 
-        Ok(ProviderCache::Single(translations))
+        Ok(ProviderCache::Single(translation_bundle))
     }
 }
 
@@ -300,7 +300,7 @@ where
         lang_ids: Vec<LanguageIdentifier>,
         client: Arc<Client>,
     ) -> anyhow::Result<ProviderCache> {
-        let mut translations = BTreeMap::new();
+        let mut translation_bundle = BTreeMap::new();
 
         let text_en = download_text(self.default_url, &client)
             .await?
@@ -310,14 +310,15 @@ where
         for lang_id in lang_ids {
             let url = (self.url)(&lang_id);
             let Some(text) = download_text(&url, &client).await? else {
-                translations.insert(lang_id, None);
+                translation_bundle.insert(lang_id, None);
                 continue;
             };
             let messages = (self.parse)(text)?;
+            let translations = merge_messages(messages, &messages_en, &url);
 
-            translations.insert(lang_id, Some(merge_messages(messages, &messages_en, &url)));
+            translation_bundle.insert(lang_id, Some(translations));
         }
 
-        Ok(ProviderCache::Single(translations))
+        Ok(ProviderCache::Single(translation_bundle))
     }
 }

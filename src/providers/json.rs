@@ -11,36 +11,37 @@ use super::{unescape, TranslationMessages};
 use crate::Translation;
 
 pub fn parse_json(text: String) -> anyhow::Result<TranslationMessages> {
-    let yaml: HashMap<String, serde_json::Value> = serde_json::from_str(&text)?;
-    let mut translations = HashMap::new();
+    let json: HashMap<String, serde_json::Value> = serde_json::from_str(&text)?;
+
+    let mut messages = HashMap::new();
     let mut place = Vec::new();
 
-    for (key, value) in yaml {
+    for (key, value) in json {
         place.push(key.to_string());
-        parse_recursive(&value, &mut place, &mut translations)?;
+        parse_recursive(&value, &mut place, &mut messages)?;
         place.pop();
     }
 
-    Ok(translations)
+    Ok(messages)
 }
 
 fn parse_recursive(
     value: &serde_json::Value,
     place: &mut Vec<String>,
-    translations: &mut TranslationMessages,
+    messages: &mut TranslationMessages,
 ) -> anyhow::Result<()> {
-    if let Some(value) = value.as_str() {
-        translations.insert(place.join("."), (value.to_string(), None));
+    if let Some(message) = value.as_str() {
+        messages.insert(place.join("."), (message.to_string(), None));
         return Ok(());
     }
 
-    let Some(value) = value.as_object() else {
+    let Some(object) = value.as_object() else {
         bail!("Unsupported type: {value:?}, supported types are 'string' and 'object'");
     };
 
-    for (key, value) in value {
+    for (key, value) in object {
         place.push(key.to_string());
-        parse_recursive(value, place, translations)?;
+        parse_recursive(value, place, messages)?;
         place.pop();
     }
 
@@ -51,13 +52,13 @@ pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<T
     let json: HashMap<String, String> = serde_json::from_str(&text)?;
 
     let mut translations = Vec::new();
-    for (original, translation) in json {
-        if original.is_empty() || translation.is_empty() {
+    for (message_en, message) in json {
+        if message_en.is_empty() || message.is_empty() {
             continue;
         }
         translations.push(Translation {
-            original,
-            translation,
+            original: message_en,
+            translation: message,
             comment: None,
             key: None,
             source: source.to_string(),
@@ -67,7 +68,7 @@ pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<T
 }
 
 pub fn parse_geogebra_js_json(text: String) -> anyhow::Result<TranslationMessages> {
-    let mut messages = TranslationMessages::new();
+    let mut messages = HashMap::new();
 
     let regex = Regex::new("JSON\\.parse\\(\"(.*)\"\\)").unwrap();
     for capture in regex.captures_iter(&text) {
@@ -76,7 +77,11 @@ pub fn parse_geogebra_js_json(text: String) -> anyhow::Result<TranslationMessage
         };
         let json = unescape(json.as_str(), &['"', '\\']);
         let json: HashMap<String, String> = serde_json::from_str(&json)?;
-        messages.extend(json.into_iter().map(|(key, value)| (key, (value, None))));
+
+        messages.extend(
+            json.into_iter()
+                .map(|(key, message)| (key, (message, None))),
+        );
     }
 
     Ok(messages)
