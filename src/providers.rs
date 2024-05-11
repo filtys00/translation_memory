@@ -18,7 +18,7 @@ mod srt;
 mod ts;
 mod yaml;
 
-pub use defaults::{default_providers, simple_provider, SimpleProvider};
+pub use self::defaults::default_providers;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -31,33 +31,25 @@ use log::trace;
 use reqwest::{Client, StatusCode};
 use unic_langid::LanguageIdentifier;
 
-use crate::{ProviderCache, ProviderCacheMultiple, Translation};
+use super::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider};
 
-#[async_trait]
-pub trait TranslationProvider {
-    fn id(&self) -> &str;
+/// A function that parses a translation file.
+pub enum SimpleProvider {
+    Mono(fn(String, &str) -> anyhow::Result<Vec<Translation>>),
+    Duo(fn(String) -> anyhow::Result<TranslationMessages>),
+}
 
-    fn name(&self) -> &str;
-
-    fn group_name(&self) -> Option<&str> {
-        None
+/// Returns a `SimpleProvider` corresponding with `type_name`.
+#[rustfmt::skip]
+pub fn simple_provider(type_name: &str) -> Option<SimpleProvider> {
+    match type_name {
+               "androidxml" => Some(SimpleProvider::Duo(android::parse_android)),
+        "browser_extension" => Some(SimpleProvider::Duo(browser_extension::parse_browser_extension)),
+             "microsofttbx" => Some(SimpleProvider::Mono(microsoft::parse_microsoft_tbx)),
+                       "po" => Some(SimpleProvider::Mono(po::parse_po)),
+               "properties" => Some(SimpleProvider::Duo(properties::parse_properties)),
+        _ => None,
     }
-
-    /// Returns `true` if associated data should not be saved to disk.
-    fn temporary(&self) -> bool {
-        false
-    }
-
-    /// Returns a `ProviderCache` with translations for the languages in `lang_ids`.
-    ///
-    /// If this function returns `ProviderCache::Multiple(multiple)` with `multiple.finished` set to `false`,
-    /// then `multiple` is given back in `previous` the next time `generate` is invoced.
-    async fn generate(
-        &self,
-        previous: Option<ProviderCacheMultiple>,
-        lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
-    ) -> anyhow::Result<ProviderCache>;
 }
 
 /// Returns a string version of `lang_id`.
@@ -200,7 +192,7 @@ pub fn merge_messages(
 
 /// Standard provider for translation formats where both the original strings
 /// and the translations are located within the same file.
-pub struct MonoProvider<U, P>
+struct MonoProvider<U, P>
 where
     U: Fn(&LanguageIdentifier) -> String + Send + Sync,
     P: Fn(String, &str) -> anyhow::Result<Vec<Translation>> + Send + Sync,
@@ -263,7 +255,7 @@ where
 
 /// Standard provider for translation formats where the original strings
 /// and the translations are located in separate files.
-pub struct DuoProvider<U, P>
+struct DuoProvider<U, P>
 where
     U: Fn(&LanguageIdentifier) -> String + Send + Sync,
     P: Fn(String) -> anyhow::Result<TranslationMessages> + Send + Sync,
