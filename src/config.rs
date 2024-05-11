@@ -203,12 +203,14 @@ impl TranslationStore {
         for entry in &config.translations {
             let mut texts = HashMap::with_capacity(entry.paths.len());
             for entry in &entry.paths {
-                let mut file = File::open(&entry.path)?;
+                let mut file = File::open(&entry.path)
+                    .map_err(|e| anyhow!("Could not open file ({}): {e}", entry.path))?;
                 let mut text = String::with_capacity(
                     file.metadata()
                         .map_or(0, |metadata| metadata.len() as usize),
                 );
-                file.read_to_string(&mut text)?;
+                file.read_to_string(&mut text)
+                    .map_err(|e| anyhow!("Could not read file ({}): {e}", entry.path))?;
                 texts.insert(&entry.language, (text, &entry.path));
             }
             config_texts.push((entry, texts));
