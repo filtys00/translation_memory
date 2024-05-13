@@ -9,7 +9,7 @@ use std::{
     path::Path,
 };
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand, ValueEnum};
 use log::{error, info, warn, Level, LevelFilter};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use translation_memory::TranslationStore;
@@ -32,40 +32,70 @@ enum VerboseMode {
 
 #[derive(Debug, Parser)]
 struct Args {
-    /// Output all logs, including trace logs.
+    /// Wich log messages to print.
     #[arg(
-        value_enum, long,
+        long, global = true,
+        value_enum, value_name = "MODE",
         default_value_t = VerboseMode::Info,
         default_missing_value = "all",
         num_args = 0..=1, require_equals = true,
     )]
     verbose: VerboseMode,
 
-    /// Do not read the config file.
-    #[arg(long = "noconfig")]
+    /// Ignore the config file [path: translations.toml].
+    #[arg(long = "noconfig", global = true)]
     no_config: bool,
 
-    /// Do not open the system web browser when the web server starts.
-    #[arg(long = "nobrowser", conflicts_with = "statement")]
-    no_browser: bool,
+    #[command(subcommand)]
+    command: Option<Command>,
+}
 
-    #[arg(long, group = "statement")]
-    status: bool,
+#[derive(Debug, Subcommand)]
+enum Command {
+    /// Start the built-in web UI server.
+    Run {
+        /// Do not open the system web browser when the web server starts.
+        #[arg(long = "nobrowser")]
+        no_browser: bool,
+    },
+    /// Generate the translations of one or more providers.
+    #[command(alias = "gen")]
+    Generate {
+        #[arg(value_delimiter = ',')]
+        provider_ids: Vec<String>,
 
-    #[arg(long, value_delimiter = ',', group = "statement")]
-    get: Vec<String>,
+        /// Wich languages to generate for. [default: all languages that have already been generated for]
+        #[arg(short, long, value_delimiter = ',')]
+        languages: Option<Vec<LanguageIdentifier>>,
+    },
+    /// Remove the translations of one or more providers.
+    Remove {
+        #[arg(value_delimiter = ',')]
+        provider_ids: Vec<String>,
 
-    #[arg(long, requires = "get")]
-    limit: Option<u8>,
+        /// Only remove the translations to certain languages.
+        #[arg(short, long, value_delimiter = ',')]
+        languages: Option<Vec<LanguageIdentifier>>,
+    },
+    /// Print translations.
+    Get {
+        #[arg(value_delimiter = ',')]
+        provider_ids: Vec<String>,
 
-    #[arg(long, value_delimiter = ',', group = "statement")]
-    generate: Vec<String>,
+        /// Only print translations for certain languages.
+        #[arg(short, long)]
+        languages: Option<Vec<LanguageIdentifier>>,
 
-    #[arg(long, value_delimiter = ',', group = "statement")]
-    remove: Vec<String>,
-
-    #[arg(long = "lang", value_delimiter = ',', requires = "statement")]
-    languages: Vec<LanguageIdentifier>,
+        /// Only print up to a certain amount of translations.
+        #[arg(long)]
+        limit: Option<u8>,
+    },
+    /// Print statistics about the collected translations.
+    Status {
+        /// Print statistics about the translations of one or more languages.
+        #[arg(short, long)]
+        languages: Option<Vec<LanguageIdentifier>>,
+    },
 }
 
 #[tokio::main]
@@ -147,222 +177,243 @@ async fn main() {
         return;
     }
 
-    if !args.remove.is_empty() {
-        for name in &args.remove {
-            if args.languages.is_empty() {
-                match store.provider_caches.remove(name) {
-                    Some(_) => info!("Removed scope '{name}'"),
-                    None => match store.provider(name) {
-                        Some(_) => warn!("Scope '{name}' has no generated translations"),
-                        None => warn!("Scope '{name}' was not found"),
-                    },
+    let command = args
+        .command
+        .unwrap_or_else(|| Command::Run { no_browser: false });
+    match command {
+        Command::Run { no_browser } => {
+            if !no_browser {
+                info!("Opening web browser...");
+                webbrowser::open("http://127.0.0.1:2013/").unwrap();
+            }
+
+            info!("Starting web server at 'http://127.0.0.1:2013/'...");
+            if let Err(e) = web_server(store).await {
+                error!("Could not start web server: {e}");
+                return;
+            }
+        }
+        Command::Generate {
+            provider_ids,
+            languages,
+        } => {
+            let languages =
+                languages.unwrap_or_else(|| store.languages().into_iter().cloned().collect());
+            if languages.is_empty() {
+                error!("No languages are specified");
+                return;
+            }
+            let errors = match store.generate(languages, provider_ids, false).await {
+                Ok(errors) => errors,
+                Err(e) => {
+                    error!("{e}");
+                    return;
                 }
-            } else {
-                let Some(translations) = store.provider_caches.get_mut(name) else {
-                    match store.provider(name) {
-                        Some(_) => warn!("Scope '{name}' has no generated translations"),
-                        None => warn!("Scope '{name}' was not found"),
-                    }
-                    continue;
-                };
-                for lang_id in &args.languages {
-                    let removed_translations = translations
-                        .translation_bundles_mut()
-                        .map(|bundle| bundle.remove(lang_id))
-                        .fold(None, |acc, translations| {
-                            match (acc, translations.map(|t| t.is_some())) {
-                                (Some(true), _) | (_, Some(true)) => Some(true),
-                                (Some(false), _) | (_, Some(false)) => Some(false),
-                                (None, None) => None,
-                            }
-                        });
-                    match removed_translations {
-                        Some(true) => info!("Removed language '{lang_id}' from scope '{name}'"),
-                        Some(false) => {
-                            warn!("Scope '{name}' has no translations for language '{lang_id}'")
+            };
+            if errors.values().any(|error| error.is_none()) {
+                if let Err(e) = store.save_translations() {
+                    error!("{e}");
+                }
+            }
+        }
+        Command::Remove {
+            provider_ids,
+            languages,
+        } => {
+            for provider_id in provider_ids {
+                if let Some(languages) = &languages {
+                    let Some(translations) = store.provider_caches.get_mut(&provider_id) else {
+                        match store.provider(&provider_id) {
+                            Some(_) => warn!("Scope '{provider_id}' has no generated translations"),
+                            None => warn!("Scope '{provider_id}' was not found"),
                         }
-                        None => warn!("Scope '{name}' has not generated language '{lang_id}'"),
+                        continue;
+                    };
+                    for lang_id in languages {
+                        let removed_translations = translations
+                            .translation_bundles_mut()
+                            .map(|bundle| bundle.remove(lang_id))
+                            .fold(None, |acc, translations| {
+                                match (acc, translations.map(|t| t.is_some())) {
+                                    (Some(true), _) | (_, Some(true)) => Some(true),
+                                    (Some(false), _) | (_, Some(false)) => Some(false),
+                                    (None, None) => None,
+                                }
+                            });
+                        match removed_translations {
+                            Some(true) => {
+                                info!("Removed language '{lang_id}' from scope '{provider_id}'")
+                            }
+                            Some(false) => {
+                                warn!("Scope '{provider_id}' has no translations for language '{lang_id}'")
+                            }
+                            None => warn!(
+                                "Scope '{provider_id}' has not generated language '{lang_id}'"
+                            ),
+                        }
+                    }
+                } else {
+                    match store.provider_caches.remove(&provider_id) {
+                        Some(_) => info!("Removed scope '{provider_id}'"),
+                        None => match store.provider(&provider_id) {
+                            Some(_) => warn!("Scope '{provider_id}' has no generated translations"),
+                            None => warn!("Scope '{provider_id}' was not found"),
+                        },
                     }
                 }
             }
-        }
-        if let Err(e) = store.save_translations() {
-            error!("{e}");
-        }
-    }
-
-    if !args.generate.is_empty() {
-        let lang_ids = if args.languages.is_empty() {
-            store.languages().into_iter().cloned().collect()
-        } else {
-            args.languages.clone()
-        };
-        if lang_ids.is_empty() {
-            error!("No languages are specified");
-        }
-        match store.generate(lang_ids, args.generate.clone(), false).await {
-            Ok(errors) => {
-                if errors.values().any(|error| error.is_none()) {
-                    if let Err(e) = store.save_translations() {
-                        error!("{e}");
-                    }
-                }
+            if let Err(e) = store.save_translations() {
+                error!("{e}");
             }
-            Err(e) => error!("{e}"),
         }
-    }
+        Command::Get {
+            provider_ids,
+            languages,
+            limit,
+        } => {
+            let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+            let mut color_green = ColorSpec::new();
+            color_green.set_fg(Some(Color::Green));
+            let color_none = ColorSpec::new();
 
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
-    let mut color_green = ColorSpec::new();
-    color_green.set_fg(Some(Color::Green));
-    let color_none = ColorSpec::new();
-
-    if !args.get.is_empty() {
-        for name in &args.get {
-            store
-                .translations()
-                .filter(|(scope, lang_id, _)| {
-                    if !args.languages.is_empty() && !args.languages.contains(lang_id) {
-                        return false;
-                    }
-                    *scope == name
-                })
-                .take(args.limit.unwrap_or(u8::MAX) as usize)
-                .map(|(.., translation)| translation)
-                .for_each(|translation| {
-                    stdout.set_color(&color_green).unwrap();
-                    write!(&mut stdout, "original:   ").unwrap();
-                    stdout.set_color(&color_none).unwrap();
-                    writeln_max_width(io::stdout(), &translation.original, 13, 13, term_width)
-                        .unwrap();
-                    stdout.set_color(&color_green).unwrap();
-                    write!(&mut stdout, "translation:").unwrap();
-                    stdout.set_color(&color_none).unwrap();
-                    writeln_max_width(io::stdout(), &translation.translation, 13, 13, term_width)
-                        .unwrap();
-                    if let Some(comment) = &translation.comment {
-                        stdout.set_color(&color_green).unwrap();
-                        write!(&mut stdout, "comment:").unwrap();
-                        stdout.set_color(&color_none).unwrap();
-                        writeln_max_width(io::stdout(), comment, 9, 9, term_width).unwrap();
-                    }
-                    writeln!(&mut stdout).unwrap();
-                });
-        }
-    }
-
-    if args.status {
-        println!("In total {} scopes", store.providers().len());
-        println!(
-            "  generated: {} scopes",
-            store
-                .providers()
-                .iter()
-                .filter(|provider| store.provider_caches.contains_key(provider.id()))
-                .count()
-        );
-        let empty = store.providers().iter().filter(|provider| {
-            store
-                .provider_caches
-                .get(provider.id())
-                .map_or(false, |provider_cache| {
-                    provider_cache
-                        .translation_bundles()
-                        .flat_map(|bundle| bundle.values())
-                        .filter_map(|translations| translations.as_ref())
-                        .all(|translations| translations.is_empty())
-                })
-        });
-        println!("    empty: {} scopes", empty.clone().count());
-        for provider in empty {
-            println!("      {}", provider.id());
-        }
-        let not_generated = store
-            .providers()
-            .iter()
-            .filter(|provider| !store.provider_caches.contains_key(provider.id()));
-        println!("  not generated: {} scopes", not_generated.clone().count());
-        for provider in not_generated {
-            println!("    {}", provider.id());
-        }
-
-        println!("In total {} translations", store.translations().count());
-        for lang_id in store.languages() {
-            let provider_caches = store.provider_caches.iter().filter(|(_, provider_cache)| {
-                provider_cache
-                    .translation_bundles()
-                    .filter_map(|bundle| bundle.get(lang_id))
-                    .any(|translations| translations.is_some())
-            });
-            println!(
-                "  {lang_id}: {} translations, {} / {} scopes",
+            for provider_id in provider_ids {
                 store
                     .translations()
-                    .filter(|(_, l, _)| *l == lang_id)
-                    .count(),
-                provider_caches.clone().count(),
-                store.providers().len(),
+                    .filter(|(scope, lang_id, _)| {
+                        if let Some(languages) = &languages {
+                            if !languages.contains(lang_id) {
+                                return false;
+                            }
+                        }
+                        **scope == provider_id
+                    })
+                    .take(limit.unwrap_or(u8::MAX) as usize)
+                    .map(|(.., translation)| translation)
+                    .for_each(|translation| {
+                        stdout.set_color(&color_green).unwrap();
+                        write!(&mut stdout, "original:   ").unwrap();
+                        stdout.set_color(&color_none).unwrap();
+                        writeln_max_width(io::stdout(), &translation.original, 13, 13, term_width)
+                            .unwrap();
+                        stdout.set_color(&color_green).unwrap();
+                        write!(&mut stdout, "translation:").unwrap();
+                        stdout.set_color(&color_none).unwrap();
+                        writeln_max_width(
+                            io::stdout(),
+                            &translation.translation,
+                            13,
+                            13,
+                            term_width,
+                        )
+                        .unwrap();
+                        if let Some(comment) = &translation.comment {
+                            stdout.set_color(&color_green).unwrap();
+                            write!(&mut stdout, "comment:").unwrap();
+                            stdout.set_color(&color_none).unwrap();
+                            writeln_max_width(io::stdout(), comment, 9, 9, term_width).unwrap();
+                        }
+                        writeln!(&mut stdout).unwrap();
+                    });
+            }
+        }
+        Command::Status { languages } => {
+            println!("In total {} scopes", store.providers().len());
+            println!(
+                "  generated: {} scopes",
+                store
+                    .providers()
+                    .iter()
+                    .filter(|provider| store.provider_caches.contains_key(provider.id()))
+                    .count()
             );
-            if provider_caches.clone().count() <= 10 {
-                for (provider_id, provider_cache) in provider_caches {
-                    println!(
-                        "    {provider_id}: {} translations",
+            let empty = store.providers().iter().filter(|provider| {
+                store
+                    .provider_caches
+                    .get(provider.id())
+                    .map_or(false, |provider_cache| {
                         provider_cache
                             .translation_bundles()
-                            .filter_map(|bundle| bundle.get(lang_id))
+                            .flat_map(|bundle| bundle.values())
                             .filter_map(|translations| translations.as_ref())
-                            .flatten()
-                            .count(),
-                    );
-                }
+                            .all(|translations| translations.is_empty())
+                    })
+            });
+            println!("    empty: {} scopes", empty.clone().count());
+            for provider in empty {
+                println!("      {}", provider.id());
             }
-        }
+            let not_generated = store
+                .providers()
+                .iter()
+                .filter(|provider| !store.provider_caches.contains_key(provider.id()));
+            println!("  not generated: {} scopes", not_generated.clone().count());
+            for provider in not_generated {
+                println!("    {}", provider.id());
+            }
 
-        if !args.languages.is_empty() {
-            println!();
-            println!(
-                "Languages {}",
-                args.languages
-                    .iter()
-                    .map(|lang_id| lang_id.to_string())
-                    .reduce(|acc, lang_id| acc + ", " + &lang_id)
-                    .unwrap_or_default()
-            );
-            let mut counts = Vec::with_capacity(store.provider_caches.len());
-            for (provider_id, provider_cache) in &store.provider_caches {
-                let mut count = 0;
-                for lang_id in &args.languages {
-                    count += provider_cache
+            println!("In total {} translations", store.translations().count());
+            for lang_id in store.languages() {
+                let provider_caches = store.provider_caches.iter().filter(|(_, provider_cache)| {
+                    provider_cache
                         .translation_bundles()
                         .filter_map(|bundle| bundle.get(lang_id))
-                        .filter_map(|translations| translations.as_ref())
-                        .flatten()
-                        .count();
-                }
-                if count > 0 {
-                    counts.push((provider_id, count));
+                        .any(|translations| translations.is_some())
+                });
+                println!(
+                    "  {lang_id}: {} translations, {} / {} scopes",
+                    store
+                        .translations()
+                        .filter(|(_, l, _)| *l == lang_id)
+                        .count(),
+                    provider_caches.clone().count(),
+                    store.providers().len(),
+                );
+                if provider_caches.clone().count() <= 10 {
+                    for (provider_id, provider_cache) in provider_caches {
+                        println!(
+                            "    {provider_id}: {} translations",
+                            provider_cache
+                                .translation_bundles()
+                                .filter_map(|bundle| bundle.get(lang_id))
+                                .filter_map(|translations| translations.as_ref())
+                                .flatten()
+                                .count(),
+                        );
+                    }
                 }
             }
-            counts.sort_by_key(|(provider_id, count)| (*count, *provider_id));
-            for (provider_id, count) in counts {
-                println!("  {provider_id}: {count}");
+
+            if let Some(languages) = languages {
+                println!();
+                println!(
+                    "Languages {}",
+                    languages
+                        .iter()
+                        .map(|lang_id| lang_id.to_string())
+                        .reduce(|acc, lang_id| acc + ", " + &lang_id)
+                        .unwrap_or_default()
+                );
+                let mut counts = Vec::with_capacity(store.provider_caches.len());
+                for (provider_id, provider_cache) in &store.provider_caches {
+                    let mut count = 0;
+                    for language in &languages {
+                        count += provider_cache
+                            .translation_bundles()
+                            .filter_map(|bundle| bundle.get(language))
+                            .filter_map(|translations| translations.as_ref())
+                            .flatten()
+                            .count();
+                    }
+                    if count > 0 {
+                        counts.push((provider_id, count));
+                    }
+                }
+                counts.sort_by_key(|(provider_id, count)| (*count, *provider_id));
+                for (provider_id, count) in counts {
+                    println!("  {provider_id}: {count}");
+                }
             }
         }
-    }
-
-    if !args.remove.is_empty() || !args.generate.is_empty() || !args.get.is_empty() || args.status {
-        return;
-    }
-
-    if !args.no_browser {
-        info!("Opening web browser...");
-        webbrowser::open("http://127.0.0.1:2013/").unwrap();
-    }
-
-    info!("Starting web server at 'http://127.0.0.1:2013/'...");
-    if let Err(e) = web_server(store).await {
-        error!("Could not start web server: {e}");
-        return;
     }
 }
 
