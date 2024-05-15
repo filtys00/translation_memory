@@ -400,7 +400,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             url: "qbittorrent/qBittorrent/master/src/lang/qbittorrent_{}.ts",
             lang_id: "_", true, "@", false,
         }),
-        mono!("strawberry",  "Strawberry",         None,                       parse_po, None,      github => {
+        mono!("strawberry",  "Strawberry",         None,                       parse_po, Some('&'), github => {
             url: "strawberrymusicplayer/strawberry/master/src/translations/{}.po",
             lang_id: "_", true, "@", false,
         }),
