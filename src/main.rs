@@ -7,11 +7,18 @@ mod web_server;
 use std::{
     io::{self, Write},
     path::Path,
+    sync::Arc,
 };
 
+use anyhow::bail;
 use clap::{Parser, Subcommand, ValueEnum};
 use log::{error, info, warn, Level, LevelFilter};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+use tokio::{
+    io::{stdin, AsyncBufReadExt, BufReader},
+    select,
+    sync::Mutex,
+};
 use translation_memory::TranslationStore;
 use unic_langid::LanguageIdentifier;
 
@@ -58,6 +65,9 @@ enum Command {
         #[arg(long = "nobrowser")]
         no_browser: bool,
     },
+    /// Stop the built-in web UI server.
+    #[command(alias = "quit", alias = "q")]
+    Exit,
     /// Generate the translations of one or more providers.
     #[command(alias = "gen")]
     Generate {
@@ -177,6 +187,9 @@ async fn main() {
         return;
     }
 
+    let store = Arc::new(Mutex::new(store));
+    let console = Arc::new(Mutex::new(StandardStream::stderr(ColorChoice::Auto)));
+
     let command = args
         .command
         .unwrap_or_else(|| Command::Run { no_browser: false });
@@ -187,39 +200,137 @@ async fn main() {
                 webbrowser::open("http://127.0.0.1:2013/").unwrap();
             }
 
-            info!("Starting web server at 'http://127.0.0.1:2013/'...");
-            if let Err(e) = web_server(store).await {
-                error!("Could not start web server: {e}");
+            info!("Starting web UI server at 'http://127.0.0.1:2013/'...");
+            select! {
+                e = web_server(store.clone()) => {
+                    if let Err(e) = e {
+                        error!("Could not start web UI server: {e}");
+                    }
+                }
+                e = inline_cli_listener(console, term_width, store.clone()) => {
+                    if let Err(e) = e {
+                        error!("Inline CLI: {e}");
+                    }
+                }
+            }
+        }
+        command => {
+            let result = perform_command(command, console, term_width, store).await;
+            if let Err(e) = result {
+                error!("{e}");
                 return;
             }
+        }
+    }
+}
+
+/// Listen for commands on `stdin()` and perform them with `perform_command`.
+async fn inline_cli_listener(
+    console: Arc<Mutex<StandardStream>>,
+    term_width: usize,
+    store: Arc<Mutex<TranslationStore>>,
+) -> anyhow::Result<()> {
+    let mut red = ColorSpec::new();
+    red.set_fg(Some(Color::Red));
+
+    let mut stdin = BufReader::new(stdin());
+    loop {
+        let mut input = String::new();
+        {
+            let mut console = console.lock().await;
+            write!(console, "> ")?;
+            console.flush()?;
+        }
+        stdin.read_line(&mut input).await?;
+        if input.ends_with("\r\n") {
+            input.replace_range((input.len() - 2)..input.len(), "\n");
+        }
+        let input = match shell_words::split(&input) {
+            Ok(mut i) => {
+                let mut input = vec![String::new()];
+                input.append(&mut i);
+                input
+            }
+            Err(e) => {
+                let mut console = console.lock().await;
+                console.set_color(&red)?;
+                writeln!(console, "error: {e}")?;
+                console.reset()?;
+                continue;
+            }
+        };
+
+        #[derive(Debug, Parser)]
+        struct InlineArgs {
+            #[command(subcommand)]
+            command: Command,
+        }
+        let args = match InlineArgs::try_parse_from(input) {
+            Ok(args) => args,
+            Err(e) => {
+                let mut console = console.lock().await;
+                console.set_color(&red)?;
+                writeln!(console, "{e}")?;
+                console.reset()?;
+                continue;
+            }
+        };
+
+        if let Command::Exit = args.command {
+            break;
+        }
+        let result =
+            perform_command(args.command, console.clone(), term_width, store.clone()).await;
+        if let Err(e) = result {
+            let mut console = console.lock().await;
+            console.set_color(&red)?;
+            writeln!(console, "error: {e}")?;
+            writeln!(console)?;
+            console.reset()?;
+        }
+    }
+    Ok(())
+}
+
+/// Perform the action associated with `command`.
+async fn perform_command(
+    command: Command,
+    console: Arc<Mutex<StandardStream>>,
+    term_width: usize,
+    store: Arc<Mutex<TranslationStore>>,
+) -> anyhow::Result<()> {
+    match command {
+        Command::Run { .. } => {
+            bail!("subcommand 'run' cannot be used when the server is already running")
+        }
+        Command::Exit => {
+            bail!("subcommand 'exit' cannot be used when the server is not yet running")
         }
         Command::Generate {
             provider_ids,
             languages,
         } => {
+            let mut store = store.lock().await;
+
             let languages =
                 languages.unwrap_or_else(|| store.languages().into_iter().cloned().collect());
             if languages.is_empty() {
-                error!("No languages are specified");
-                return;
+                bail!("No languages are specified");
             }
-            let errors = match store.generate(languages, provider_ids, false).await {
-                Ok(errors) => errors,
-                Err(e) => {
-                    error!("{e}");
-                    return;
-                }
-            };
+
+            let errors = store.generate(languages, provider_ids, false).await?;
             if errors.values().any(|error| error.is_none()) {
-                if let Err(e) = store.save_translations() {
-                    error!("{e}");
-                }
+                store.save_translations()?;
             }
+
+            Ok(())
         }
         Command::Remove {
             provider_ids,
             languages,
         } => {
+            let mut store = store.lock().await;
+
             for provider_id in provider_ids {
                 if let Some(languages) = &languages {
                     let Some(translations) = store.provider_caches.get_mut(&provider_id) else {
@@ -262,16 +373,18 @@ async fn main() {
                     }
                 }
             }
-            if let Err(e) = store.save_translations() {
-                error!("{e}");
-            }
+            store.save_translations()?;
+
+            Ok(())
         }
         Command::Get {
             provider_ids,
             languages,
             limit,
         } => {
-            let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+            let store = store.lock().await;
+            let mut stdout = console.lock().await;
+
             let mut color_green = ColorSpec::new();
             color_green.set_fg(Some(Color::Green));
             let color_none = ColorSpec::new();
@@ -291,12 +404,12 @@ async fn main() {
                     .map(|(.., translation)| translation)
                     .for_each(|translation| {
                         stdout.set_color(&color_green).unwrap();
-                        write!(&mut stdout, "original:   ").unwrap();
+                        write!(stdout, "original:   ").unwrap();
                         stdout.set_color(&color_none).unwrap();
                         writeln_max_width(io::stdout(), &translation.original, 13, 13, term_width)
                             .unwrap();
                         stdout.set_color(&color_green).unwrap();
-                        write!(&mut stdout, "translation:").unwrap();
+                        write!(stdout, "translation:").unwrap();
                         stdout.set_color(&color_none).unwrap();
                         writeln_max_width(
                             io::stdout(),
@@ -308,15 +421,19 @@ async fn main() {
                         .unwrap();
                         if let Some(comment) = &translation.comment {
                             stdout.set_color(&color_green).unwrap();
-                            write!(&mut stdout, "comment:").unwrap();
+                            write!(stdout, "comment:").unwrap();
                             stdout.set_color(&color_none).unwrap();
                             writeln_max_width(io::stdout(), comment, 9, 9, term_width).unwrap();
                         }
-                        writeln!(&mut stdout).unwrap();
+                        writeln!(stdout).unwrap();
                     });
             }
+
+            Ok(())
         }
         Command::Status { languages } => {
+            let store = store.lock().await;
+
             println!("In total {} scopes", store.providers().len());
             println!(
                 "  generated: {} scopes",
@@ -413,6 +530,8 @@ async fn main() {
                     println!("  {provider_id}: {count}");
                 }
             }
+
+            Ok(())
         }
     }
 }

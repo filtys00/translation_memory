@@ -5,7 +5,6 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    io,
     str::FromStr,
     sync::Arc,
 };
@@ -28,9 +27,7 @@ use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::TranslationStore;
 use unic_langid::LanguageIdentifier;
 
-pub async fn web_server(store: TranslationStore) -> io::Result<()> {
-    let store = Arc::new(Mutex::new(store));
-
+pub async fn web_server(store: Arc<Mutex<TranslationStore>>) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(main_page))
         .route("/query", get(query_api))
