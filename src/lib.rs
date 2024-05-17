@@ -39,11 +39,11 @@ pub enum ProviderCache {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ProviderCacheMultiple {
     /// If all available translation bundles have been added to `translation_bundles`.
-    finished: bool,
-    translation_bundles: BTreeMap<String, TranslationBundle>,
+    pub finished: bool,
+    pub translation_bundles: BTreeMap<String, TranslationBundle>,
 }
 
-type TranslationBundle = BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>;
+pub type TranslationBundle = BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Translation {

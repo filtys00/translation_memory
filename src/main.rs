@@ -5,6 +5,8 @@
 mod web_server;
 
 use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
     io::{self, Write},
     path::Path,
     sync::Arc,
@@ -19,7 +21,7 @@ use tokio::{
     select,
     sync::Mutex,
 };
-use translation_memory::TranslationStore;
+use translation_memory::{ProviderCache, TranslationBundle, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
 use self::web_server::web_server;
@@ -100,11 +102,27 @@ enum Command {
         #[arg(long)]
         limit: Option<u8>,
     },
-    /// Print statistics about the collected translations.
-    Status {
-        /// Print statistics about the translations of one or more languages.
+    /// Print information about the providers and translations.
+    Stats {
+        /// Print information about the translations [default]
+        #[arg(long)]
+        translations: bool,
+
+        /// Print the translation providers.
+        #[arg(long)]
+        providers: bool,
+
+        /// Print information about a translation provider.
         #[arg(short, long)]
-        languages: Option<Vec<LanguageIdentifier>>,
+        provider: Option<String>,
+
+        /// Print the provider group names.
+        #[arg(long)]
+        group_names: bool,
+
+        /// Print information about a provider group name.
+        #[arg(short, long)]
+        group_name: Option<String>,
     },
 }
 
@@ -431,109 +449,406 @@ async fn perform_command(
 
             Ok(())
         }
-        Command::Status { languages } => {
-            let store = store.lock().await;
 
-            println!("In total {} scopes", store.providers().len());
-            println!(
-                "  generated: {} scopes",
-                store
+        Command::Stats {
+            provider,
+            mut translations,
+            group_name,
+            providers,
+            group_names,
+        } => {
+            // Make `--translations` the default so there is always output.
+            if provider.is_none() && group_name.is_none() && !providers && !group_names {
+                translations = true;
+            }
+
+            let store = store.lock().await;
+            let mut console = console.lock().await;
+
+            let mut highlighted = ColorSpec::new();
+            highlighted.set_fg(Some(Color::White));
+            highlighted.set_intense(true);
+
+            macro_rules! label_println {
+                ($label:literal, value: $($value:tt)*) => {
+                    console.set_color(&highlighted)?;
+                    write!(console, "{}", $label)?;
+                    console.reset()?;
+                    writeln!(console, $($value)*)?;
+                };
+                (return => $($label:tt)*) => {{
+                    let label = format!($($label)*);
+                    console.set_color(&highlighted)?;
+                    write!(console, "{label}")?;
+                    console.reset()?;
+                    label
+                }};
+                ($($label:tt)*) => {
+                    console.set_color(&highlighted)?;
+                    writeln!(console, $($label)*)?;
+                    console.reset()?;
+                };
+            }
+
+            fn print_languages<'a>(
+                console: impl Write,
+                indent: usize,
+                translation_bundles: impl Iterator<Item = &'a TranslationBundle>,
+            ) -> anyhow::Result<()> {
+                let translation_counts: Vec<(String, Option<usize>)> = translation_bundles
+                    .flatten()
+                    .fold(HashMap::new(), |mut map, (lang_id, translations)| {
+                        let count = map.entry(lang_id).or_insert(None);
+                        let Some(translations) = translations.as_ref() else {
+                            return map;
+                        };
+                        if count.is_none() {
+                            *count = Some(0);
+                        }
+                        let Some(count) = count else {
+                            unreachable!();
+                        };
+                        *count += translations.len();
+                        map
+                    })
+                    .into_iter()
+                    .map(|(lang_id, count)| (lang_id.to_string(), count))
+                    .collect();
+
+                write_labeled_number_list(console, indent, translation_counts)?;
+
+                Ok(())
+            }
+
+            if translations {
+                label_println!("Translations: ", value: "{}", display_number(store.translations().count()));
+
+                label_println!(
+                    "  By language ({}):",
+                    display_number(store.languages().len())
+                );
+                print_languages(
+                    &mut *console,
+                    4,
+                    store
+                        .provider_caches
+                        .values()
+                        .flat_map(|provider_cache| provider_cache.translation_bundles()),
+                )?;
+
+                let scope_counts: Vec<(&str, Option<usize>)> = store
                     .providers()
                     .iter()
-                    .filter(|provider| store.provider_caches.contains_key(provider.id()))
-                    .count()
-            );
-            let empty = store.providers().iter().filter(|provider| {
-                store
-                    .provider_caches
-                    .get(provider.id())
-                    .map_or(false, |provider_cache| {
-                        provider_cache
+                    .fold(HashMap::new(), |mut map, provider| {
+                        let count = map
+                            .entry(provider.group_name().unwrap_or(provider.name()))
+                            .or_insert(None);
+                        let Some(provider_cache) = store.provider_caches.get(provider.id()) else {
+                            return map;
+                        };
+                        if count.is_none() {
+                            *count = Some(0);
+                        }
+                        let Some(count) = count else {
+                            unreachable!();
+                        };
+                        *count += provider_cache
                             .translation_bundles()
                             .flat_map(|bundle| bundle.values())
                             .filter_map(|translations| translations.as_ref())
-                            .all(|translations| translations.is_empty())
+                            .map(|translations| translations.len())
+                            .sum::<usize>();
+                        map
                     })
-            });
-            println!("    empty: {} scopes", empty.clone().count());
-            for provider in empty {
-                println!("      {}", provider.id());
-            }
-            let not_generated = store
-                .providers()
-                .iter()
-                .filter(|provider| !store.provider_caches.contains_key(provider.id()));
-            println!("  not generated: {} scopes", not_generated.clone().count());
-            for provider in not_generated {
-                println!("    {}", provider.id());
+                    .into_iter()
+                    .collect();
+                label_println!("  By scope ({}):", display_number(scope_counts.len()));
+                write_labeled_number_list(&mut *console, 4, scope_counts)?;
             }
 
-            println!("In total {} translations", store.translations().count());
-            for lang_id in store.languages() {
-                let provider_caches = store.provider_caches.iter().filter(|(_, provider_cache)| {
-                    provider_cache
-                        .translation_bundles()
-                        .filter_map(|bundle| bundle.get(lang_id))
-                        .any(|translations| translations.is_some())
+            if providers {
+                let mut temporary: Vec<&str> = store
+                    .providers()
+                    .iter()
+                    .filter(|provider| provider.temporary())
+                    .map(|provider| provider.id())
+                    .collect();
+                temporary.sort();
+
+                let mut not_generated: Vec<&str> = store
+                    .providers()
+                    .iter()
+                    .filter(|provider| !store.provider_caches.contains_key(provider.id()))
+                    .map(|provider| provider.id())
+                    .collect();
+                not_generated.sort();
+
+                let mut empty: Vec<&str> = store
+                    .providers()
+                    .iter()
+                    .filter(|provider| {
+                        store
+                            .provider_caches
+                            .get(provider.id())
+                            .map_or(false, |provider_cache| {
+                                provider_cache.translation_bundles().all(|bundle| {
+                                    bundle.values().all(|translations| {
+                                        translations
+                                            .as_ref()
+                                            .map_or(true, |translations| translations.is_empty())
+                                    })
+                                })
+                            })
+                    })
+                    .map(|provider| provider.id())
+                    .collect();
+                empty.sort();
+
+                let mut rest: Vec<&str> = store
+                    .providers()
+                    .iter()
+                    .map(|provider| provider.id())
+                    .filter(|provider_id| {
+                        !temporary.contains(provider_id)
+                            && !not_generated.contains(provider_id)
+                            && !empty.contains(provider_id)
+                    })
+                    .collect();
+                rest.sort();
+
+                label_println!("Providers ({}):", display_number(store.providers().len()));
+
+                let categories = [
+                    ("Temporary", temporary),
+                    ("Not generated", not_generated),
+                    ("Generated, with no translations", empty),
+                    ("Generated, with translations", rest),
+                ];
+
+                for (label, providers) in categories {
+                    let label = label_println!(return => "  {label} ({}):", display_number(providers.len()));
+
+                    writeln_max_width(
+                        &mut *console,
+                        &providers.join(", "),
+                        label.len(),
+                        label.len(),
+                        term_width,
+                    )?;
+                }
+            }
+
+            if let Some(provider_id_or_name) = provider {
+                let provider = if let Some(provider) = store.provider(&provider_id_or_name) {
+                    provider
+                } else if let Some(provider) = store
+                    .providers()
+                    .iter()
+                    .find(|provider| provider.name() == provider_id_or_name)
+                {
+                    provider
+                } else {
+                    bail!("No provider with id or name '{provider_id_or_name}'");
+                };
+                let provider_cache = store.provider_caches.get(provider.id());
+
+                label_println!("Provider '{}':", provider.id());
+                label_println!("  Name: ", value: "'{}'", provider.name());
+                label_println!("  Group name: ", value: "{}", provider.group_name()
+                    .map_or(Cow::Borrowed("none"), |group_name| Cow::Owned(format!("'{group_name}'"))),
+                );
+                label_println!("  Cache type: ", value: "{}", match provider_cache {
+                    Some(ProviderCache::Single(_)) => "single",
+                    Some(ProviderCache::Multiple(_)) => "multiple",
+                    None => "none",
                 });
-                println!(
-                    "  {lang_id}: {} translations, {} / {} scopes",
-                    store
-                        .translations()
-                        .filter(|(_, l, _)| *l == lang_id)
-                        .count(),
-                    provider_caches.clone().count(),
-                    store.providers().len(),
-                );
-                if provider_caches.clone().count() <= 10 {
-                    for (provider_id, provider_cache) in provider_caches {
-                        println!(
-                            "    {provider_id}: {} translations",
-                            provider_cache
-                                .translation_bundles()
-                                .filter_map(|bundle| bundle.get(lang_id))
-                                .filter_map(|translations| translations.as_ref())
-                                .flatten()
-                                .count(),
-                        );
-                    }
+
+                if let Some(ProviderCache::Multiple(multiple)) = &provider_cache {
+                    label_println!("  Finished: ", value: "{}", multiple.finished);
+                    label_println!("  Translation bundles: ", value: "{}",
+                        display_number(multiple.translation_bundles.len()),
+                    );
+                }
+
+                if let Some(provider_cache) = &provider_cache {
+                    let translation_count = provider_cache
+                        .translation_bundles()
+                        .flat_map(|bundle| bundle.values())
+                        .filter_map(|translations| translations.as_ref())
+                        .map(|translations| translations.len())
+                        .sum();
+                    label_println!("  Translations: ", value: "{}", display_number(translation_count));
+
+                    print_languages(&mut *console, 4, provider_cache.translation_bundles())?;
                 }
             }
 
-            if let Some(languages) = languages {
-                println!();
-                println!(
-                    "Languages {}",
-                    languages
+            if group_names {
+                let mut group_names = store
+                    .providers()
+                    .iter()
+                    .filter_map(|provider| provider.group_name())
+                    .collect::<HashSet<&str>>()
+                    .into_iter()
+                    .collect::<Vec<&str>>();
+                group_names.sort();
+
+                label_println!("Group names ({}):", group_names.len());
+
+                for group_name in group_names {
+                    writeln!(console, "  {group_name}")?;
+                }
+            }
+
+            if let Some(group_name) = group_name {
+                let providers: Vec<_> = store
+                    .providers()
+                    .iter()
+                    .filter(|provider| provider.group_name() == Some(group_name.as_str()))
+                    .collect();
+                if providers.is_empty() {
+                    bail!("No providers has the group name '{group_name}'");
+                };
+
+                label_println!("Group name '{group_name}':");
+
+                let label = label_println!(return => "  Providers ({}):", providers.len());
+
+                let mut provider_ids: Vec<&str> =
+                    providers.iter().map(|provider| provider.id()).collect();
+                provider_ids.sort();
+                writeln_max_width(
+                    &mut *console,
+                    &provider_ids.join(", "),
+                    label.len(),
+                    label.len(),
+                    term_width,
+                )?;
+
+                let translation_count = providers
+                    .iter()
+                    .filter_map(|provider| store.provider_caches.get(provider.id()))
+                    .flat_map(|provider_cache| provider_cache.translation_bundles())
+                    .flat_map(|bundle| bundle.values())
+                    .filter_map(|translations| translations.as_ref())
+                    .map(|translations| translations.len())
+                    .sum();
+                label_println!("  Translations: ", value: "{}", display_number(translation_count));
+
+                print_languages(
+                    &mut *console,
+                    4,
+                    providers
                         .iter()
-                        .map(|lang_id| lang_id.to_string())
-                        .reduce(|acc, lang_id| acc + ", " + &lang_id)
-                        .unwrap_or_default()
-                );
-                let mut counts = Vec::with_capacity(store.provider_caches.len());
-                for (provider_id, provider_cache) in &store.provider_caches {
-                    let mut count = 0;
-                    for language in &languages {
-                        count += provider_cache
-                            .translation_bundles()
-                            .filter_map(|bundle| bundle.get(language))
-                            .filter_map(|translations| translations.as_ref())
-                            .flatten()
-                            .count();
-                    }
-                    if count > 0 {
-                        counts.push((provider_id, count));
-                    }
-                }
-                counts.sort_by_key(|(provider_id, count)| (*count, *provider_id));
-                for (provider_id, count) in counts {
-                    println!("  {provider_id}: {count}");
-                }
+                        .filter_map(|provider| store.provider_caches.get(provider.id()))
+                        .flat_map(|provider_cache| provider_cache.translation_bundles()),
+                )?;
             }
 
             Ok(())
         }
     }
+}
+
+/// Converts `number` to `String` with every three digits seperated by non-breaking spaces.
+fn display_number(number: usize) -> String {
+    let number = number.to_string();
+    if number.len() < 4 {
+        return number;
+    }
+
+    let mut new_number = String::new();
+    for (i, c) in number.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            new_number.push('\u{00A0}');
+        }
+        new_number.push(c);
+    }
+    new_number.chars().rev().collect()
+}
+
+/// Write `list` of labels and optional numbers to `buf`.
+/// Each entry is written on it's own line with an indent of `indent` spaces.
+/// The entries are aligned vertically, and the numbers are formatted to be more human-readable.
+///
+/// `list` is sorted by number first, and then label.
+///
+/// # Example
+///
+/// ```
+/// #use std::io::stderr;
+/// #fn main() {
+/// let list = vec![
+///     ("first entry", None),
+///     ("second entry", Some(2167)),
+///     ("third entry", Some(5422)),
+///     ("fourth entry", Some(2167)),
+/// ];
+/// writeln!("Entries:").unwrap();
+/// write_labeled_number_list(stderr(), 2).unwrap();
+/// #}
+/// ```
+///
+/// Expected output:
+/// ```terminal
+/// Entries:
+///    third entry: 5 422
+///    first entry: 3 773
+///   fourth entry: 2 167
+///   second entry: 2 167
+/// ```
+fn write_labeled_number_list(
+    mut buf: impl Write,
+    indent: usize,
+    mut list: Vec<(impl AsRef<str>, Option<usize>)>,
+) -> anyhow::Result<()> {
+    list.sort_by(|(lang_id_a, count_a), (lang_id_b, count_b)| {
+        let ordering = count_a.cmp(count_b).reverse();
+        if ordering.is_eq() {
+            lang_id_a.as_ref().cmp(lang_id_b.as_ref())
+        } else {
+            ordering
+        }
+    });
+
+    let label_max_length = list
+        .iter()
+        .map(|(label, _)| label.as_ref().chars().count())
+        .max()
+        .unwrap_or(0);
+    let value_max_length = list
+        .iter()
+        .map(|(_, value)| {
+            value
+                .as_ref()
+                .map(|value| display_number(*value).chars().count())
+                .unwrap_or(0)
+        })
+        .max()
+        .unwrap_or(0);
+
+    for (label, value) in &*list {
+        let value = value.as_ref().map(|value| display_number(*value));
+
+        write!(
+            buf,
+            "{}",
+            " ".repeat(indent + (label_max_length - label.as_ref().chars().count()))
+        )?;
+        write!(buf, "{}: ", label.as_ref())?;
+
+        if let Some(value) = value {
+            write!(
+                buf,
+                "{}",
+                " ".repeat(value_max_length - value.chars().count())
+            )?;
+            writeln!(buf, "{value}")?;
+        } else {
+            writeln!(buf, "none")?;
+        }
+    }
+    Ok(())
 }
 
 /// Write `args` to `buf`, preventing any line from becoming longer than `max_width`
