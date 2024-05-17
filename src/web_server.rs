@@ -431,7 +431,7 @@ async fn metadata_api(
 
     let store = store.lock().await;
 
-    let mut scopes = HashMap::with_capacity(store.providers().len());
+    let mut scopes = HashMap::new();
     for provider in store.providers() {
         if let Some(group_name) = provider.group_name() {
             let scopes = scopes
@@ -547,7 +547,6 @@ async fn update_all_api(
 
     let scopes: Vec<String> = store
         .providers()
-        .iter()
         .map(|provider| provider.id().to_string())
         .collect();
 

@@ -538,7 +538,6 @@ async fn perform_command(
 
                 let scope_counts: Vec<(&str, Option<usize>)> = store
                     .providers()
-                    .iter()
                     .fold(HashMap::new(), |mut map, provider| {
                         let count = map
                             .entry(provider.group_name().unwrap_or(provider.name()))
@@ -569,7 +568,6 @@ async fn perform_command(
             if providers {
                 let mut temporary: Vec<&str> = store
                     .providers()
-                    .iter()
                     .filter(|provider| provider.temporary())
                     .map(|provider| provider.id())
                     .collect();
@@ -577,7 +575,6 @@ async fn perform_command(
 
                 let mut not_generated: Vec<&str> = store
                     .providers()
-                    .iter()
                     .filter(|provider| !store.provider_caches.contains_key(provider.id()))
                     .map(|provider| provider.id())
                     .collect();
@@ -585,7 +582,6 @@ async fn perform_command(
 
                 let mut empty: Vec<&str> = store
                     .providers()
-                    .iter()
                     .filter(|provider| {
                         store
                             .provider_caches
@@ -606,7 +602,6 @@ async fn perform_command(
 
                 let mut rest: Vec<&str> = store
                     .providers()
-                    .iter()
                     .map(|provider| provider.id())
                     .filter(|provider_id| {
                         !temporary.contains(provider_id)
@@ -616,7 +611,7 @@ async fn perform_command(
                     .collect();
                 rest.sort();
 
-                label_println!("Providers ({}):", display_number(store.providers().len()));
+                label_println!("Providers ({}):", display_number(store.providers().count()));
 
                 let categories = [
                     ("Temporary", temporary),
@@ -643,7 +638,6 @@ async fn perform_command(
                     provider
                 } else if let Some(provider) = store
                     .providers()
-                    .iter()
                     .find(|provider| provider.name() == provider_id_or_name)
                 {
                     provider
@@ -686,7 +680,6 @@ async fn perform_command(
             if group_names {
                 let mut group_names = store
                     .providers()
-                    .iter()
                     .filter_map(|provider| provider.group_name())
                     .collect::<HashSet<&str>>()
                     .into_iter()
@@ -703,7 +696,6 @@ async fn perform_command(
             if let Some(group_name) = group_name {
                 let providers: Vec<_> = store
                     .providers()
-                    .iter()
                     .filter(|provider| provider.group_name() == Some(group_name.as_str()))
                     .collect();
                 if providers.is_empty() {
