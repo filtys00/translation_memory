@@ -65,9 +65,9 @@ struct Args {
 enum Command {
     /// Start the built-in web UI server.
     Run {
-        /// Do not open the system web browser when the web server starts.
-        #[arg(long = "nobrowser")]
-        no_browser: bool,
+        /// Open the web UI in the default web browser.
+        #[arg(long = "openbrowser")]
+        open_browser: bool,
     },
     /// Start an interactive session.
     ///
@@ -217,7 +217,7 @@ async fn main() -> ExitCode {
 
     let command = args
         .command
-        .unwrap_or_else(|| Command::Run { no_browser: false });
+        .unwrap_or_else(|| Command::Run { open_browser: true });
     let result = perform_command(command, console, term_width, store).await;
     if let Err(e) = result {
         error!("{e}");
@@ -235,10 +235,10 @@ async fn perform_command(
     store: Arc<Mutex<TranslationStore>>,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Run { no_browser } => {
-            if !no_browser {
+        Command::Run { open_browser } => {
+            if open_browser {
                 info!("Opening web browser...");
-                webbrowser::open("http://127.0.0.1:2013/").unwrap();
+                webbrowser::open("http://127.0.0.1:2013/")?;
             }
 
             info!("Starting web UI server at 'http://127.0.0.1:2013/'...");
