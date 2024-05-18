@@ -8,18 +8,20 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     io::{self, Write},
+    mem::drop,
     path::Path,
     sync::Arc,
+    time::Duration,
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use log::{error, info, warn, Level, LevelFilter};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tokio::{
     io::{stdin, AsyncBufReadExt, BufReader},
-    select,
     sync::Mutex,
+    time::timeout,
 };
 use translation_memory::{ProviderCache, TranslationBundle, TranslationStore};
 use unic_langid::LanguageIdentifier;
@@ -67,7 +69,12 @@ enum Command {
         #[arg(long = "nobrowser")]
         no_browser: bool,
     },
-    /// Stop the built-in web UI server.
+    /// Start an interactive session.
+    ///
+    /// This allows for running multiple CLI commands without reloading the config file.
+    #[command(alias = "cli")]
+    Interactive,
+    /// Stop an interactive session.
     #[command(alias = "quit", alias = "q")]
     Exit,
     /// Generate the translations of one or more providers.
@@ -211,103 +218,11 @@ async fn main() {
     let command = args
         .command
         .unwrap_or_else(|| Command::Run { no_browser: false });
-    match command {
-        Command::Run { no_browser } => {
-            if !no_browser {
-                info!("Opening web browser...");
-                webbrowser::open("http://127.0.0.1:2013/").unwrap();
-            }
-
-            info!("Starting web UI server at 'http://127.0.0.1:2013/'...");
-            select! {
-                e = web_server(store.clone()) => {
-                    if let Err(e) = e {
-                        error!("Could not start web UI server: {e}");
-                    }
-                }
-                e = inline_cli_listener(console, term_width, store.clone()) => {
-                    if let Err(e) = e {
-                        error!("Inline CLI: {e}");
-                    }
-                }
-            }
-        }
-        command => {
-            let result = perform_command(command, console, term_width, store).await;
-            if let Err(e) = result {
-                error!("{e}");
-                return;
-            }
-        }
+    let result = perform_command(command, console, term_width, store).await;
+    if let Err(e) = result {
+        error!("{e}");
+        return;
     }
-}
-
-/// Listen for commands on `stdin()` and perform them with `perform_command`.
-async fn inline_cli_listener(
-    console: Arc<Mutex<StandardStream>>,
-    term_width: usize,
-    store: Arc<Mutex<TranslationStore>>,
-) -> anyhow::Result<()> {
-    let mut red = ColorSpec::new();
-    red.set_fg(Some(Color::Red));
-
-    let mut stdin = BufReader::new(stdin());
-    loop {
-        let mut input = String::new();
-        {
-            let mut console = console.lock().await;
-            write!(console, "> ")?;
-            console.flush()?;
-        }
-        stdin.read_line(&mut input).await?;
-        if input.ends_with("\r\n") {
-            input.replace_range((input.len() - 2)..input.len(), "\n");
-        }
-        let input = match shell_words::split(&input) {
-            Ok(mut i) => {
-                let mut input = vec![String::new()];
-                input.append(&mut i);
-                input
-            }
-            Err(e) => {
-                let mut console = console.lock().await;
-                console.set_color(&red)?;
-                writeln!(console, "error: {e}")?;
-                console.reset()?;
-                continue;
-            }
-        };
-
-        #[derive(Debug, Parser)]
-        struct InlineArgs {
-            #[command(subcommand)]
-            command: Command,
-        }
-        let args = match InlineArgs::try_parse_from(input) {
-            Ok(args) => args,
-            Err(e) => {
-                let mut console = console.lock().await;
-                console.set_color(&red)?;
-                writeln!(console, "{e}")?;
-                console.reset()?;
-                continue;
-            }
-        };
-
-        if let Command::Exit = args.command {
-            break;
-        }
-        let result =
-            perform_command(args.command, console.clone(), term_width, store.clone()).await;
-        if let Err(e) = result {
-            let mut console = console.lock().await;
-            console.set_color(&red)?;
-            writeln!(console, "error: {e}")?;
-            writeln!(console)?;
-            console.reset()?;
-        }
-    }
-    Ok(())
 }
 
 /// Perform the action associated with `command`.
@@ -318,11 +233,120 @@ async fn perform_command(
     store: Arc<Mutex<TranslationStore>>,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Run { .. } => {
-            bail!("subcommand 'run' cannot be used when the server is already running")
+        Command::Run { no_browser } => {
+            if !no_browser {
+                info!("Opening web browser...");
+                webbrowser::open("http://127.0.0.1:2013/").unwrap();
+            }
+
+            info!("Starting web UI server at 'http://127.0.0.1:2013/'...");
+            web_server(store.clone())
+                .await
+                .map_err(|e| anyhow!("Could not start web UI server: {e}"))?;
+
+            Ok(())
+        }
+        Command::Interactive => {
+            let mut red = ColorSpec::new();
+            red.set_fg(Some(Color::Red));
+
+            macro_rules! println_message {
+                ($($arg:tt)*) => {
+                    let mut console = console.lock().await;
+                    console.set_color(&red)?;
+                    let message = format!($($arg)*);
+                    let message = message.trim_matches('\n');
+                    writeln!(console, "{message}")?;
+                    console.reset()?;
+                    drop(console);
+                };
+            }
+
+            println_message!(
+                "you have started an interactive session; to stop the session, run 'exit'"
+            );
+
+            let mut stdin = BufReader::new(stdin());
+            loop {
+                let mut input = String::new();
+                {
+                    let mut console = console.lock().await;
+                    write!(console, "> ")?;
+                    console.flush()?;
+                }
+                stdin.read_line(&mut input).await?;
+                if input.ends_with("\r\n") {
+                    input.replace_range((input.len() - 2)..input.len(), "\n");
+                }
+                let input = match shell_words::split(&input) {
+                    Ok(mut i) => {
+                        let mut input = vec![String::new()];
+                        input.append(&mut i);
+                        input
+                    }
+                    Err(e) => {
+                        println_message!("error: {e}");
+                        continue;
+                    }
+                };
+
+                #[derive(Debug, Parser)]
+                struct InlineArgs {
+                    #[command(subcommand)]
+                    command: Command,
+                }
+                let args = match InlineArgs::try_parse_from(input) {
+                    Ok(args) => args,
+                    Err(e) => {
+                        println_message!("{e}");
+                        continue;
+                    }
+                };
+
+                match args.command {
+                    Command::Exit => break,
+                    Command::Run { no_browser } => {
+                        if !no_browser {
+                            println_message!("running subcommand 'run' with '--nobrowser'");
+                        }
+                        println_message!("subcommand 'run' will terminate in 30 seconds");
+                        let result = Box::pin(timeout(
+                            Duration::from_secs(30),
+                            perform_command(
+                                Command::Run { no_browser: true },
+                                console.clone(),
+                                term_width,
+                                store.clone(),
+                            ),
+                        ))
+                        .await;
+                        if let Ok(Err(e)) = result {
+                            println_message!("error: {e}");
+                        }
+                    }
+                    Command::Interactive => {
+                        println_message!(
+                            "subcommand 'interactive' cannot be used inside an interactive session"
+                        );
+                    }
+                    command => {
+                        let result = Box::pin(perform_command(
+                            command,
+                            console.clone(),
+                            term_width,
+                            store.clone(),
+                        ))
+                        .await;
+                        if let Err(e) = result {
+                            println_message!("error: {e}");
+                        }
+                    }
+                }
+            }
+            Ok(())
         }
         Command::Exit => {
-            bail!("subcommand 'exit' cannot be used when the server is not yet running")
+            bail!("subcommand 'exit' cannot be used outside of an interactive session")
         }
         Command::Generate {
             provider_ids,
