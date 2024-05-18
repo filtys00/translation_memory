@@ -10,6 +10,7 @@ use std::{
     io::{self, Write},
     mem::drop,
     path::Path,
+    process::ExitCode,
     sync::Arc,
     time::Duration,
 };
@@ -134,7 +135,7 @@ enum Command {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> ExitCode {
     let args = Args::parse();
 
     let term_width = termsize::get().map_or(80, |size| size.cols as usize);
@@ -202,14 +203,14 @@ async fn main() {
         info!("Reading config from '{CONFIG_PATH}'...");
         if let Err(e) = store.load_config(CONFIG_PATH) {
             error!("Could not load config file ({CONFIG_PATH}): {e}");
-            return;
+            return ExitCode::FAILURE;
         }
     }
 
     info!("Reading cached translations...");
     if let Err(e) = store.load_translations() {
         error!("Could not load cached translations: {e}");
-        return;
+        return ExitCode::FAILURE;
     }
 
     let store = Arc::new(Mutex::new(store));
@@ -221,8 +222,10 @@ async fn main() {
     let result = perform_command(command, console, term_width, store).await;
     if let Err(e) = result {
         error!("{e}");
-        return;
+        return ExitCode::FAILURE;
     }
+
+    ExitCode::SUCCESS
 }
 
 /// Perform the action associated with `command`.
