@@ -8,7 +8,10 @@ mod chrome;
 mod defaults;
 mod dtd;
 mod eu;
+mod gnome;
 mod json;
+mod kde;
+mod libreoffice;
 mod microsoft;
 mod minecraft;
 mod mozilla;
@@ -22,16 +25,20 @@ pub use self::defaults::default_providers;
 
 use std::{
     collections::{BTreeMap, HashMap},
+    future::Future,
     sync::Arc,
 };
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use log::trace;
-use reqwest::{Client, StatusCode};
+use log::{debug, error, trace};
+use reqwest::{Client, StatusCode, Url};
+use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
-use super::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider};
+use super::{
+    ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle, TranslationProvider,
+};
 
 /// A function that parses a translation file.
 pub enum SimpleProvider {
@@ -312,5 +319,325 @@ where
         }
 
         Ok(ProviderCache::Single(translation_bundle))
+    }
+}
+
+/// Append the translation bundles from `join_set` into `multiple`.
+async fn append_to_multiple(
+    multiple: &mut ProviderCacheMultiple,
+    provider_id: &str,
+    mut join_set: JoinSet<anyhow::Result<(String, TranslationBundle)>>,
+) {
+    let mut failed = 0;
+
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(Ok((bundle_id, translation_bundle))) => {
+                multiple
+                    .translation_bundles
+                    .insert(bundle_id, translation_bundle);
+            }
+            Ok(Err(e)) => {
+                error!("Could not generate translation bundle: {e}");
+                failed += 1;
+                continue;
+            }
+            Err(e) => {
+                error!("Could not request translation bundle: {e}");
+                failed += 1;
+                continue;
+            }
+        }
+    }
+
+    if failed > 0 {
+        debug!("Failed to generate '{failed}' translation bundles for '{provider_id}'");
+        multiple.finished = false;
+    } else {
+        multiple.finished = true;
+    }
+
+    join_set.abort_all();
+}
+
+/// Standard provider for single-file translation formats,
+/// that are downloaded from a dynamically generated list of URLs.
+struct MassMonoProvider<U, F>
+where
+    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    F: Future<Output = anyhow::Result<HashMap<String, HashMap<LanguageIdentifier, Option<Url>>>>>
+        + Send
+        + Sync
+        + 'static,
+{
+    pub id: &'static str,
+    pub name: &'static str,
+    pub group_name: Option<&'static str>,
+    pub urls: U,
+    pub parse: fn(String, &str) -> anyhow::Result<Vec<Translation>>,
+    pub remove_char: Option<char>,
+}
+
+#[async_trait]
+impl<U, F> TranslationProvider for MassMonoProvider<U, F>
+where
+    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    F: Future<Output = anyhow::Result<HashMap<String, HashMap<LanguageIdentifier, Option<Url>>>>>
+        + Send
+        + Sync
+        + 'static,
+{
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn group_name(&self) -> Option<&str> {
+        self.group_name
+    }
+
+    async fn generate(
+        &self,
+        previous: Option<ProviderCacheMultiple>,
+        lang_ids: Vec<LanguageIdentifier>,
+        client: Arc<Client>,
+    ) -> anyhow::Result<ProviderCache> {
+        let mut multiple = previous.unwrap_or_else(|| ProviderCacheMultiple {
+            finished: false,
+            translation_bundles: BTreeMap::new(),
+        });
+
+        let urls = match (self.urls)(lang_ids, client.clone()).await {
+            Ok(urls) => urls,
+            Err(e) => {
+                error!("Could not get translation URLs for '{}': {e}", self.id,);
+                return Ok(ProviderCache::Multiple(multiple));
+            }
+        };
+
+        trace!(
+            "Got {} translation bundles with {} URLs for '{}'",
+            urls.len(),
+            urls.values()
+                .flat_map(|bundle| bundle.values())
+                .filter_map(|translations| translations.as_ref())
+                .count(),
+            self.id
+        );
+
+        let mut join_set: JoinSet<anyhow::Result<(String, TranslationBundle)>> = JoinSet::new();
+
+        for (bundle_id, urls) in urls {
+            if multiple.translation_bundles.contains_key(&bundle_id) {
+                continue;
+            }
+
+            let client = client.clone();
+            let parse = self.parse;
+            let remove_char = self.remove_char;
+
+            join_set.spawn(async move {
+                let mut translation_bundle = TranslationBundle::new();
+
+                for (lang_id, url) in urls {
+                    let Some(url) = url else {
+                        translation_bundle.insert(lang_id, None);
+                        continue;
+                    };
+                    let Some(text) = download_text(url.as_str(), &client).await? else {
+                        translation_bundle.insert(lang_id, None);
+                        continue;
+                    };
+                    let mut translations = parse(text, url.as_str())?;
+
+                    if let Some(remove_char) = remove_char {
+                        translations.iter_mut().for_each(|translation| {
+                            translation.original = translation.original.replace(remove_char, "");
+                            translation.translation =
+                                translation.translation.replace(remove_char, "");
+                        });
+                    }
+
+                    translation_bundle.insert(lang_id, Some(translations));
+                }
+
+                Ok((bundle_id, translation_bundle))
+            });
+        }
+
+        append_to_multiple(&mut multiple, self.id, join_set).await;
+
+        Ok(ProviderCache::Multiple(multiple))
+    }
+}
+
+/// Adapt a function `urls`, that returns a list of URLs for one language,
+/// to return a format that is accepted by `MassMonoProvider`.
+async fn adapt_urls_to_mass<F>(
+    urls: fn(LanguageIdentifier, Arc<Client>) -> F,
+    lang_ids: Vec<LanguageIdentifier>,
+    client: Arc<Client>,
+) -> anyhow::Result<HashMap<String, HashMap<LanguageIdentifier, Option<Url>>>>
+where
+    F: Future<Output = anyhow::Result<Vec<String>>> + Send + Sync + 'static,
+{
+    let mut url_bundles = HashMap::new();
+
+    let mut join_set = JoinSet::new();
+    for lang_id in lang_ids {
+        let client = client.clone();
+
+        join_set.spawn(async move {
+            let urls = urls(lang_id.clone(), client.clone()).await?;
+
+            let mut url_bundles = Vec::new();
+            for url in urls {
+                let mut url_bundle = HashMap::with_capacity(1);
+                url_bundle.insert(lang_id.clone(), Some(Url::parse(&url)?));
+                url_bundles.push((url, url_bundle));
+            }
+
+            Ok((lang_id, url_bundles))
+        });
+    }
+
+    let mut none_lang_ids = Vec::new();
+
+    while let Some(result) = join_set.join_next().await {
+        let result: anyhow::Result<_> = result?;
+        let (lang_id, lang_url_bundles) = result?;
+
+        if lang_url_bundles.is_empty() {
+            none_lang_ids.push(lang_id);
+        } else {
+            url_bundles.extend(lang_url_bundles);
+        }
+    }
+
+    for url_bundle in url_bundles.values_mut() {
+        for lang_id in &none_lang_ids {
+            url_bundle.entry(lang_id.clone()).or_insert(None);
+        }
+    }
+
+    Ok(url_bundles)
+}
+
+/// Standard provider for split-file translation formats,
+/// that are downloaded from a dynamically generated list of URLs.
+struct MassDuoProvider<U, F>
+where
+    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    F: Future<
+            Output = anyhow::Result<
+                HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>,
+            >,
+        > + Send
+        + Sync
+        + 'static,
+{
+    pub id: &'static str,
+    pub name: &'static str,
+    pub group_name: Option<&'static str>,
+    pub urls: U,
+    pub parse: fn(String) -> anyhow::Result<TranslationMessages>,
+}
+
+#[async_trait]
+impl<U, F> TranslationProvider for MassDuoProvider<U, F>
+where
+    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    F: Future<
+            Output = anyhow::Result<
+                HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>,
+            >,
+        > + Send
+        + Sync
+        + 'static,
+{
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn group_name(&self) -> Option<&str> {
+        self.group_name
+    }
+
+    async fn generate(
+        &self,
+        previous: Option<ProviderCacheMultiple>,
+        lang_ids: Vec<LanguageIdentifier>,
+        client: Arc<Client>,
+    ) -> anyhow::Result<ProviderCache> {
+        let mut multiple = previous.unwrap_or_else(|| ProviderCacheMultiple {
+            finished: false,
+            translation_bundles: BTreeMap::new(),
+        });
+
+        let urls = match (self.urls)(lang_ids, client.clone()).await {
+            Ok(urls) => urls,
+            Err(e) => {
+                error!("Could not get translation URLs for '{}': {e}", self.id);
+                return Ok(ProviderCache::Multiple(multiple));
+            }
+        };
+
+        trace!(
+            "Got {} translation bundles with {} URLs for '{}'",
+            urls.len(),
+            urls.values()
+                .flat_map(|(_, bundle)| bundle.values())
+                .filter_map(|translations| translations.as_ref())
+                .count(),
+            self.id
+        );
+
+        let mut join_set: JoinSet<anyhow::Result<(String, TranslationBundle)>> = JoinSet::new();
+
+        for (bundle_id, (default_url, urls)) in urls {
+            if multiple.translation_bundles.contains_key(&bundle_id) {
+                continue;
+            }
+
+            let client = client.clone();
+            let parse = self.parse;
+
+            join_set.spawn(async move {
+                let mut translation_bundle = TranslationBundle::new();
+
+                let Some(text_en) = download_text(default_url.as_str(), &client).await? else {
+                    bail!("Default translation were not found\n{default_url}");
+                };
+                let messages_en = parse(text_en)?;
+
+                for (lang_id, url) in urls {
+                    let Some(url) = url else {
+                        translation_bundle.insert(lang_id, None);
+                        continue;
+                    };
+                    let Some(text) = download_text(url.as_str(), &client).await? else {
+                        translation_bundle.insert(lang_id, None);
+                        continue;
+                    };
+                    let messages = parse(text)?;
+                    let translations = merge_messages(messages, &messages_en, url.as_str());
+
+                    translation_bundle.insert(lang_id, Some(translations));
+                }
+
+                Ok((bundle_id, translation_bundle))
+            });
+        }
+
+        append_to_multiple(&mut multiple, self.id, join_set).await;
+
+        Ok(ProviderCache::Multiple(multiple))
     }
 }

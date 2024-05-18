@@ -5,24 +5,25 @@
 use std::{sync::Arc, vec};
 
 use super::{
+    adapt_urls_to_mass,
     android::{parse_android, parse_android_base64},
     browser_extension::{parse_browser_extension, parse_dark_reader},
     chrome::ChromeProvider,
     dtd::parse_dtd,
     eu::EuProvider,
+    gnome::graphql_gnome,
     json::{parse_elementary_json, parse_geogebra_js_json, parse_json},
+    kde::graphql_kde,
     lang_id_to_string,
+    libreoffice::crawl_libreoffice,
     minecraft::MinecraftProvider,
     mozilla::{parse_mozilla_tbx, parse_mozilla_tmx},
-    po::{
-        gnome::graphql_gnome, kde::graphql_kde, libreoffice::crawl_libreoffice, parse_po,
-        NetPoProvider,
-    },
+    po::parse_po,
     properties::{parse_obs_studio_ini, parse_properties},
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
     yaml::parse_mastodon_yaml,
-    DuoProvider, MonoProvider, TranslationProvider,
+    DuoProvider, MassMonoProvider, MonoProvider, TranslationProvider,
 };
 
 macro_rules! android {
@@ -303,22 +304,28 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
                 )
             },
         }),
-        Arc::new(NetPoProvider {
+        Arc::new(MassMonoProvider {
             id: "gnome",
             name: "GNOME",
-            urls: graphql_gnome,
+            group_name: None,
+            urls: |lang_ids, client| adapt_urls_to_mass(graphql_gnome, lang_ids, client),
+            parse: parse_po,
             remove_char: Some('_'),
         }),
-        Arc::new(NetPoProvider {
+        Arc::new(MassMonoProvider {
             id: "kde",
             name: "KDE",
-            urls: graphql_kde,
+            group_name: None,
+            urls: |lang_ids, client| adapt_urls_to_mass(graphql_kde, lang_ids, client),
+            parse: parse_po,
             remove_char: Some('&'),
         }),
-        Arc::new(NetPoProvider {
+        Arc::new(MassMonoProvider {
             id: "libreoffice",
             name: "LibreOffice",
-            urls: crawl_libreoffice,
+            group_name: None,
+            urls: |lang_ids, client| adapt_urls_to_mass(crawl_libreoffice, lang_ids, client),
+            parse: parse_po,
             remove_char: Some('_'),
         }),
 
