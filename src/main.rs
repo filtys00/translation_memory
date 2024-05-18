@@ -12,7 +12,6 @@ use std::{
     path::Path,
     process::ExitCode,
     sync::Arc,
-    time::Duration,
 };
 
 use anyhow::{anyhow, bail};
@@ -20,9 +19,9 @@ use clap::{Parser, Subcommand, ValueEnum};
 use log::{error, info, warn, Level, LevelFilter};
 use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tokio::{
-    io::{stdin, AsyncBufReadExt, BufReader},
+    io::{stdin, AsyncBufReadExt, AsyncReadExt, BufReader},
+    select,
     sync::Mutex,
-    time::timeout,
 };
 use translation_memory::{ProviderCache, TranslationBundle, TranslationStore};
 use unic_langid::LanguageIdentifier;
@@ -138,7 +137,7 @@ enum Command {
 async fn main() -> ExitCode {
     let args = Args::parse();
 
-    let term_width = termsize::get().map_or(80, |size| size.cols as usize);
+    let term_width = crossterm::terminal::size().map_or(80, |(cols, _)| cols as usize);
     let mut logger = env_logger::builder();
     logger.format(move |buf, record| {
         let mut dimmed_style = buf.style();
@@ -243,9 +242,25 @@ async fn perform_command(
             }
 
             info!("Starting web UI server at 'http://127.0.0.1:2013/'...");
-            web_server(store.clone())
-                .await
-                .map_err(|e| anyhow!("Could not start web UI server: {e}"))?;
+            info!("Press 'q' to stop the server");
+            let stop_listener = async {
+                crossterm::terminal::enable_raw_mode()?;
+                loop {
+                    let c = stdin().read_u8().await?;
+                    if c == b'q' {
+                        break;
+                    }
+                    warn!("Press 'q' to stop the server");
+                }
+                crossterm::terminal::disable_raw_mode()?;
+                Ok::<_, anyhow::Error>(())
+            };
+            select! {
+                result = web_server(store.clone()) => {
+                    result.map_err(|e| anyhow!("Could not start web UI server: {e}"))?
+                }
+                result = stop_listener => { result? }
+            }
 
             Ok(())
         }
@@ -307,31 +322,12 @@ async fn perform_command(
                 };
 
                 match args.command {
-                    Command::Exit => break,
-                    Command::Run { no_browser } => {
-                        if !no_browser {
-                            println_message!("running subcommand 'run' with '--nobrowser'");
-                        }
-                        println_message!("subcommand 'run' will terminate in 30 seconds");
-                        let result = Box::pin(timeout(
-                            Duration::from_secs(30),
-                            perform_command(
-                                Command::Run { no_browser: true },
-                                console.clone(),
-                                term_width,
-                                store.clone(),
-                            ),
-                        ))
-                        .await;
-                        if let Ok(Err(e)) = result {
-                            println_message!("error: {e}");
-                        }
-                    }
                     Command::Interactive => {
                         println_message!(
                             "subcommand 'interactive' cannot be used inside an interactive session"
                         );
                     }
+                    Command::Exit => break,
                     command => {
                         let result = Box::pin(perform_command(
                             command,
