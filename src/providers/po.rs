@@ -4,10 +4,33 @@
 
 use std::{collections::HashMap, iter};
 
+use anyhow::anyhow;
+use base64::{
+    alphabet::Alphabet,
+    engine::{GeneralPurpose, GeneralPurposeConfig},
+    Engine,
+};
 use log::trace;
 
 use super::unescape;
 use crate::Translation;
+
+const BASE64: GeneralPurpose = GeneralPurpose::new(
+    match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
+        Ok(alphabet) => alphabet,
+        Err(_) => unreachable!(),
+    },
+    GeneralPurposeConfig::new(),
+);
+
+pub fn parse_po_base64(base64: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+    let bytes = BASE64
+        .decode(&base64)
+        .map_err(|e| anyhow!("Invalid base64: {e}\n{base64}"))?;
+    let text =
+        String::from_utf8(bytes).map_err(|e| anyhow!("Invalid text from base64: {e}\n{base64}"))?;
+    parse_po(text, source)
+}
 
 pub fn parse_po(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let mut translations = Vec::new();

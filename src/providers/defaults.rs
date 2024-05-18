@@ -18,7 +18,7 @@ use super::{
     libreoffice::crawl_libreoffice,
     minecraft::MinecraftProvider,
     mozilla::{parse_mozilla_tbx, parse_mozilla_tmx},
-    po::parse_po,
+    po::{parse_po, parse_po_base64},
     properties::{parse_obs_studio_ini, parse_properties},
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
@@ -325,7 +325,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             name: "LibreOffice",
             group_name: None,
             urls: |lang_ids, client| adapt_urls_to_mass(crawl_libreoffice, lang_ids, client),
-            parse: parse_po,
+            parse: parse_po_base64,
             remove_char: Some('_'),
         }),
 

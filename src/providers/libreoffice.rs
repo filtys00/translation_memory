@@ -52,7 +52,7 @@ async fn crawl(
         match entry.entry_type {
             EntryType::Blob => {
                 urls.push(format!(
-                    "https://cgit.freedesktop.org/libreoffice/translations/plain/source/{}{path}/{}",
+                    "https://git.libreoffice.org/translations/+/refs/heads/master/source/{}{path}/{}?format=TEXT",
                     lang_id_to_string(lang_id, "-", true, "-", false),
                     entry.name,
                 ));
