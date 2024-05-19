@@ -2,13 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use anyhow::{anyhow, bail};
-use async_trait::async_trait;
 use base64::{
     alphabet::Alphabet,
     engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
@@ -17,14 +13,13 @@ use base64::{
 use log::trace;
 use quick_xml::{events::Event, Reader};
 use regex::Regex;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
+use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
-use super::unescape;
-use crate::{
-    ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle, TranslationProvider,
-};
+use super::{unescape, TranslationMessages};
+use crate::providers::download_text;
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
@@ -34,168 +29,28 @@ const BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new(),
 );
 
-pub struct ChromeProvider;
-
-#[async_trait]
-impl TranslationProvider for ChromeProvider {
-    fn id(&self) -> &str {
-        "chrome"
-    }
-
-    fn name(&self) -> &str {
-        "Chromium"
-    }
-
-    fn group_name(&self) -> Option<&str> {
-        None
-    }
-
-    async fn generate(
-        &self,
-        _previous: Option<ProviderCacheMultiple>,
-        lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
-    ) -> anyhow::Result<ProviderCache> {
-        trace!("Downloading translation expectations...");
-
-        let url = "https://chromium.googlesource.com/chromium/src/+/main/tools/gritsettings/translation_expectations.pyl?format=TEXT";
-        let pyl = download(url, "translation expectations", &client).await?;
-        let pyl = Regex::new("#.*\n").unwrap().replace_all(&pyl, "");
-        let pyl = Regex::new(r",\s*}").unwrap().replace_all(&pyl, "}");
-        let pyl = Regex::new(r",\s*]").unwrap().replace_all(&pyl, "]");
-        let translation_expectations: TranslationExpectations = serde_json::from_str(&pyl)
-            .map_err(|e| anyhow!("Could not parse translation expectations: {e}\n{url}"))?;
-
-        let mut grits = Vec::new();
-
-        for translations in translation_expectations.translations.into_values() {
-            if !lang_ids
-                .iter()
-                .any(|lang_id| translations.languages.contains(lang_id))
-            {
-                continue;
-            }
-            for path in translations.files {
-                let url = format!(
-                    "https://chromium.googlesource.com/chromium/src/+/main/{path}?format=TEXT"
-                );
-                let xml = download(&url, "Grit file", &client).await?;
-                let grit: Grit = quick_xml::de::from_str(&xml)
-                    .map_err(|e| anyhow!("Could not parse Grit file: {e}\n{url}"))?;
-                grits.push((path, grit));
-            }
-        }
-
-        trace!("Downloaded {} Grit files", grits.len());
-
-        let mut translation_bundle: TranslationBundle = BTreeMap::new();
-
-        for (path, grit) in &grits {
-            let Some(grit_en) = grit
-                .translations
-                .file
-                .iter()
-                .find(|grit| grit.lang == "en-GB")
-            else {
-                continue;
-            };
-            let url_en = format!(
-                "https://chromium.googlesource.com/chromium/src/+/main/{}/{}?format=TEXT",
-                path.rsplit_once('/').map(|(path, _)| path).unwrap_or(""),
-                grit_en.path
-            );
-            let xml_en = download(&url_en, "English messages", &client).await?;
-            let messages_en = parse_grit(&xml_en)
-                .map_err(|e| anyhow!("Could not parse English messages: {e}\n{url_en}"))?;
-
-            for lang_id in &lang_ids {
-                let Some(translation) = grit
-                    .translations
-                    .file
-                    .iter()
-                    .find(|grit| grit.lang == *lang_id)
-                else {
-                    continue;
-                };
-
-                let url = format!(
-                    "https://chromium.googlesource.com/chromium/src/+/main/{}/{}?format=TEXT",
-                    path.rsplit_once('/').map(|(path, _)| path).unwrap_or(""),
-                    translation.path
-                );
-                let xml = download(&url, "translation bundle", &client).await?;
-                let messages = parse_grit(&xml)
-                    .map_err(|e| anyhow!("Could not parse messages: {e}\n{url}"))?;
-
-                let translations = translation_bundle
-                    .entry(lang_id.clone())
-                    .and_modify(|entry| {
-                        if entry.is_none() {
-                            *entry = Some(Vec::new())
-                        }
-                    })
-                    .or_insert_with(|| Some(Vec::new()))
-                    .as_mut()
-                    .unwrap();
-
-                for (id, translation) in messages {
-                    let Some(translation_en) = messages_en.get(&id) else {
-                        continue;
-                    };
-
-                    translations.push(Translation {
-                        original: unescape(translation_en, &['n', 'u']),
-                        translation: unescape(&translation, &['n', 'u']),
-                        comment: None,
-                        key: Some(id.to_string()),
-                        source: url.clone(),
-                    })
-                }
-            }
-        }
-
-        for lang_id in lang_ids {
-            translation_bundle.entry(lang_id).or_insert(None);
-        }
-
-        Ok(ProviderCache::Single(translation_bundle))
-    }
+pub fn parse_xtb_base64(base64: String) -> anyhow::Result<TranslationMessages> {
+    let bytes = BASE64
+        .decode(&base64)
+        .map_err(|e| anyhow!("Invalid base64: {e}\n{base64}"))?;
+    let text = String::from_utf8(bytes)
+        .map_err(|e| anyhow!("Invalid UTF-8 from base64: {e}\n{base64}"))?;
+    parse_xtb(text)
 }
 
-async fn download(url: &str, error_file_name: &str, client: &Client) -> anyhow::Result<String> {
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("Could not download {error_file_name}: {e}\n{url}"))?;
-    if response.status() != StatusCode::OK {
-        bail!("Unexpected status code: {}\n{url}", response.status());
-    }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| anyhow!("Could not download {error_file_name} bytes: {e}\n{url}"))?;
-    let bytes = BASE64.decode(&bytes).map_err(|e| {
-        anyhow!(
-            "Could not parse {error_file_name} as base64: {e}\n{}",
-            String::from_utf8_lossy(&bytes)
-        )
-    })?;
-    let xml = String::from_utf8(bytes)
-        .map_err(|e| anyhow!("Could not parse {error_file_name} as string: {e}"))?;
-
-    Ok(xml)
-}
-
-fn parse_grit(xml: &str) -> anyhow::Result<HashMap<String, String>> {
+pub fn parse_xtb(text: String) -> anyhow::Result<TranslationMessages> {
     let mut messages = HashMap::new();
 
-    let mut reader = Reader::from_str(xml);
+    let mut reader = Reader::from_str(&text);
     let mut key: Option<String> = None;
     let mut message = String::new();
     loop {
         match reader.read_event()? {
             Event::Eof => break,
+
+            Event::Start(e) if e.name().as_ref() == b"translationbundle" => {}
+            Event::End(e) if e.name().as_ref() == b"translationbundle" => {}
+
             Event::Start(e) if e.name().as_ref() == b"translation" => {
                 let Some(attribute) = e
                     .attributes()
@@ -204,8 +59,18 @@ fn parse_grit(xml: &str) -> anyhow::Result<HashMap<String, String>> {
                 else {
                     continue;
                 };
+
                 key = Some(String::from_utf8(attribute.value.to_vec())?);
                 message.clear();
+            }
+            Event::End(e) if e.name().as_ref() == b"translation" => {
+                if let Some(key) = key {
+                    let message = unescape(&message, &['n', 'u']);
+                    messages.insert(key, (message, None));
+                }
+
+                key = None;
+                message = String::new();
             }
             Event::Text(bytes) => message.push_str(&String::from_utf8(bytes.to_vec())?),
             Event::Empty(e) if e.name().as_ref() == b"ph" => {
@@ -216,22 +81,12 @@ fn parse_grit(xml: &str) -> anyhow::Result<HashMap<String, String>> {
                 else {
                     continue;
                 };
+
                 message.push_str(&format!(
                     "<ph name=\"{}\" />",
                     String::from_utf8(attribute.value.to_vec())?
                 ))
             }
-            Event::End(e) if e.name().as_ref() == b"translation" => {
-                if let Some(id) = key {
-                    messages.insert(id, message);
-                }
-
-                key = None;
-                message = String::new();
-            }
-
-            Event::Start(e) if e.name().as_ref() == b"translationbundle" => {}
-            Event::End(e) if e.name().as_ref() == b"translationbundle" => {}
 
             Event::Start(e) => {
                 bail!(
@@ -258,33 +113,144 @@ fn parse_grit(xml: &str) -> anyhow::Result<HashMap<String, String>> {
     Ok(messages)
 }
 
+pub async fn chromium_urls(
+    lang_ids: Vec<LanguageIdentifier>,
+    client: Arc<Client>,
+) -> anyhow::Result<HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>> {
+    trace!("Downloading translation expectations...");
+
+    let url = "https://chromium.googlesource.com/chromium/src/+/main/tools/gritsettings/translation_expectations.pyl?format=TEXT";
+    let pyl_base64 = download_text(url, &client)
+        .await
+        .map_err(|e| anyhow!("Could not download translation expectations: {e}\n{url}"))?
+        .ok_or_else(|| anyhow!("Could not find translation expectations\n{url}"))?;
+    let pyl_bytes = BASE64.decode(&pyl_base64).map_err(|e| {
+        anyhow!(
+            "Could not parse translation expectations: invalid base64: {e}\n{url}\n{pyl_base64}"
+        )
+    })?;
+    let pyl = String::from_utf8(pyl_bytes)
+        .map_err(|e| anyhow!("Could not parse translation expectations: invalid UTF-8 from base64: {e}\n{url}\n{pyl_base64}"))?;
+    let pyl = Regex::new("#.*\n")?.replace_all(&pyl, "");
+    let pyl = Regex::new(r",\s*}")?.replace_all(&pyl, "}");
+    let pyl = Regex::new(r",\s*]")?.replace_all(&pyl, "]");
+    let translation_expectations: TranslationExpectations = serde_json::from_str(&pyl)
+        .map_err(|e| anyhow!("Could not parse translation expectations: {e}\n{url}"))?;
+
+    let mut join_set = JoinSet::new();
+
+    let default_lang_id = LanguageIdentifier::from_str("en-GB")?;
+    for grds in translation_expectations.other_grds.into_values() {
+        if !grds.languages.contains(&default_lang_id)
+            || !lang_ids
+                .iter()
+                .any(|lang_id| grds.languages.contains(lang_id))
+        {
+            continue;
+        }
+
+        for file in grds.files {
+            let client = client.clone();
+            let default_lang_id = default_lang_id.clone();
+            let lang_ids = lang_ids.clone();
+
+            join_set.spawn(async move {
+                let grd_url = format!(
+                    "https://chromium.googlesource.com/chromium/src/+/main/{file}?format=TEXT"
+                );
+                let grd_base64 = download_text(&grd_url, &client)
+                    .await
+                    .map_err(|e| anyhow!("Could not download 'grd' file: {e}\n{url}"))?
+                    .ok_or_else(|| anyhow!("Could not find 'grd' file\n{url}"))?;
+                let grd_bytes = BASE64
+                    .decode(&grd_base64)
+                    .map_err(|e| anyhow!("Could not parse 'grd' file: invalid base64: {e}\n{grd_url}\n{grd_base64}"))?;
+                let grd =
+                    String::from_utf8(grd_bytes).map_err(|e| anyhow!("Could not parse 'grd' file: invalid UTF-8 from base64: {e}\n{grd_url}\n{grd_base64}"))?;
+                let grd: Grd = quick_xml::de::from_str(&grd)
+                    .map_err(|e| anyhow!("Could not parse 'grd' file: {e}\n{url}"))?;
+
+                let Some(default_translations_file) = grd
+                    .translations
+                    .entries
+                    .iter()
+                    .find(|grit| grit.lang == default_lang_id)
+                else {
+                    bail!("Could not find the default translation\n{url}");
+                };
+                let default_url = Url::parse(&format!(
+                    "https://chromium.googlesource.com/chromium/src/+/main/{}/{}?format=TEXT",
+                    file.rsplit_once('/').map(|(file, _)| file).unwrap_or(""),
+                    default_translations_file.path
+                ))?;
+
+                let mut url_bundle = HashMap::new();
+
+                for lang_id in &lang_ids {
+                    let Some(translation_file) = grd
+                        .translations
+                        .entries
+                        .iter()
+                        .find(|grit| grit.lang == *lang_id)
+                    else {
+                        url_bundle.insert(lang_id.clone(), None);
+                        continue;
+                    };
+
+                    let url = format!(
+                        "https://chromium.googlesource.com/chromium/src/+/main/{}/{}?format=TEXT",
+                        file.rsplit_once('/').map(|(file, _)| file).unwrap_or(""),
+                        translation_file.path,
+                    );
+
+                    url_bundle.insert(lang_id.clone(), Some(Url::parse(&url)?));
+                }
+
+                Ok((default_url, url_bundle))
+            });
+        }
+    }
+
+    let mut url_bundles = HashMap::new();
+
+    while let Some(result) = join_set.join_next().await {
+        let result: anyhow::Result<(Url, HashMap<LanguageIdentifier, Option<Url>>)> = result?;
+        let (default_url, url_bundle) = result?;
+
+        url_bundles.insert(default_url.as_str().to_string(), (default_url, url_bundle));
+    }
+
+    Ok(url_bundles)
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct TranslationExpectations {
     untranslated_grds: HashMap<String, String>,
     internal_grds: Vec<String>,
 
     #[serde(flatten)]
-    translations: HashMap<String, TranslationExpectationsTranslations>,
+    other_grds: HashMap<String, TranslationExpectationsGrds>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct TranslationExpectationsTranslations {
+struct TranslationExpectationsGrds {
     languages: Vec<LanguageIdentifier>,
     files: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct Grit {
-    translations: GritTranslations,
+struct Grd {
+    translations: GrdTranslations,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct GritTranslations {
-    file: Vec<GritFile>,
+struct GrdTranslations {
+    #[serde(rename = "file")]
+    entries: Vec<GrdTranslationFile>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-struct GritFile {
+struct GrdTranslationFile {
     #[serde(rename = "@path")]
     path: String,
     #[serde(rename = "@lang")]

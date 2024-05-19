@@ -8,7 +8,7 @@ use super::{
     adapt_urls_to_mass,
     android::{android_urls, parse_android, parse_android_base64},
     browser_extension::{parse_browser_extension, parse_dark_reader},
-    chrome::ChromeProvider,
+    chrome::{chromium_urls, parse_xtb_base64},
     dtd::parse_dtd,
     eu::EuProvider,
     gnome::graphql_gnome,
@@ -247,7 +247,6 @@ macro_rules! tor {
 #[rustfmt::skip]
 pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
-        Arc::new(ChromeProvider),
         Arc::new(EuProvider),
         Arc::new(MinecraftProvider),
         Arc::new(MonoProvider {
@@ -282,6 +281,13 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             group_name: None,
             urls: android_urls,
             parse: parse_android_base64,
+        }),
+        Arc::new(MassDuoProvider {
+            id: "chrome",
+            name: "Chromium",
+            group_name: None,
+            urls: chromium_urls,
+            parse: parse_xtb_base64,
         }),
         Arc::new(MassMonoProvider {
             id: "gnome",
