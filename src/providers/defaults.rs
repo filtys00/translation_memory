@@ -254,7 +254,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             name: "Mozilla terminology",
             parse: parse_mozilla_tbx,
             remove_char: None,
-            group_name: None,
+            group_name: Some("Mozilla"),
             url: |lang_id| {
                 format!(
                     "https://pontoon.mozilla.org/terminology/{}.tbx",
@@ -267,7 +267,7 @@ pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             name: "Mozilla",
             parse: parse_mozilla_tmx,
             remove_char: None,
-            group_name: None,
+            group_name: Some("Mozilla"),
             url: |lang_id| {
                 format!(
                     "https://pontoon.mozilla.org/translation-memory/{}.all-projects.tmx",
