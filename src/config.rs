@@ -272,7 +272,16 @@ impl TranslationStore {
                 None => bail!("Type '{}' is not supported", entry.type_name),
             };
 
-            let id = format!("localfile:{i}");
+            let mut id = format!("local:{i}-");
+            for c in entry.name.chars() {
+                if c.is_ascii_alphanumeric() {
+                    id.push(c.to_ascii_lowercase());
+                } else if c == ' ' {
+                    id.push('-');
+                }
+            }
+            let id = id.trim_end_matches('-');
+
             trace!(
                 "Read config entry '{}' (ID {id}): {} translations",
                 entry.name,
@@ -283,9 +292,9 @@ impl TranslationStore {
                     .count(),
             );
             self.provider_caches
-                .insert(id.clone(), ProviderCache::Single(translation_bundle));
+                .insert(id.to_string(), ProviderCache::Single(translation_bundle));
             self.providers.push(Arc::new(DummyProvider {
-                id,
+                id: id.to_string(),
                 name: entry.name.clone(),
                 group_name: entry.group_name.clone(),
             }));
