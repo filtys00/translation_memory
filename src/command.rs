@@ -19,7 +19,7 @@ use tokio::{
     select,
     sync::Mutex,
 };
-use translation_memory::{ProviderCache, TranslationBundle, TranslationProvider, TranslationStore};
+use translation_memory::{ProviderCache, TranslationBundle, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
 use super::{display_number, web_server::web_server, write_labeled_number_list, writeln_max_width};
@@ -458,8 +458,7 @@ pub async fn perform_command(
             }
 
             if providers {
-                let rest: Vec<&Arc<dyn TranslationProvider + Send + Sync + 'static>> =
-                    store.providers().collect();
+                let rest: Vec<_> = store.providers().collect();
 
                 let (mut temporary_providers, rest): (Vec<_>, Vec<_>) =
                     rest.into_iter().partition(|provider| provider.temporary());
@@ -470,7 +469,18 @@ pub async fn perform_command(
                     .partition(|provider| !store.provider_caches.contains_key(provider.id()));
                 not_generated_providers.sort_by_key(|provider| provider.id());
 
-                let (mut empty_providers, rest): (Vec<_>, Vec<_>) =
+                let (mut not_finished, rest): (Vec<_>, Vec<_>) =
+                    rest.into_iter().partition(|provider| {
+                        let Some(ProviderCache::Multiple(multiple)) =
+                            store.provider_caches.get(provider.id())
+                        else {
+                            return false;
+                        };
+                        !multiple.finished
+                    });
+                not_finished.sort_by_key(|provider| provider.id());
+
+                let (mut empty_providers, mut rest): (Vec<_>, Vec<_>) =
                     rest.into_iter().partition(|provider| {
                         let Some(provider_cache) = store.provider_caches.get(provider.id()) else {
                             return false;
@@ -485,18 +495,6 @@ pub async fn perform_command(
                             })
                     });
                 empty_providers.sort_by_key(|provider| provider.id());
-
-                let (mut not_finished, mut rest): (Vec<_>, Vec<_>) = rest.into_iter().partition(
-                    |provider: &&Arc<dyn TranslationProvider + Sync + Send>| {
-                        let Some(ProviderCache::Multiple(multiple)) =
-                            store.provider_caches.get(provider.id())
-                        else {
-                            return false;
-                        };
-                        !multiple.finished
-                    },
-                );
-                not_finished.sort_by_key(|provider| provider.id());
 
                 rest.sort_by_key(|provider| provider.id());
 
