@@ -77,7 +77,7 @@ pub trait TranslationProvider {
         &self,
         previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache>;
 }
 
@@ -160,7 +160,7 @@ impl TranslationStore {
         lang_ids: Vec<LanguageIdentifier>,
         provider_ids: Vec<String>,
         remove_failed: bool,
-        client: Arc<Client>,
+        client: Client,
     ) -> Result<HashMap<String, Option<String>>, anyhow::Error> {
         if lang_ids.is_empty() {
             return Ok(HashMap::new());

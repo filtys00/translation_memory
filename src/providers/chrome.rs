@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, str::FromStr};
 
 use anyhow::{anyhow, bail};
 use base64::{
@@ -115,7 +115,7 @@ pub fn parse_xtb(text: String) -> anyhow::Result<TranslationMessages> {
 
 pub async fn chromium_urls(
     lang_ids: Vec<LanguageIdentifier>,
-    client: Arc<Client>,
+    client: Client,
 ) -> anyhow::Result<HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>> {
     trace!("Downloading translation expectations...");
 

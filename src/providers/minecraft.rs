@@ -5,7 +5,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
     io::Cursor,
-    sync::Arc,
 };
 
 use anyhow::anyhow;
@@ -35,7 +34,7 @@ impl TranslationProvider for MinecraftProvider {
         &self,
         _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache> {
         let manifest: Manifest = client
             .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")

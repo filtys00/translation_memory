@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
 use base64::{
@@ -104,7 +104,7 @@ pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
 
 pub async fn android_urls(
     lang_ids: Vec<LanguageIdentifier>,
-    _client: Arc<Client>,
+    _client: Client,
 ) -> anyhow::Result<HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>> {
     #[rustfmt::skip]
     let files = [

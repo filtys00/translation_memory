@@ -81,7 +81,7 @@ impl TranslationProvider for DummyProvider {
         &self,
         _previous: Option<ProviderCacheMultiple>,
         _lang_ids: Vec<LanguageIdentifier>,
-        _client: Arc<Client>,
+        _client: Client,
     ) -> anyhow::Result<ProviderCache> {
         bail!("Should already be generated: {}", &self.id)
     }

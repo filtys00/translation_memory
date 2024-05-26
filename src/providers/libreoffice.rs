@@ -2,8 +2,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::sync::Arc;
-
 use anyhow::anyhow;
 use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -13,7 +11,7 @@ use crate::providers::lang_id_to_string;
 
 pub async fn crawl_libreoffice(
     lang_id: LanguageIdentifier,
-    client: Arc<Client>,
+    client: Client,
 ) -> Result<Vec<String>, anyhow::Error> {
     let mut urls = Vec::new();
 

@@ -26,7 +26,6 @@ pub use self::defaults::default_providers;
 use std::{
     collections::{BTreeMap, HashMap},
     future::Future,
-    sync::Arc,
 };
 
 use anyhow::{anyhow, bail};
@@ -234,7 +233,7 @@ where
         &self,
         _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache> {
         let mut translation_bundle = BTreeMap::new();
 
@@ -297,7 +296,7 @@ where
         &self,
         _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache> {
         let mut translation_bundle = BTreeMap::new();
 
@@ -364,7 +363,7 @@ async fn append_to_multiple(
 /// that are downloaded from a dynamically generated list of URLs.
 struct MassMonoProvider<U, F>
 where
-    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    U: Fn(Vec<LanguageIdentifier>, Client) -> F + Send + Sync + 'static,
     F: Future<Output = anyhow::Result<HashMap<String, HashMap<LanguageIdentifier, Option<Url>>>>>
         + Send
         + Sync
@@ -381,7 +380,7 @@ where
 #[async_trait]
 impl<U, F> TranslationProvider for MassMonoProvider<U, F>
 where
-    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    U: Fn(Vec<LanguageIdentifier>, Client) -> F + Send + Sync + 'static,
     F: Future<Output = anyhow::Result<HashMap<String, HashMap<LanguageIdentifier, Option<Url>>>>>
         + Send
         + Sync
@@ -403,7 +402,7 @@ where
         &self,
         previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache> {
         let mut multiple = previous.unwrap_or_else(|| ProviderCacheMultiple {
             finished: false,
@@ -477,9 +476,9 @@ where
 /// Adapt a function `urls`, that returns a list of URLs for one language,
 /// to return a format that is accepted by `MassMonoProvider`.
 async fn adapt_urls_to_mass<F>(
-    urls: fn(LanguageIdentifier, Arc<Client>) -> F,
+    urls: fn(LanguageIdentifier, Client) -> F,
     lang_ids: Vec<LanguageIdentifier>,
-    client: Arc<Client>,
+    client: Client,
 ) -> anyhow::Result<HashMap<String, HashMap<LanguageIdentifier, Option<Url>>>>
 where
     F: Future<Output = anyhow::Result<Vec<String>>> + Send + Sync + 'static,
@@ -530,7 +529,7 @@ where
 /// that are downloaded from a dynamically generated list of URLs.
 struct MassDuoProvider<U, F>
 where
-    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    U: Fn(Vec<LanguageIdentifier>, Client) -> F + Send + Sync + 'static,
     F: Future<
             Output = anyhow::Result<
                 HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>,
@@ -549,7 +548,7 @@ where
 #[async_trait]
 impl<U, F> TranslationProvider for MassDuoProvider<U, F>
 where
-    U: Fn(Vec<LanguageIdentifier>, Arc<Client>) -> F + Send + Sync + 'static,
+    U: Fn(Vec<LanguageIdentifier>, Client) -> F + Send + Sync + 'static,
     F: Future<
             Output = anyhow::Result<
                 HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>,
@@ -574,7 +573,7 @@ where
         &self,
         previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache> {
         let mut multiple = previous.unwrap_or_else(|| ProviderCacheMultiple {
             finished: false,

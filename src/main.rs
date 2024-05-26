@@ -149,7 +149,7 @@ async fn main() -> ExitCode {
 }
 
 /// Returns a properly configured `Client`.
-fn create_client() -> anyhow::Result<Arc<Client>> {
+fn create_client() -> anyhow::Result<Client> {
     let client = Client::builder()
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
@@ -157,7 +157,7 @@ fn create_client() -> anyhow::Result<Arc<Client>> {
             env!("CARGO_PKG_VERSION"),
         ))
         .build()?;
-    Ok(Arc::new(client))
+    Ok(client)
 }
 
 /// Converts `number` to `String` with every three digits seperated by non-breaking spaces.

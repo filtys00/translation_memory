@@ -5,7 +5,6 @@
 use std::{
     collections::BTreeMap,
     io::{BufReader, Cursor},
-    sync::Arc,
 };
 
 use anyhow::anyhow;
@@ -36,7 +35,7 @@ impl TranslationProvider for EuProvider {
         &self,
         _previous: Option<ProviderCacheMultiple>,
         lang_ids: Vec<LanguageIdentifier>,
-        client: Arc<Client>,
+        client: Client,
     ) -> anyhow::Result<ProviderCache> {
         fn parse_tmx(
             zip_file: ZipFile,
