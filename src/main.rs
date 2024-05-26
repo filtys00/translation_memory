@@ -14,6 +14,7 @@ use std::{
 
 use clap::{Parser, ValueEnum};
 use log::{error, info, Level, LevelFilter};
+use reqwest::Client;
 use termcolor::{ColorChoice, StandardStream};
 use tokio::sync::Mutex;
 use translation_memory::TranslationStore;
@@ -145,6 +146,18 @@ async fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
+}
+
+/// Returns a properly configured `Client`.
+fn create_client() -> anyhow::Result<Arc<Client>> {
+    let client = Client::builder()
+        .user_agent(concat!(
+            env!("CARGO_PKG_NAME"),
+            "/",
+            env!("CARGO_PKG_VERSION"),
+        ))
+        .build()?;
+    Ok(Arc::new(client))
 }
 
 /// Converts `number` to `String` with every three digits seperated by non-breaking spaces.

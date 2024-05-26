@@ -22,6 +22,8 @@ use tokio::{
 use translation_memory::{ProviderCache, TranslationBundle, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
+use crate::create_client;
+
 use super::{display_number, web_server::web_server, write_labeled_number_list, writeln_max_width};
 
 #[derive(Debug, Subcommand)]
@@ -228,7 +230,11 @@ pub async fn perform_command(
                 bail!("No languages are specified");
             }
 
-            let errors = store.generate(languages, provider_ids, false).await?;
+            let client = create_client()?;
+
+            let errors = store
+                .generate(languages, provider_ids, false, client)
+                .await?;
             if errors.values().any(|error| error.is_none()) {
                 store.save_translations()?;
             }

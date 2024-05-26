@@ -27,6 +27,8 @@ use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::TranslationStore;
 use unic_langid::LanguageIdentifier;
 
+use crate::create_client;
+
 pub async fn web_server(store: Arc<Mutex<TranslationStore>>) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(main_page))
@@ -497,8 +499,10 @@ async fn update_api(
 
     let mut store = store.lock().await;
 
+    let client = create_client().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
     let errors = match store
-        .generate(payload.languages, payload.scopes, false)
+        .generate(payload.languages, payload.scopes, false, client)
         .await
     {
         Err(e) => {
@@ -567,7 +571,14 @@ async fn update_all_api(
         scopes.into_iter().map(|scope| (scope, None)).collect()
     } else {
         debug!("Fullfilling request by generation");
-        match store.generate(payload.languages, scopes, true).await {
+
+        let client =
+            create_client().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        match store
+            .generate(payload.languages, scopes, true, client)
+            .await
+        {
             Ok(errors) => errors,
             Err(e) => {
                 error!("Could not generate: {e}");
