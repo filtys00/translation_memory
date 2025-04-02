@@ -26,11 +26,6 @@
 				--color-button-active: #3e90ff;
 				--color-button-disabled: #c7c7ce;
 				--color-button-text: #ffffff;
-				--color-button-destructive: #ff0000;
-				--color-button-destructive-hover: #f10000;
-				--color-button-destructive-active: #e80000;
-				--color-button-destructive-disabled: #c7c7ce;
-				--color-button-destructive-text: #ffffff;
 				--shadow: 0 3px 5px 3px rgba(15, 11, 11, 0.1);
 
 				/* Dark mode for testing */
@@ -311,22 +306,7 @@
 			#languagesAndScopes input[type="checkbox"]:disabled {
 				accent-color: var(--color-button-disabled);
 			}
-			#languagesAndScopes:not(.editLanguages) #newLanguageField,
-			#languagesAndScopes:not(.editLanguages) #cancelChangesButton,
-			#languagesAndScopes:not(.editLanguages) #saveChangesButton,
-			#languagesAndScopes:not(.editLanguages) .deleteLanguageButton,
-			.editLanguages #languages input[type="checkbox"],
-			.editLanguages #editLanguagesButton
-			{
-				display: none;
-			}
-			#newLanguageField {
-				width: 3rem;
-				margin-left: 1.7rem;
-
-				font-size: 1rem;
-			}
-			#languagesAndScopes:not(.editLanguages) #languages, #newLanguageField, #scopes {
+			#languages, #scopes {
 				margin-bottom: auto;
 			}
 
@@ -442,56 +422,6 @@
 				height: 1.5rem;
 			}
 
-			.smallButton {
-				font-size: 1rem !important;
-				width: 100%;
-				padding: 1px 0.75rem;
-				border: none;
-				border-radius: 1rem;
-				outline: none;
-
-				color: var(--color-button-text);
-				background-color: var(--color-button);
-
-				transition: all 100ms;
-			}
-			.smallButton:hover {
-				background-color: var(--color-button-hover);
-			}
-			.smallButton:active {
-				background-color: var(--color-button-active);
-			}
-			.smallButton:disabled {
-				background-color: var(--color-button-disabled);
-			}
-			.deleteLanguageButton {
-				width: 1.2rem;
-				height: 1.2rem;
-				padding: 0.1rem;
-				border: none;
-				border-radius: 50%;
-				outline: none;
-
-				transition: all 100ms;
-			}
-			:is(.deleteLanguageButton, .smallButton.destructive) {
-				color: var(--color-button-destructive-text);
-				background-color: var(--color-button-destructive);
-			}
-			:is(.deleteLanguageButton, .smallButton.destructive):hover {
-				background-color: var(--color-button-destructive-hover);
-			}
-			:is(.deleteLanguageButton, .smallButton.destructive):active {
-				background-color: var(--color-button-destructive-active);
-			}
-			:is(.deleteLanguageButton, .smallButton.destructive):disabled {
-				background-color: var(--color-button-destructive-disabled);
-			}
-			.deleteLanguageButton > img {
-				width: 1rem;
-				height: 1rem;
-			}
-			
 			@keyframes loading {
 				0% { transform: rotate(0deg); }
 				100% { transform: rotate(360deg); }
@@ -514,10 +444,6 @@
 								<span id="allLanguagesCheckboxLabel">All languages</span>
 							</label>
 							<ul id="languages"></ul>
-							<input id="newLanguageField" type="text">
-							<button class="smallButton" id="editLanguagesButton">Edit languages</button>
-							<button class="smallButton destructive" id="cancelChangesButton">Cancel</button>
-							<button class="smallButton" id="saveChangesButton">Save languages</button>
 						</div>
 						<div>
 							<label id="allScopesCheckboxContainer">
@@ -525,7 +451,6 @@
 								<span id="allScopesCheckboxLabel">All scopes</span>
 							</label>
 							<ul id="scopes"></ul>
-							<button class="smallButton" id="downloadMissingButton">Download missing</button>
 						</div>
 						<div id="loadingSpinner">
 							<img src="/icon/loading.svg">
@@ -564,12 +489,6 @@
 			const allScopesCheckboxLabel = document.getElementById("allScopesCheckboxLabel");
 			const allLanguagesCheckbox = document.getElementById("allLanguagesCheckbox");
 			const allLanguagesCheckboxLabel = document.getElementById("allLanguagesCheckboxLabel");
-
-			const editLanguagesButton = document.getElementById("editLanguagesButton");
-			const newLanguageField = document.getElementById("newLanguageField");
-			const cancelChangesButton = document.getElementById("cancelChangesButton");
-			const saveChangesButton = document.getElementById("saveChangesButton");
-			const downloadMissingButton = document.getElementById("downloadMissingButton");
 
 			const titles = document.getElementById("titles");
 			const originalsTitle = document.getElementById("originalsTitle");
@@ -620,10 +539,6 @@
 
 			allLanguagesCheckboxLabel.innerText = "Alle mål";
 			allScopesCheckboxLabel.innerText = "Alle vidder";
-			editLanguagesButton.innerText = "Endra mål";
-			cancelChangesButton.innerText = "Avbryt";
-			saveChangesButton.innerText = "Lagra mål";
-			downloadMissingButton.innerText = "Last ned manglande";
 
 			refreshAll();
 
@@ -678,18 +593,14 @@
 			};
 
 			window.onmousedown = e => {
-				if (languagesAndScopes.classList.contains("editLanguages")
-				 || languagesAndScopes.classList.contains("loading"))
-				{ return; }
+				if (languagesAndScopes.classList.contains("loading")) { return; }
 
 				if (!languagesAndScopes.contains(e.target)) {
 					languagesAndScopes.classList.remove("open");
 				};
 			};
 			languagesAndScopesButton.onclick = e => {
-				if (languagesAndScopes.classList.contains("editLanguages")
-				 || languagesAndScopes.classList.contains("loading"))
-				{ return; }
+				if (languagesAndScopes.classList.contains("loading")) { return; }
 
 				if (languagesAndScopes.classList.contains("open")) {
 					languagesAndScopes.classList.remove("open");
@@ -699,7 +610,7 @@
 			};
 
 			allLanguagesCheckbox.oninput = e => {
-				languageList.childNodes.forEach(e => e.childNodes[1].firstChild.checked = allLanguagesCheckbox.checked);
+				languageList.childNodes.forEach(e => e.firstChild.firstChild.checked = allLanguagesCheckbox.checked);
 				for (language in languageFilters) {
 					languageFilters[language] = allLanguagesCheckbox.checked;
 				}
@@ -716,101 +627,6 @@
 				}
 				refreshTranslations();
 			}
-
-			editLanguagesButton.onclick = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = true);
-				allLanguagesCheckbox.disabled = true;
-				allScopesCheckbox.disabled = true;
-				downloadMissingButton.disabled = true;
-				languagesAndScopes.classList.add("editLanguages");
-				newLanguageField.value = "";
-				newLanguageField.focus();
-				newLanguages = [...languages];
-				populateLanguages(languages);
-			};
-			cancelChangesButton.onclick = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = false);
-				allLanguagesCheckbox.disabled = false;
-				allScopesCheckbox.disabled = false;
-				downloadMissingButton.disabled = false;
-				languagesAndScopes.classList.remove("editLanguages");
-				populateLanguages(languages);
-			};
-			saveChangesButton.onclick = e => {
-				scopeList.childNodes.forEach(e => e.firstChild.firstChild.disabled = false);
-				allLanguagesCheckbox.disabled = false;
-				allScopesCheckbox.disabled = false;
-				downloadMissingButton.disabled = false;
-				languagesAndScopes.classList.add("loading");
-				languagesAndScopes.classList.remove("editLanguages");
-				populateLanguages(languages);
-
-				fetch("http://127.0.0.1:2013/update_all", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({ languages: newLanguages }),
-				}).then(
-					async response => {
-						if (response.status === 422) {
-							pushError("Ugyldig målkode", "Klarte ikkje oppdatera måla");
-						}
-						await refreshAll();
-						languagesAndScopes.classList.remove("loading");
-					},
-					e => {
-						console.error(e);
-						pushError(e, "Klarte ikkje oppdatera måla");
-						languagesAndScopes.classList.remove("loading");
-					},
-				)
-			};
-			newLanguageField.addEventListener("focusout", e => {
-				if (!newLanguageField.value) { return; }
-				newLanguages.push(newLanguageField.value);
-				newLanguageField.value = "";
-				populateLanguages(newLanguages);
-			});
-			newLanguageField.addEventListener("keypress", e => {
-				if (e.key !== "Enter") { return; }
-				if (!newLanguageField.value) { return; }
-				newLanguages.push(newLanguageField.value);
-				newLanguageField.value = "";
-				populateLanguages(newLanguages);
-			});
-			downloadMissingButton.onclick = e => {
-				languagesAndScopes.classList.add("loading");
-
-				fetch("http://127.0.0.1:2013/update", {
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-					},
-					body: JSON.stringify({
-						languages: Object.keys(languageFilters),
-						scopes: Object.entries(scopeNames).filter(([k, { downloaded }]) => !downloaded).map(([k]) => k),
-					}),
-				}).then(
-					async response => {
-						await refreshAll();
-
-						const errors = JSON.parse(await response.text());
-						for (const [scope, error] of Object.entries(errors)) {
-							if (error === null) { continue; }
-
-							pushError(error, `Klarte ikkje lasta ned manglande vidd «${scopeNames[scope]?.name ?? scope}»`)
-						}
-
-						languagesAndScopes.classList.remove("loading");
-					},
-					e => {
-						console.error(e);
-						pushError(e, "Klarte ikkje lasta ned manglande vidder");
-						languagesAndScopes.classList.remove("loading");
-					},
-				)
-			};
 
 			// Functions
 
@@ -865,19 +681,6 @@
 
 				for (let lang of languages.toSorted()) {
 					let li = document.createElement("li");
-
-					let deleteButton = document.createElement("button");
-					deleteButton.classList.add("deleteLanguageButton");
-					deleteButton.onclick = e => {
-						const index = newLanguages.indexOf(lang);
-						newLanguages.splice(index, 1);
-						populateLanguages(newLanguages);
-					};
-					let deleteIcon = document.createElement("img");
-					deleteIcon.src = "/icon/remove.svg";
-					deleteIcon.alt = "Remove language from list";
-					deleteButton.appendChild(deleteIcon);
-					li.appendChild(deleteButton);
 
 					let label = document.createElement("label");
 
@@ -946,17 +749,6 @@
 					li.appendChild(label)
 					scopeList.appendChild(li);
 				}
-
-				let missingDownloads = scopes.reduce((acc, { downloaded, scopes, name }) => {
-					if (acc) { return true; }
-
-					if (scopes) {
-						return scopes.reduce((acc, { downloaded }) => acc || !downloaded, false);
-					} else {
-						return !downloaded;
-					}
-				}, false);
-				downloadMissingButton.style.display = missingDownloads ? "" : "none";
 			}
 
 			function updateCheckbox(checkbox, filters) {

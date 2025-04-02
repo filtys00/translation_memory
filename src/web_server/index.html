@@ -1,0 +1,61 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at https://mozilla.org/MPL/2.0/. -->
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+		<title>Translation Memory</title>
+		<link rel="icon" type="image/svg+xml" href="/icon/language.svg">
+		<link rel="stylesheet", href="/style.css">
+		<script defer src="/script.js"></script>
+	</head>
+	<body>
+		<header>
+			<div id="filters">
+				<div id="search">
+					<img id="searchIcon" src="/icon/search.svg">
+					<input id="searchField" type="text" placeholder="Search">
+				</div>
+				<div id="languagesAndScopes">
+					<button id="languagesAndScopesButton">Languages & Scopes</button>
+					<div id="languagesAndScopesDialog">
+						<div>
+							<label id="allLanguagesCheckboxContainer">
+								<input id="allLanguagesCheckbox" type="checkbox">
+								<span id="allLanguagesCheckboxLabel">All languages</span>
+							</label>
+							<ul id="languages"></ul>
+						</div>
+						<div>
+							<label id="allScopesCheckboxContainer">
+								<input id="allScopesCheckbox" type="checkbox">
+								<span id="allScopesCheckboxLabel">All scopes</span>
+							</label>
+							<ul id="scopes"></ul>
+						</div>
+						<div id="loadingSpinner">
+							<img src="/icon/loading.svg">
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div id="titles">
+				<p id="originalsTitle">Original</p>
+				<p id="translationsTitle">Translation</p>
+				<p id="translationCount"></p>
+				<img id="translationSpinner" src="/icon/loading.svg">
+			</div>
+		</header>
+
+		<ul id="translations"></ul>
+
+		<div id="noTranslations">No results</div>
+
+		<ul id="errors"></ul>
+	</body>
+</html>

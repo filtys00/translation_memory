@@ -2,45 +2,43 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{
-    borrow::Cow,
-    collections::{HashMap, HashSet},
-    str::FromStr,
-    sync::Arc,
-};
+use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc};
 
 use axum::{
-    extract::{Query, State},
-    http::{header, HeaderValue, StatusCode},
-    response::{Html, IntoResponse, Response},
-    routing::{get, post},
     Json, Router,
+    extract::{Query, State},
+    http::{HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+    routing::get,
 };
-use log::{debug, error, trace};
+use log::{debug, trace};
 use regex::Regex;
+use rust_embed::Embed;
 use serde::{
-    de::{self, Unexpected},
     Deserialize, Deserializer, Serialize,
+    de::{self, Unexpected},
 };
 use serde_json::json;
 use tokio::{net::TcpListener, sync::Mutex};
 use translation_memory::TranslationStore;
 use unic_langid::LanguageIdentifier;
 
-use crate::create_client;
+#[derive(Embed)]
+#[folder = "src/web_server"]
+struct Assets;
 
 pub async fn web_server(store: Arc<Mutex<TranslationStore>>) -> anyhow::Result<()> {
     let app = Router::new()
-        .route("/", get(main_page))
-        .route("/query", get(query_api))
-        .route("/metadata", get(metadata_api))
-        .route("/update", post(update_api))
-        .route("/update_all", post(update_all_api))
-        .route("/icon/search.svg", get(search_icon))
+        .route("/", get(index))
+        .route("/style.css", get(style))
+        .route("/script.js", get(script))
+        .route("/favicon.ico", get(language_icon))
         .route("/icon/language.svg", get(language_icon))
         .route("/icon/loading.svg", get(loading_icon))
         .route("/icon/remove.svg", get(remove_icon))
-        .route("/favicon.ico", get(language_icon))
+        .route("/icon/search.svg", get(search_icon))
+        .route("/metadata", get(metadata_api))
+        .route("/query", get(query_api))
         .with_state(store);
 
     let listener = TcpListener::bind("127.0.0.1:2013").await?;
@@ -49,23 +47,29 @@ pub async fn web_server(store: Arc<Mutex<TranslationStore>>) -> anyhow::Result<(
     Ok(())
 }
 
-#[cfg(debug_assertions)]
-async fn main_page() -> Html<String> {
-    use std::{fs::File, io::Read};
-
-    debug!("Request for '/' (read from file)");
-
-    let mut file = File::open("src/page.html").unwrap();
-    let mut page = String::new();
-    file.read_to_string(&mut page).unwrap();
-    Html(page)
+macro_rules! static_page {
+    ($name:ident, $file_path:literal, $content_type:literal) => {
+        async fn $name() -> Response {
+            debug!(concat!("Request for '", $file_path, "'"));
+            let content_type_header = (
+                header::CONTENT_TYPE,
+                HeaderValue::from_static($content_type),
+            );
+            Assets::get($file_path)
+                .map(|file| ([content_type_header], file.data.to_vec()))
+                .ok_or(())
+                .into_response()
+        }
+    };
 }
 
-#[cfg(not(debug_assertions))]
-async fn main_page() -> Html<&'static str> {
-    debug!("Request for '/'");
-    Html(include_str!("page.html"))
-}
+static_page!(index, "index.html", "text/html");
+static_page!(style, "style.css", "text/css");
+static_page!(script, "script.js", "text/javascript");
+static_page!(language_icon, "language.svg", "image/svg+xml");
+static_page!(loading_icon, "loading.svg", "image/svg+xml");
+static_page!(remove_icon, "remove.svg", "image/svg+xml");
+static_page!(search_icon, "search.svg", "image/svg+xml");
 
 #[derive(Deserialize, Serialize)]
 struct QueryParams {
@@ -466,180 +470,4 @@ async fn metadata_api(
         "scopes": scopes,
         "languages": store.languages(),
     })))
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct UpdatePayload {
-    languages: Vec<LanguageIdentifier>,
-    scopes: Vec<String>,
-}
-
-async fn update_api(
-    State(store): State<Arc<Mutex<TranslationStore>>>,
-    Json(payload): Json<UpdatePayload>,
-) -> Result<Json<HashMap<String, Option<String>>>, (StatusCode, String)> {
-    debug!(
-        "Request for '/update':\
-        \n{{\
-        \n    languages: [{}],\
-        \n    scopes: [{}\
-        \n    ]\
-        \n}}",
-        payload
-            .languages
-            .iter()
-            .map(|lang| format!("\"{lang}\""))
-            .reduce(|a, b| a + ", " + &b)
-            .unwrap_or_default(),
-        payload.scopes.iter().fold(String::new(), |acc, scope| acc
-            + "\n        \""
-            + scope
-            + "\","),
-    );
-
-    let mut store = store.lock().await;
-
-    let client = create_client().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let errors = match store
-        .generate(payload.languages, payload.scopes, false, client)
-        .await
-    {
-        Err(e) => {
-            error!("Could not generate: {e}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
-        }
-        Ok(errors) => errors,
-    };
-
-    if errors.values().any(|error| error.is_none()) {
-        debug!("Writing translations to disk");
-        if let Err(e) = store.save_translations() {
-            error!("Could not save translations: {e}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
-        }
-    } else {
-        debug!("Skipping writing translations to disk; no translations were updated");
-    }
-
-    Ok(Json(errors))
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct UpdateAllPayload {
-    languages: Vec<LanguageIdentifier>,
-}
-
-async fn update_all_api(
-    State(store): State<Arc<Mutex<TranslationStore>>>,
-    Json(payload): Json<UpdateAllPayload>,
-) -> Result<Json<HashMap<String, Option<String>>>, (StatusCode, String)> {
-    debug!(
-        "Request for '/update_all':\
-        \n{{\
-        \n    languages: [{}]\
-        \n}}",
-        payload
-            .languages
-            .iter()
-            .map(|lang| format!("\"{lang}\""))
-            .reduce(|a, b| a + ", " + &b)
-            .unwrap_or_default(),
-    );
-
-    let mut store = store.lock().await;
-
-    let scopes: Vec<String> = store
-        .providers()
-        .map(|provider| provider.id().to_string())
-        .collect();
-
-    let errors = if payload
-        .languages
-        .iter()
-        .collect::<HashSet<_>>()
-        .difference(&store.languages())
-        .count()
-        == 0
-    {
-        debug!("Fullfilling request by removal");
-        for provider_cache in store.provider_caches.values_mut() {
-            for translation_bundle in provider_cache.translation_bundles_mut() {
-                translation_bundle.retain(|lang_id, _| payload.languages.contains(lang_id));
-            }
-        }
-        scopes.into_iter().map(|scope| (scope, None)).collect()
-    } else {
-        debug!("Fullfilling request by generation");
-
-        let client =
-            create_client().map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        match store
-            .generate(payload.languages, scopes, true, client)
-            .await
-        {
-            Ok(errors) => errors,
-            Err(e) => {
-                error!("Could not generate: {e}");
-                return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
-            }
-        }
-    };
-
-    if errors.values().any(|error| error.is_none()) {
-        debug!("Writing translations to disk");
-        if let Err(e) = store.save_translations() {
-            error!("Could not save translations: {e}");
-            return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
-        }
-    } else {
-        debug!("Skipping writing translations to disk; no translations were updated");
-    }
-
-    Ok(Json(errors))
-}
-
-async fn search_icon() -> Response {
-    debug!("Request for '/icon/search.svg'");
-    (
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("image/svg+xml"),
-        )],
-        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.4.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2023 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>"#,
-    ).into_response()
-}
-
-async fn language_icon() -> Response {
-    debug!("Request for '/icon/language.svg'");
-    (
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("image/svg+xml"),
-        )],
-        r#"<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 640 512"><!--! Font Awesome Free 6.4.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2023 Fonticons, Inc. --><path d="M0 128C0 92.7 28.7 64 64 64H256h48 16H576c35.3 0 64 28.7 64 64V384c0 35.3-28.7 64-64 64H320 304 256 64c-35.3 0-64-28.7-64-64V128zm320 0V384H576V128H320zM178.3 175.9c-3.2-7.2-10.4-11.9-18.3-11.9s-15.1 4.7-18.3 11.9l-64 144c-4.5 10.1 .1 21.9 10.2 26.4s21.9-.1 26.4-10.2l8.9-20.1h73.6l8.9 20.1c4.5 10.1 16.3 14.6 26.4 10.2s14.6-16.3 10.2-26.4l-64-144zM160 233.2L179 276H141l19-42.8zM448 164c11 0 20 9 20 20v4h44 16c11 0 20 9 20 20s-9 20-20 20h-2l-1.6 4.5c-8.9 24.4-22.4 46.6-39.6 65.4c.9 .6 1.8 1.1 2.7 1.6l18.9 11.3c9.5 5.7 12.5 18 6.9 27.4s-18 12.5-27.4 6.9l-18.9-11.3c-4.5-2.7-8.8-5.5-13.1-8.5c-10.6 7.5-21.9 14-34 19.4l-3.6 1.6c-10.1 4.5-21.9-.1-26.4-10.2s.1-21.9 10.2-26.4l3.6-1.6c6.4-2.9 12.6-6.1 18.5-9.8l-12.2-12.2c-7.8-7.8-7.8-20.5 0-28.3s20.5-7.8 28.3 0l14.6 14.6 .5 .5c12.4-13.1 22.5-28.3 29.8-45H448 376c-11 0-20-9-20-20s9-20 20-20h52v-4c0-11 9-20 20-20z"/></svg>"#,
-    ).into_response()
-}
-
-async fn loading_icon() -> Response {
-    debug!("Request for '/icon/loading.svg'");
-    (
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("image/svg+xml"),
-        )],
-        r#"<svg xmlns="http://www.w3.org/2000/svg" height="16" width="16" viewBox="0 0 512 512"><!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2023 Fonticons, Inc.--><path d="M304 48a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zm0 416a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zM48 304a48 48 0 1 0 0-96 48 48 0 1 0 0 96zm464-48a48 48 0 1 0 -96 0 48 48 0 1 0 96 0zM142.9 437A48 48 0 1 0 75 369.1 48 48 0 1 0 142.9 437zm0-294.2A48 48 0 1 0 75 75a48 48 0 1 0 67.9 67.9zM369.1 437A48 48 0 1 0 437 369.1 48 48 0 1 0 369.1 437z"/></svg>"#,
-    ).into_response()
-}
-
-async fn remove_icon() -> Response {
-    debug!("Request for '/icon/remove.svg'");
-    (
-        [(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("image/svg+xml"),
-        )],
-        r#"<svg xmlns="http://www.w3.org/2000/svg" height="1em" viewBox="0 0 384 512" fill="white"><!--! Font Awesome Free 6.4.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license (Commercial License) Copyright 2023 Fonticons, Inc. --><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>"#,
-    ).into_response()
 }
