@@ -15,7 +15,7 @@ use clap::{Parser, Subcommand};
 use log::{info, warn};
 use termcolor::{Color, ColorSpec, StandardStream, WriteColor};
 use tokio::{
-    io::{stdin, AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncReadExt, BufReader, stdin},
     select,
     sync::Mutex,
 };
@@ -272,7 +272,9 @@ pub async fn perform_command(
                                 info!("Removed language '{lang_id}' from scope '{provider_id}'")
                             }
                             Some(false) => {
-                                warn!("Scope '{provider_id}' has no translations for language '{lang_id}'")
+                                warn!(
+                                    "Scope '{provider_id}' has no translations for language '{lang_id}'"
+                                )
                             }
                             None => warn!(
                                 "Scope '{provider_id}' has not generated language '{lang_id}'"
@@ -497,7 +499,7 @@ pub async fn perform_command(
                             .all(|translations| {
                                 translations
                                     .as_ref()
-                                    .map_or(true, |translations| translations.is_empty())
+                                    .is_none_or(|translations| translations.is_empty())
                             })
                     });
                 empty_providers.sort_by_key(|provider| provider.id());

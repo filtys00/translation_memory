@@ -13,15 +13,15 @@ use std::{
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use flate2::{read::GzDecoder, write::GzEncoder, Compression};
+use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use log::{debug, trace, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
 use super::{
-    merge_messages, simple_provider, ProviderCache, ProviderCacheMultiple, SimpleProvider,
-    Translation, TranslationProvider, TranslationStore,
+    ProviderCache, ProviderCacheMultiple, SimpleProvider, Translation, TranslationProvider,
+    TranslationStore, merge_messages, simple_provider,
 };
 
 /// The currently used version of the cache file format.
@@ -110,7 +110,7 @@ impl TranslationStore {
             .iter()
             .filter(|(provider_id, _)| {
                 self.provider(provider_id)
-                    .map_or(false, |provider| !provider.temporary())
+                    .is_some_and(|provider| !provider.temporary())
             })
             .collect();
 

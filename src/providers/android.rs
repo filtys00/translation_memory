@@ -6,15 +6,15 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
 use base64::{
+    Engine,
     alphabet::Alphabet,
     engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
-    Engine,
 };
-use quick_xml::{events::Event, Reader};
+use quick_xml::{Reader, events::Event};
 use reqwest::{Client, Url};
 use unic_langid::LanguageIdentifier;
 
-use super::{lang_id_to_string, unescape, TranslationMessages};
+use super::{TranslationMessages, lang_id_to_string, unescape};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
@@ -51,7 +51,7 @@ pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
                 if e.attributes()
                     .filter_map(|attr| attr.ok())
                     .find(|attr| attr.key.as_ref() == b"translatable")
-                    .map_or(false, |attr| attr.value.as_ref() == b"false")
+                    .is_some_and(|attr| attr.value.as_ref() == b"false")
                 {
                     comment = None;
                     continue;

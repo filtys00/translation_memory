@@ -13,13 +13,13 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
-use log::{error, info, Level, LevelFilter};
+use log::{Level, LevelFilter, error, info};
 use reqwest::Client;
 use termcolor::{ColorChoice, StandardStream};
 use tokio::sync::Mutex;
 use translation_memory::TranslationStore;
 
-use self::command::{perform_command, Command};
+use self::command::{Command, perform_command};
 
 const DEFAULT_CACHE_PATH: &str = "translations.bin";
 const CONFIG_PATH: &str = "translations.toml";
@@ -144,9 +144,7 @@ async fn main() -> ExitCode {
     let store = Arc::new(Mutex::new(store));
     let console = Arc::new(Mutex::new(StandardStream::stderr(ColorChoice::Auto)));
 
-    let command = args
-        .command
-        .unwrap_or_else(|| Command::Run { open_browser: true });
+    let command = args.command.unwrap_or(Command::Run { open_browser: true });
     let result = perform_command(command, console, term_width, store).await;
     if let Err(e) = result {
         error!("{e}");

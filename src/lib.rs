@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
-use self::providers::{default_providers, merge_messages, simple_provider, SimpleProvider};
+use self::providers::{SimpleProvider, default_providers, merge_messages, simple_provider};
 
 pub struct TranslationStore {
     providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
@@ -182,13 +182,13 @@ impl TranslationStore {
                 continue;
             }
 
-            let unfinished =
-                self.provider_caches
-                    .get(&provider_id)
-                    .map_or(false, |provider_cache| match provider_cache {
-                        ProviderCache::Single(_) => false,
-                        ProviderCache::Multiple(multiple) => !multiple.finished,
-                    });
+            let unfinished = self
+                .provider_caches
+                .get(&provider_id)
+                .is_some_and(|provider_cache| match provider_cache {
+                    ProviderCache::Single(_) => false,
+                    ProviderCache::Multiple(multiple) => !multiple.finished,
+                });
             let previous = if unfinished {
                 let previous = self.provider_caches.remove(&provider_id);
                 match previous {
