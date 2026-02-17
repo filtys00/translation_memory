@@ -4,7 +4,7 @@
 
 use std::{
     collections::BTreeMap,
-    io::{BufReader, Cursor},
+    io::{BufReader, Cursor, Read},
 };
 
 use anyhow::anyhow;
@@ -37,8 +37,8 @@ impl TranslationProvider for EuProvider {
         lang_ids: Vec<LanguageIdentifier>,
         client: Client,
     ) -> anyhow::Result<ProviderCache> {
-        fn parse_tmx(
-            zip_file: ZipFile,
+        fn parse_tmx<R: Read>(
+            zip_file: ZipFile<R>,
             lang_ids: &[LanguageIdentifier],
             translation_bundle: &mut TranslationBundle,
             en: &LanguageIdentifier,
