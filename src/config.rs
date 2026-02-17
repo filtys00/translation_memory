@@ -3,33 +3,72 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, hash_map::Entry},
     fs::{self, File},
-    io::{BufReader, BufWriter, Read, Write},
+    io::Read,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
-    time::Instant,
+    time::{Instant, SystemTime},
 };
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
-use flate2::{Compression, read::GzDecoder, write::GzEncoder};
 use log::{debug, trace, warn};
 use reqwest::Client;
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
 use super::{
-    ProviderCache, ProviderCacheMultiple, SimpleProvider, Translation, TranslationProvider,
+    ProviderCache, ProviderCacheMultiple, SimpleProvider, Translation, TranslationBundle, TranslationProvider,
     TranslationStore, merge_messages, simple_provider,
 };
 
-/// The currently used version of the cache file format.
-///
-/// # Version changes
-/// - `0` => `1`:
-///   Add `ProviderCache` together with `ProviderCache::Multiple`
-const CURRENT_CACHE_FILE_VERSION: u8 = 1;
+/// SQL to initialize the SQLite database.
+const INIT_SQL: &str = "
+CREATE TABLE Providers (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    group_name TEXT,
+    last_finished INTEGER
+) STRICT;
+
+CREATE TABLE Sources (
+    id INTEGER PRIMARY KEY,
+
+    provider_id INTEGER NOT NULL,
+
+    url         TEXT NOT NULL UNIQUE,
+    downloaded  INTEGER NOT NULL,
+
+    FOREIGN KEY (provider_id) REFERENCES Providers(id)
+) STRICT;
+
+CREATE TABLE Languages (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE
+) STRICT;
+
+CREATE TABLE Translations (
+    id INTEGER PRIMARY KEY,
+
+    source_id   INTEGER NOT NULL,
+    language_id INTEGER NOT NULL,
+
+    key         TEXT,
+    original    TEXT NOT NULL,
+    translation TEXT NOT NULL,
+    comment     TEXT,
+
+    FOREIGN KEY (source_id)   REFERENCES Sources(id),
+    FOREIGN KEY (language_id) REFERENCES Languages(id)
+) STRICT;
+
+CREATE INDEX Translations_SourceId ON Translations (source_id);
+CREATE INDEX Sources_ProviderId ON Sources (provider_id);
+";
 
 #[derive(Deserialize, Serialize)]
 struct Config {
@@ -98,27 +137,80 @@ impl TranslationStore {
         };
         temp_save_path.set_file_name(format!("~{}", file_name.to_string_lossy()));
 
-        let file = File::create(&temp_save_path).map_err(|e| {
-            anyhow!("Could not create temporary save file '{temp_save_path:?}': {e}")
+        if temp_save_path.exists() {
+            fs::remove_file(&temp_save_path).map_err(|e| {
+                anyhow!("Could not delete former temporary database file '{temp_save_path:?}': {e}")
+            })?;
+        }
+        let conn = Connection::open(&temp_save_path).map_err(|e| {
+            anyhow!("Could not create temporary database file '{temp_save_path:?}': {e}")
         })?;
-        let mut writer = BufWriter::new(file);
-        writer.write_all(&[CURRENT_CACHE_FILE_VERSION])?;
-        let writer = GzEncoder::new(writer, Compression::fast());
+        conn.execute_batch(INIT_SQL)?;
 
-        let translations: HashMap<&String, &ProviderCache> = self
+        let provider_caches = self
             .provider_caches
             .iter()
             .filter(|(provider_id, _)| {
                 self.provider(provider_id)
                     .is_some_and(|provider| !provider.temporary())
-            })
-            .collect();
+            });
 
-        bincode::serialize_into(writer, &translations)?;
+        let mut language_indices: HashMap<&LanguageIdentifier, i64> = HashMap::new();
+        let mut provider_indices: HashMap<&String, i64> = HashMap::new();
+        let mut source_indices: HashMap<&String, i64> = HashMap::new();
+
+        conn.execute("BEGIN", ())?;
+        for (provider_id, provider_cache) in provider_caches {
+            if let Entry::Vacant(e) = provider_indices.entry(provider_id) {
+                let provider = self.provider(provider_id)
+                    .ok_or_else(|| anyhow!("Provider '{provider_id}' has translations, but does not exist"))?;
+                conn.execute(
+                    "INSERT INTO Providers (code, name, group_name) VALUES (?, ?, ?)",
+                    (provider_id, provider.name(), provider.group_name())
+                )?;
+                let rowid = conn.query_one("SELECT last_insert_rowid()", (), |r| r.get(0))?;
+                e.insert(rowid);
+            }
+
+            for (language_id, translations) in provider_cache.translation_bundles().flatten() {
+                let Some(translations) = translations else { continue; };
+
+                if let Entry::Vacant(e) = language_indices.entry(language_id) {
+                    conn.execute("INSERT INTO Languages (code) VALUES (?)", [language_id.to_string()])?;
+                    let rowid = conn.query_one("SELECT last_insert_rowid()", (), |r| r.get(0))?;
+                    e.insert(rowid);
+                }
+
+                for translation in translations {
+                    if let Entry::Vacant(e) = source_indices.entry(&translation.source) {
+                        conn.execute("INSERT INTO Sources (provider_id, url, downloaded) VALUES (?, ?, ?)", (
+                            provider_indices.get(provider_id),
+                            &translation.source,
+                            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs() as u32
+                        ))?;
+                        let rowid = conn.query_one("SELECT last_insert_rowid()", (), |a| a.get(0))?;
+                        e.insert(rowid);
+                    }
+                    conn.execute(
+                        "INSERT INTO Translations (source_id, language_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?, ?)",
+                        params![
+                            source_indices.get(&translation.source),
+                            language_indices.get(language_id),
+                            translation.key,
+                            translation.original,
+                            translation.translation,
+                            translation.comment,
+                        ],
+                    )?;
+                }
+            }
+        }
+        conn.execute("COMMIT", ())?;
+        conn.close().map_err(|(_, e)| e)?; // Cannot move file without closing it
 
         fs::rename(&temp_save_path, &self.save_path).map_err(|e| {
             anyhow!(
-                "Could not move temporary save file from '{temp_save_path:?}' to '{:?}': {e}",
+                "Could not move temporary database file from '{temp_save_path:?}' to '{:?}': {e}",
                 self.save_path
             )
         })?;
@@ -137,36 +229,59 @@ impl TranslationStore {
 
         let now = Instant::now();
 
-        let file = File::open(&self.save_path)
-            .map_err(|e| anyhow!("Could not open file {:?}: {e}", self.save_path))?;
-        let mut reader = BufReader::new(file);
+        let conn = Connection::open(&self.save_path)
+            .map_err(|e| anyhow!("Could not open database file {:?}: {e}", self.save_path))?;
 
-        let mut version = [0; 1];
-        reader.read_exact(&mut version)?;
-        let reader = GzDecoder::new(reader);
-        let mut provider_caches = match version[0] {
-            0 => {
-                let translations: HashMap<
-                    String,
-                    BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>,
-                > = bincode::deserialize_from(reader)?;
-                translations
-                    .into_iter()
-                    .map(|(id, scope)| (id, ProviderCache::Single(scope)))
-                    .collect()
+        let mut provider_caches: HashMap<String, ProviderCache> = HashMap::new();
+
+        let mut languages_stmt = conn.prepare("SELECT id, code FROM Languages")?;
+        let languages: Vec<_> = languages_stmt
+            .query_map((), |row| {
+                let id: i64 = row.get(0)?;
+                let code = LanguageIdentifier::from_str(row.get_ref(1)?.as_str()?).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
+                })?;
+                Ok((id, code))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+
+        let mut providers_stmt = conn.prepare("SELECT id, code FROM Providers")?;
+        let providers: Vec<_> = providers_stmt
+            .query_map((), |row| {
+                let id: i64 = row.get(0)?;
+                let code: String = row.get(1)?;
+                Ok((id, code))
+            })?
+            .collect::<rusqlite::Result<_>>()?;
+
+        let mut translations_stmt = conn.prepare("
+            SELECT Sources.url as source, key, original, translation, comment FROM Translations
+            JOIN Sources ON Translations.source_id = Sources.id
+            WHERE Sources.provider_id = ? AND language_id = ?
+        ")?;
+
+        for (provider_id, provider_code) in providers {
+            let mut bundle: TranslationBundle = BTreeMap::new();
+
+            for (language_id, language_code) in &languages {
+                let translations: Vec<Translation> = translations_stmt
+                    .query_map((provider_id, language_id), |row| Ok(Translation {
+                        source: row.get(0)?,
+                        key: row.get(1)?,
+                        original: row.get(2)?,
+                        translation: row.get(3)?,
+                        comment: row.get(4)?,
+                    }))?
+                    .collect::<rusqlite::Result<_>>()?;
+
+                let translations = if translations.is_empty() { None } else { Some(translations) };
+                bundle.insert(language_code.clone(), translations);
             }
-            CURRENT_CACHE_FILE_VERSION => {
-                let translations: HashMap<String, ProviderCache> =
-                    bincode::deserialize_from(reader)?;
-                translations
-            }
-            version if version > CURRENT_CACHE_FILE_VERSION => {
-                bail!("Cache file version '{version}' is too new");
-            }
-            version => {
-                bail!("Cache file version '{version}' is unsupported");
-            }
-        };
+
+            provider_caches.insert(provider_code.clone(), ProviderCache::Single(bundle));
+
+            trace!("Read '{provider_code}' in {} seconds", now.elapsed().as_secs());
+        }
 
         debug!("Read cache file in {} seconds", now.elapsed().as_secs());
 

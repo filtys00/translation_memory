@@ -21,7 +21,7 @@ use translation_memory::TranslationStore;
 
 use self::command::{Command, perform_command};
 
-const DEFAULT_CACHE_PATH: &str = "translations.bin";
+const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
 const CONFIG_PATH: &str = "translations.toml";
 
 #[derive(Clone, Debug, ValueEnum)]

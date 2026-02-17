@@ -1,10 +1,10 @@
-# Build directory
+# Development
+/.vscode
 /target
 
-# IDE directory
-/.vscode
-
-# Used by program
-/translations.bin
-/translations.toml
+# Program
+/~*
+/*.sqlite
+/*.bin
 /translations
+/translations.toml

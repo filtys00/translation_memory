@@ -18,7 +18,6 @@ use anyhow::bail;
 use async_trait::async_trait;
 use log::{debug, error};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
@@ -30,13 +29,13 @@ pub struct TranslationStore {
     pub provider_caches: BTreeMap<String, ProviderCache>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug)]
 pub enum ProviderCache {
     Single(TranslationBundle),
     Multiple(ProviderCacheMultiple),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug)]
 pub struct ProviderCacheMultiple {
     /// If all available translation bundles have been added to `translation_bundles`.
     pub finished: bool,
@@ -45,7 +44,7 @@ pub struct ProviderCacheMultiple {
 
 pub type TranslationBundle = BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Translation {
     pub original: String,
     pub translation: String,
