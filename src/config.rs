@@ -27,43 +27,51 @@ use super::{
 
 /// SQL to initialize the SQLite database.
 const INIT_SQL: &str = "
+CREATE TABLE Languages (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE
+) STRICT;
+
 CREATE TABLE Providers (
     id INTEGER PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE,
-    name TEXT NOT NULL,
+    from_file  INTEGER NOT NULL DEFAULT 0,
+    code       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
     group_name TEXT,
-    last_finished INTEGER
+    downloaded INTEGER NOT NULL DEFAULT 0,
+    failed     INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE TABLE Sources (
     id INTEGER PRIMARY KEY,
 
     provider_id INTEGER NOT NULL,
+    language_id INTEGER NOT NULL,
 
-    url         TEXT NOT NULL UNIQUE,
-    downloaded  INTEGER NOT NULL,
+    originals_url     TEXT UNIQUE,
+    translations_url  TEXT NOT NULL UNIQUE,
 
-    FOREIGN KEY (provider_id) REFERENCES Providers(id)
-) STRICT;
+    downloaded        INTEGER,
+    originals_text    TEXT,
+    translations_text TEXT,
 
-CREATE TABLE Languages (
-    id INTEGER PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE
+    failed            INTEGER NOT NULL DEFAULT 0,
+
+    FOREIGN KEY (provider_id) REFERENCES Providers(id),
+    FOREIGN KEY (language_id) REFERENCES Languages(id)
 ) STRICT;
 
 CREATE TABLE Translations (
     id INTEGER PRIMARY KEY,
 
     source_id   INTEGER NOT NULL,
-    language_id INTEGER NOT NULL,
 
     key         TEXT,
     original    TEXT NOT NULL,
     translation TEXT NOT NULL,
     comment     TEXT,
 
-    FOREIGN KEY (source_id)   REFERENCES Sources(id),
-    FOREIGN KEY (language_id) REFERENCES Languages(id)
+    FOREIGN KEY (source_id)   REFERENCES Sources(id)
 ) STRICT;
 
 CREATE INDEX Translations_SourceId ON Translations (source_id);
@@ -162,12 +170,7 @@ impl TranslationStore {
         conn.execute("BEGIN", ())?;
         for (provider_id, provider_cache) in provider_caches {
             if let Entry::Vacant(e) = provider_indices.entry(provider_id) {
-                let provider = self.provider(provider_id)
-                    .ok_or_else(|| anyhow!("Provider '{provider_id}' has translations, but does not exist"))?;
-                conn.execute(
-                    "INSERT INTO Providers (code, name, group_name) VALUES (?, ?, ?)",
-                    (provider_id, provider.name(), provider.group_name())
-                )?;
+                conn.execute("INSERT INTO Providers (code) VALUES (?)", [provider_id])?;
                 let rowid = conn.query_one("SELECT last_insert_rowid()", (), |r| r.get(0))?;
                 e.insert(rowid);
             }
@@ -183,8 +186,9 @@ impl TranslationStore {
 
                 for translation in translations {
                     if let Entry::Vacant(e) = source_indices.entry(&translation.source) {
-                        conn.execute("INSERT INTO Sources (provider_id, url, downloaded) VALUES (?, ?, ?)", (
+                        conn.execute("INSERT INTO Sources (provider_id, language_id, translations_url, downloaded) VALUES (?, ?, ?, ?)", (
                             provider_indices.get(provider_id),
+                            language_indices.get(language_id),
                             &translation.source,
                             SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs() as u32
                         ))?;
@@ -192,10 +196,9 @@ impl TranslationStore {
                         e.insert(rowid);
                     }
                     conn.execute(
-                        "INSERT INTO Translations (source_id, language_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO Translations (source_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?)",
                         params![
                             source_indices.get(&translation.source),
-                            language_indices.get(language_id),
                             translation.key,
                             translation.original,
                             translation.translation,
@@ -255,9 +258,9 @@ impl TranslationStore {
             .collect::<rusqlite::Result<_>>()?;
 
         let mut translations_stmt = conn.prepare("
-            SELECT Sources.url as source, key, original, translation, comment FROM Translations
+            SELECT Sources.translations_url as source, key, original, translation, comment FROM Translations
             JOIN Sources ON Translations.source_id = Sources.id
-            WHERE Sources.provider_id = ? AND language_id = ?
+            WHERE Sources.provider_id = ? AND Sources.language_id = ?
         ")?;
 
         for (provider_id, provider_code) in providers {
