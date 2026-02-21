@@ -54,10 +54,8 @@ pub fn parse_dark_reader(text: String) -> anyhow::Result<TranslationMessages> {
     let mut value: Option<String> = None;
     for line in text.lines() {
         if line.starts_with('@') {
-            if let Some(key) = key {
-                if let Some(value) = value {
-                    translations.insert(key, (value.trim_end_matches('\n').to_string(), None));
-                }
+            if let Some(key) = key && let Some(value) = value {
+                translations.insert(key, (value.trim_end_matches('\n').to_string(), None));
             }
 
             key = Some(line.to_string());
@@ -74,10 +72,8 @@ pub fn parse_dark_reader(text: String) -> anyhow::Result<TranslationMessages> {
         value.push_str(line);
     }
 
-    if let Some(key) = key {
-        if let Some(value) = value {
-            translations.insert(key, (value.trim_end_matches('\n').to_string(), None));
-        }
+    if let Some(key) = key && let Some(value) = value {
+        translations.insert(key, (value.trim_end_matches('\n').to_string(), None));
     }
 
     Ok(translations)

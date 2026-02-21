@@ -36,23 +36,21 @@ pub fn parse_dtd(text: String) -> anyhow::Result<TranslationMessages> {
             continue;
         }
 
-        if let Some(line) = line.strip_prefix("<!ENTITY ") {
-            if let Some(line) = line.strip_suffix('>') {
-                if let Some((key, value)) = line.trim().split_once(' ') {
-                    if messages.contains_key(key) {
-                        bail!("Duplicate key: {key}");
-                    }
-                    if let Some(value) = value.trim_start().strip_prefix('"') {
-                        if let Some(message) = value.trim_end().strip_suffix('"') {
-                            messages.insert(
-                                key.to_string(),
-                                (message.to_string(), comment.1.map(|c| c.to_string())),
-                            );
-                            comment = (false, None);
-                            continue;
-                        }
-                    }
-                }
+        let entity = line.strip_prefix("<!ENTITY ")
+            .and_then(|line| line.strip_suffix('>'))
+            .and_then(|line| line.trim().split_once(' '));
+        if let Some((key, value)) = entity {
+            if messages.contains_key(key) { bail!("Duplicate key: {key}"); }
+
+            let message = value.trim_start().strip_prefix('"')
+                .and_then(|v| v.trim_end().strip_suffix('"'));
+            if let Some(message) = message {
+                messages.insert(
+                    key.to_string(),
+                    (message.to_string(), comment.1.map(|c| c.to_string())),
+                );
+                comment = (false, None);
+                continue;
             }
         }
 

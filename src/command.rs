@@ -311,10 +311,8 @@ pub async fn perform_command(
                 store
                     .translations()
                     .filter(|(scope, lang_id, _)| {
-                        if let Some(languages) = &languages {
-                            if !languages.contains(lang_id) {
-                                return false;
-                            }
+                        if languages.as_ref().is_some_and(|ls| !ls.contains(lang_id)) {
+                            return false;
                         }
                         **scope == provider_id
                     })

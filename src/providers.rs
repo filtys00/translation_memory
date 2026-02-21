@@ -140,16 +140,16 @@ fn unescape(text: &str, allowed_escapes: &[char]) -> String {
                 'n' => new_text.push('\n'),
                 't' => new_text.push('\t'),
                 'u' => {
-                    if let Some(hex) = text.get((i + 1)..(i + 5)) {
-                        if let Ok(point) = u32::from_str_radix(hex, 16) {
-                            if let Some(c) = char::from_u32(point) {
-                                new_text.push(c);
-                                skip = 4;
-                                continue;
-                            }
-                        }
+                    let c = text.get((i + 1)..(i + 5))
+                        .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+                        .and_then(char::from_u32);
+                    if let Some(c) = c {
+                        new_text.push(c);
+                        skip = 4;
+                        continue;
+                    } else {
+                        new_text.push_str("\\u");
                     }
-                    new_text.push_str("\\u");
                 }
                 c => new_text.push(c),
             }

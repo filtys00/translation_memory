@@ -389,7 +389,7 @@ fn parse_search(search: &str) -> anyhow::Result<Vec<(SearchFilter, SearchFilterM
 /// assert_eq!(search.get(5), Some(Cow::Borrowed("cool\"")));
 /// assert_eq!(search.get(6), None);
 /// ```
-fn split_search(search: &str) -> Vec<Cow<str>> {
+fn split_search(search: &'_ str) -> Vec<Cow<'_, str>> {
     let mut parts = Vec::new();
 
     let mut part_start = 0;
