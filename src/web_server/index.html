@@ -12,8 +12,28 @@
 		<link rel="icon" type="image/svg+xml" href="/icon/language.svg">
 		<link rel="stylesheet", href="/style.css">
 		<script defer src="/script.js"></script>
+		<style>
+			noscript {
+				position: fixed;
+				top: 0;
+				left: 0;
+				width: 100vw;
+				height: 100vh;
+				z-index: 1;
+
+				text-align: center;
+				line-height: 50vh;
+				font-size: 2.5rem;
+				font-family: sans-serif;
+
+				backdrop-filter: blur(0.5px);
+				background-color: rgba(0, 0, 0, 0.1);
+			}
+		</style>
 	</head>
 	<body>
+		<noscript>This page requires JavaScript</noscript>
+
 		<header>
 			<div id="filters">
 				<div id="search">
