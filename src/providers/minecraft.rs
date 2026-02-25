@@ -15,8 +15,7 @@ use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 use zip::ZipArchive;
 
-use super::lang_id_to_string;
-use crate::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider};
+use super::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider, lang_id_to_string};
 
 pub struct MinecraftProvider;
 

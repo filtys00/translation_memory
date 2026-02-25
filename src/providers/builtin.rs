@@ -245,7 +245,7 @@ macro_rules! tor {
 }
 
 #[rustfmt::skip]
-pub fn default_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
+pub fn builtin_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
     let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
         Arc::new(EuProvider),
         Arc::new(MinecraftProvider),

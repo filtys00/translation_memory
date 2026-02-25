@@ -18,8 +18,7 @@ use serde::{Deserialize, Serialize};
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
-use super::{unescape, TranslationMessages};
-use crate::providers::download_text;
+use super::{download_text, unescape, TranslationMessages};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {

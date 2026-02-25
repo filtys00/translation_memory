@@ -7,7 +7,7 @@ use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
-use crate::providers::lang_id_to_string;
+use super::lang_id_to_string;
 
 pub async fn crawl_libreoffice(
     lang_id: LanguageIdentifier,

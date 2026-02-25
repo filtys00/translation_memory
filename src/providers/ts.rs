@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::Translation;
+use super::Translation;
 
 pub fn parse_qbittorrent_ts(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let ts: Ts = quick_xml::de::from_str(&text)?;

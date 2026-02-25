@@ -7,8 +7,7 @@ use std::collections::HashMap;
 use anyhow::bail;
 use regex::Regex;
 
-use super::{unescape, TranslationMessages};
-use crate::Translation;
+use super::{Translation, TranslationMessages, unescape};
 
 pub fn parse_json(text: String) -> anyhow::Result<TranslationMessages> {
     let json: HashMap<String, serde_json::Value> = serde_json::from_str(&text)?;

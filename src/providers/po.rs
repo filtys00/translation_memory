@@ -5,15 +5,10 @@
 use std::{collections::HashMap, iter};
 
 use anyhow::anyhow;
-use base64::{
-    alphabet::Alphabet,
-    engine::{GeneralPurpose, GeneralPurposeConfig},
-    Engine,
-};
+use base64::{alphabet::Alphabet, engine::{GeneralPurpose, GeneralPurposeConfig}, Engine};
 use log::trace;
 
-use super::unescape;
-use crate::Translation;
+use super::{Translation, unescape};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {

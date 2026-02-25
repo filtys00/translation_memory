@@ -2,24 +2,20 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+mod database;
+mod providers;
 mod cli;
 mod web_server;
 
-use std::{
-    io::{self, Write},
-    path::Path,
-    process::ExitCode,
-    sync::Arc,
-};
+use std::{io::{self, Write}, path::Path, process::ExitCode, sync::Arc};
 
 use clap::{Parser, ValueEnum};
 use log::{Level, LevelFilter, error, info};
 use reqwest::Client;
 use termcolor::{ColorChoice, StandardStream};
 use tokio::sync::Mutex;
-use translation_memory::TranslationStore;
 
-use self::cli::{Command, perform_command};
+use crate::{database::TranslationStore, cli::{Command, perform_command}};
 
 const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
 const CONFIG_PATH: &str = "translations.toml";

@@ -5,7 +5,7 @@
 use anyhow::{anyhow, bail};
 use unic_langid::LanguageIdentifier;
 
-use crate::Translation;
+use super::Translation;
 
 pub fn parse_mozilla_tmx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let tmx: tmx::Tmx = quick_xml::de::from_str(&text)?;

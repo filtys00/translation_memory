@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use unic_langid::LanguageIdentifier;
 
-use crate::providers::lang_id_to_string;
+use super::lang_id_to_string;
 
 // KDE GitLab GraphiQL: https://invent.kde.org/-/graphql-explorer
 

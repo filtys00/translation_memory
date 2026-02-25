@@ -14,8 +14,7 @@ use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 use zip::{read::ZipFile, ZipArchive};
 
-use super::TranslationProvider;
-use crate::{ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle};
+use super::{ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle, TranslationProvider};
 
 // https://joint-research-centre.ec.europa.eu/language-technology-resources_en
 

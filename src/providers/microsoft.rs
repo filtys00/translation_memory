@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
-use crate::Translation;
+use super::Translation;
 
 pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
     let tbx: Tbx = quick_xml::de::from_str(&text)?;

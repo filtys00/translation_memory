@@ -19,12 +19,17 @@ use tokio::{
     select,
     sync::Mutex,
 };
-use translation_memory::{ProviderCache, TranslationBundle, TranslationStore};
 use unic_langid::LanguageIdentifier;
 
-use crate::create_client;
-
-use super::{display_number, web_server::web_server, write_labeled_number_list, writeln_max_width};
+use crate::{
+    database::TranslationStore,
+    providers::{ProviderCache, TranslationBundle},
+    web_server::web_server,
+    create_client,
+    display_number,
+    write_labeled_number_list,
+    writeln_max_width,
+};
 
 #[derive(Debug, Subcommand)]
 pub enum Command {

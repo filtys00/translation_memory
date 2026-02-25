@@ -14,14 +14,12 @@ use axum::{
 use log::{debug, trace};
 use regex::Regex;
 use rust_embed::Embed;
-use serde::{
-    Deserialize, Deserializer, Serialize,
-    de::{self, Unexpected},
-};
+use serde::{de::{self, Unexpected}, Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use tokio::{net::TcpListener, sync::Mutex};
-use translation_memory::TranslationStore;
 use unic_langid::LanguageIdentifier;
+
+use crate::database::TranslationStore;
 
 #[derive(Embed)]
 #[folder = "src/web_server"]

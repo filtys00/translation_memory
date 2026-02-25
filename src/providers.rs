@@ -2,10 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+pub mod builtin;
+
 mod android;
 mod browser_extension;
 mod chrome;
-mod builtin;
 mod dtd;
 mod eu;
 mod gnome;
@@ -21,12 +22,7 @@ mod srt;
 mod ts;
 mod yaml;
 
-pub use self::builtin::default_providers;
-
-use std::{
-    collections::{BTreeMap, HashMap},
-    future::Future,
-};
+use std::{collections::{BTreeMap, HashMap}, future::Future, iter};
 
 use anyhow::{anyhow, bail};
 use async_trait::async_trait;
@@ -35,9 +31,49 @@ use reqwest::{Client, StatusCode, Url};
 use tokio::task::JoinSet;
 use unic_langid::LanguageIdentifier;
 
-use super::{
-    ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle, TranslationProvider,
-};
+#[derive(Clone, Debug)]
+pub struct Translation {
+    pub original: String,
+    pub translation: String,
+    pub comment: Option<String>,
+    pub key: Option<String>,
+    pub source: String,
+}
+
+pub type TranslationBundle = BTreeMap<LanguageIdentifier, Option<Vec<Translation>>>;
+
+#[derive(Debug)]
+pub enum ProviderCache {
+    Single(TranslationBundle),
+    Multiple(ProviderCacheMultiple),
+}
+
+#[derive(Debug)]
+pub struct ProviderCacheMultiple {
+    /// If all available translation bundles have been added to `translation_bundles`.
+    pub finished: bool,
+    pub translation_bundles: BTreeMap<String, TranslationBundle>,
+}
+
+impl ProviderCache {
+    /// Returns an iterator over the cached translation bundles.
+    pub fn translation_bundles(&self) -> Box<dyn Iterator<Item = &TranslationBundle> + '_> {
+        match self {
+            Self::Single(translation_bundle) => Box::new(iter::once(translation_bundle)),
+            Self::Multiple(multiple) => Box::new(multiple.translation_bundles.values()),
+        }
+    }
+
+    /// Returns a mutable iterator over the cached translation bundles.
+    pub fn translation_bundles_mut(
+        &mut self,
+    ) -> Box<dyn Iterator<Item = &mut TranslationBundle> + '_> {
+        match self {
+            Self::Single(translation_bundle) => Box::new(iter::once(translation_bundle)),
+            Self::Multiple(multiple) => Box::new(multiple.translation_bundles.values_mut()),
+        }
+    }
+}
 
 /// A function that parses a translation file.
 pub enum SimpleProvider {
@@ -194,6 +230,33 @@ pub fn merge_messages(
     }
 
     translations
+}
+
+#[async_trait]
+pub trait TranslationProvider {
+    fn id(&self) -> &str;
+
+    fn name(&self) -> &str;
+
+    fn group_name(&self) -> Option<&str> {
+        None
+    }
+
+    /// Returns `true` if associated data should not be saved to disk.
+    fn temporary(&self) -> bool {
+        false
+    }
+
+    /// Returns a `ProviderCache` with translations for the languages in `lang_ids`.
+    ///
+    /// If this function returns `ProviderCache::Multiple(multiple)` with `multiple.finished` set to `false`,
+    /// then `multiple` is given back in `previous` the next time `generate` is invoced.
+    async fn generate(
+        &self,
+        previous: Option<ProviderCacheMultiple>,
+        lang_ids: Vec<LanguageIdentifier>,
+        client: Client,
+    ) -> anyhow::Result<ProviderCache>;
 }
 
 /// Standard provider for translation formats where both the original strings
