@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-mod command;
+mod cli;
 mod web_server;
 
 use std::{
@@ -19,7 +19,7 @@ use termcolor::{ColorChoice, StandardStream};
 use tokio::sync::Mutex;
 use translation_memory::TranslationStore;
 
-use self::command::{Command, perform_command};
+use self::cli::{Command, perform_command};
 
 const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
 const CONFIG_PATH: &str = "translations.toml";

@@ -5,7 +5,7 @@
 mod android;
 mod browser_extension;
 mod chrome;
-mod defaults;
+mod builtin;
 mod dtd;
 mod eu;
 mod gnome;
@@ -21,7 +21,7 @@ mod srt;
 mod ts;
 mod yaml;
 
-pub use self::defaults::default_providers;
+pub use self::builtin::default_providers;
 
 use std::{
     collections::{BTreeMap, HashMap},
