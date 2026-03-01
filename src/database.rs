@@ -37,12 +37,13 @@ CREATE TABLE Languages (
 
 CREATE TABLE Providers (
     id INTEGER PRIMARY KEY,
-    from_file  INTEGER NOT NULL DEFAULT 0,
+    type       TEXT NOT NULL,
     code       TEXT NOT NULL UNIQUE,
     name       TEXT NOT NULL,
     group_name TEXT,
     downloaded INTEGER NOT NULL DEFAULT 0,
-    failed     INTEGER NOT NULL DEFAULT 0
+    failed     INTEGER NOT NULL DEFAULT 0,
+    CHECK type in (\"builtin\", \"retired\", \"from_file\")
 ) STRICT;
 
 CREATE TABLE Sources (
