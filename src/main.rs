@@ -7,7 +7,7 @@ mod providers;
 mod cli;
 mod web_server;
 
-use std::{io::{self, Write}, path::Path, process::ExitCode, sync::Arc};
+use std::{io::{self, Write}, process::ExitCode, sync::Arc};
 
 use clap::{Parser, ValueEnum};
 use log::{Level, LevelFilter, error, info};
@@ -18,7 +18,6 @@ use tokio::sync::Mutex;
 use crate::{database::TranslationStore, cli::{Command, perform_command}};
 
 const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
-const CONFIG_PATH: &str = "translations.toml";
 
 #[derive(Clone, Debug, ValueEnum)]
 enum VerboseMode {
@@ -41,10 +40,6 @@ struct Args {
         num_args = 0..=1, require_equals = true,
     )]
     verbose: VerboseMode,
-
-    /// Ignore the config file [path: translations.toml].
-    #[arg(long = "noconfig", global = true)]
-    no_config: bool,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -122,14 +117,6 @@ async fn main() -> ExitCode {
     logger.init();
 
     let mut store = TranslationStore::new(DEFAULT_CACHE_PATH.into());
-
-    if !args.no_config && Path::new(CONFIG_PATH).exists() {
-        info!("Reading config from '{CONFIG_PATH}'...");
-        if let Err(e) = store.load_config(CONFIG_PATH) {
-            error!("Could not load config file ({CONFIG_PATH}): {e}");
-            return ExitCode::FAILURE;
-        }
-    }
 
     info!("Reading cached translations...");
     if let Err(e) = store.load_translations() {

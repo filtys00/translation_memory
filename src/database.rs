@@ -2,18 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    fs::File,
-    io::Read,
-    path::Path,
-    str::FromStr,
-    time::Instant,
-};
+use std::{cell::RefCell, collections::HashSet, str::FromStr};
 
-use anyhow::{anyhow, bail};
-use log::{debug, trace};
 use regex::Regex;
 use rusqlite::{
     functions::FunctionFlags,
@@ -23,10 +13,7 @@ use rusqlite::{
     Error as SqlError,
     Result as SqlResult,
 };
-use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
-
-use crate::providers::{SimpleProvider, merge_messages, simple_provider};
 
 /// SQL to initialize the SQLite database.
 const INIT_SQL: &str = r#"
@@ -403,186 +390,5 @@ impl Source<'_> {
         transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
         transaction.execute("DELETE FROM Sources WHERE id = ?", [self.id])?;
         transaction.commit()
-    }
-}
-
-// Config
-
-#[derive(Deserialize, Serialize)]
-struct Config {
-    translations_path: Option<PathBuf>,
-    translations: Vec<ConfigEntry>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct ConfigEntry {
-    #[serde(rename = "type")]
-    type_name: String,
-    name: String,
-    group_name: Option<String>,
-    paths: Vec<ConfigEntryPath>,
-}
-
-#[derive(Deserialize, Serialize)]
-struct ConfigEntryPath {
-    language: LanguageIdentifier,
-    path: String,
-}
-
-/** Provider wich does not provide anything. */
-struct DummyProvider {
-    id: String,
-    name: String,
-    group_name: Option<String>,
-}
-
-#[async_trait]
-impl TranslationProvider for DummyProvider {
-    fn id(&self) -> &str {
-        &self.id
-    }
-
-    fn name(&self) -> &str {
-        &self.name
-    }
-
-    fn group_name(&self) -> Option<&str> {
-        self.group_name.as_deref()
-    }
-
-    fn temporary(&self) -> bool {
-        true
-    }
-
-    async fn generate(
-        &self,
-        _previous: Option<ProviderCacheMultiple>,
-        _lang_ids: Vec<LanguageIdentifier>,
-        _client: Client,
-    ) -> anyhow::Result<ProviderCache> {
-        bail!("Should already be generated: {}", &self.id)
-    }
-}
-
-impl TranslationStore {
-    /// Read and load a TOML config file from `file`.
-    pub fn load_config(&mut self, file: impl AsRef<Path>) -> anyhow::Result<()> {
-        let now = Instant::now();
-
-        let mut file = File::open(file)?;
-        let mut toml = String::with_capacity(
-            file.metadata()
-                .map_or(0, |metadata| metadata.len() as usize),
-        );
-        file.read_to_string(&mut toml)?;
-        let config: Config = toml::from_str(&toml)?;
-
-        if let Some(translations_path) = config.translations_path {
-            self.save_path = translations_path;
-        }
-
-        let mut config_texts = Vec::with_capacity(config.translations.len());
-        for entry in &config.translations {
-            let mut texts = HashMap::with_capacity(entry.paths.len());
-            for entry in &entry.paths {
-                let mut file = File::open(&entry.path)
-                    .map_err(|e| anyhow!("Could not open file ({}): {e}", entry.path))?;
-                let mut text = String::with_capacity(
-                    file.metadata()
-                        .map_or(0, |metadata| metadata.len() as usize),
-                );
-                file.read_to_string(&mut text)
-                    .map_err(|e| anyhow!("Could not read file ({}): {e}", entry.path))?;
-                texts.insert(&entry.language, (text, &entry.path));
-            }
-            config_texts.push((entry, texts));
-        }
-
-        for (i, (entry, texts)) in config_texts.into_iter().enumerate() {
-            let translation_bundle = match simple_provider(&entry.type_name) {
-                Some(SimpleProvider::Duo(parse)) => {
-                    let mut translation_bundle = BTreeMap::new();
-
-                    let en: LanguageIdentifier = "en".parse().unwrap();
-
-                    let text = texts
-                        .get(&en)
-                        .map(|(text, _)| text)
-                        .ok_or_else(|| anyhow!("Entry '{}' has no language 'en'", entry.name))?
-                        .to_string();
-                    let messages_en = parse(text).map_err(|e| {
-                        anyhow!(
-                            "Could not parse language 'en' in entry '{}': {e}",
-                            entry.name
-                        )
-                    })?;
-
-                    for (lang_id, (text, path)) in texts {
-                        if *lang_id == en {
-                            continue;
-                        }
-                        let messages = parse(text).map_err(|e| {
-                            anyhow!(
-                                "Could not parse language '{lang_id}' in entry '{}': {e}",
-                                entry.name
-                            )
-                        })?;
-
-                        translation_bundle.insert(
-                            lang_id.clone(),
-                            Some(merge_messages(messages, &messages_en, path)),
-                        );
-                    }
-
-                    translation_bundle
-                }
-                Some(SimpleProvider::Mono(parse)) => {
-                    let mut translation_bundle = BTreeMap::new();
-
-                    for (lang_id, (text, path)) in texts {
-                        let translations = parse(text, path).map_err(|e| {
-                            anyhow!(
-                                "Could not parse language '{lang_id}' in entry '{}': {e}",
-                                entry.name
-                            )
-                        })?;
-                        translation_bundle.insert(lang_id.clone(), Some(translations));
-                    }
-
-                    translation_bundle
-                }
-                None => bail!("Type '{}' is not supported", entry.type_name),
-            };
-
-            let mut id = format!("local:{i}-");
-            for c in entry.name.chars() {
-                if c.is_ascii_alphanumeric() {
-                    id.push(c.to_ascii_lowercase());
-                } else if c == ' ' {
-                    id.push('-');
-                }
-            }
-            let id = id.trim_end_matches('-');
-
-            trace!(
-                "Read config entry '{}' (ID {id}): {} translations",
-                entry.name,
-                translation_bundle
-                    .values()
-                    .filter_map(|translations| translations.as_ref())
-                    .flatten()
-                    .count(),
-            );
-            self.provider_caches
-                .insert(id.to_string(), ProviderCache::Single(translation_bundle));
-            self.providers.push(Arc::new(DummyProvider {
-                id: id.to_string(),
-                name: entry.name.clone(),
-                group_name: entry.group_name.clone(),
-            }));
-        }
-
-        debug!("Read config in {} seconds", now.elapsed().as_secs());
-        Ok(())
     }
 }
