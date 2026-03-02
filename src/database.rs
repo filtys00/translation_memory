@@ -29,7 +29,7 @@ use crate::providers::{
 };
 
 /// SQL to initialize the SQLite database.
-const INIT_SQL: &str = "
+const INIT_SQL: &str = r#"
 CREATE TABLE Languages (
     id INTEGER PRIMARY KEY,
     code TEXT NOT NULL UNIQUE
@@ -37,13 +37,13 @@ CREATE TABLE Languages (
 
 CREATE TABLE Providers (
     id INTEGER PRIMARY KEY,
-    type       TEXT NOT NULL,
-    code       TEXT NOT NULL UNIQUE,
-    name       TEXT NOT NULL,
-    group_name TEXT,
-    downloaded INTEGER NOT NULL DEFAULT 0,
-    failed     INTEGER NOT NULL DEFAULT 0,
-    CHECK type in (\"builtin\", \"retired\", \"from_file\")
+    type                  TEXT NOT NULL,
+    code                  TEXT NOT NULL UNIQUE,
+    name                  TEXT NOT NULL,
+    group_name            TEXT,
+    sources_download_time INTEGER,
+    has_failed            INTEGER NOT NULL DEFAULT 0,
+    CHECK type in ("builtin", "retired", "from_file")
 ) STRICT;
 
 CREATE TABLE Sources (
@@ -55,11 +55,11 @@ CREATE TABLE Sources (
     originals_url     TEXT UNIQUE,
     translations_url  TEXT NOT NULL UNIQUE,
 
-    downloaded        INTEGER,
+    download_time     INTEGER,
     originals_text    TEXT,
     translations_text TEXT,
 
-    failed            INTEGER NOT NULL DEFAULT 0,
+    has_failed        INTEGER NOT NULL DEFAULT 0,
 
     FOREIGN KEY (provider_id) REFERENCES Providers(id),
     FOREIGN KEY (language_id) REFERENCES Languages(id)
@@ -80,7 +80,7 @@ CREATE TABLE Translations (
 
 CREATE INDEX Translations_SourceId ON Translations (source_id);
 CREATE INDEX Sources_ProviderId ON Sources (provider_id);
-";
+"#;
 
 pub struct TranslationStore {
     providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
