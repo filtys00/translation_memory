@@ -3,30 +3,30 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::{
-    collections::{BTreeMap, HashMap, HashSet, hash_map::Entry},
-    fs::{self, File},
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    fs::File,
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
     str::FromStr,
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
+    time::Instant,
 };
 
 use anyhow::{anyhow, bail};
-use async_trait::async_trait;
-use log::{debug, error, trace, warn};
-use reqwest::Client;
-use rusqlite::{Connection, params};
+use log::{debug, trace};
+use regex::Regex;
+use rusqlite::{
+    functions::FunctionFlags,
+    types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, Type as SqlType, ValueRef},
+    Connection,
+    OptionalExtension,
+    Error as SqlError,
+    Result as SqlResult,
+};
 use serde::{Deserialize, Serialize};
-use tokio::{task::JoinSet, time::timeout};
 use unic_langid::LanguageIdentifier;
 
-use crate::providers::{
-    builtin::builtin_providers,
-    ProviderCache, ProviderCacheMultiple, SimpleProvider,
-    Translation, TranslationBundle, TranslationProvider,
-    merge_messages, simple_provider,
-};
+use crate::providers::{SimpleProvider, merge_messages, simple_provider};
 
 /// SQL to initialize the SQLite database.
 const INIT_SQL: &str = r#"
@@ -82,333 +82,327 @@ CREATE INDEX Translations_SourceId ON Translations (source_id);
 CREATE INDEX Sources_ProviderId ON Sources (provider_id);
 "#;
 
-pub struct TranslationStore {
-    providers: Vec<Arc<dyn TranslationProvider + Send + Sync>>,
-    save_path: PathBuf,
-    pub provider_caches: BTreeMap<String, ProviderCache>,
+/// A connection to a translation database.
+pub struct TranslationStore { connection: RefCell<Connection> }
+
+/// An independent provider of translation sources.
+pub struct Provider<'a> { connection: &'a RefCell<Connection>, id: i64 }
+
+/// An independent source of translations.
+pub struct Source<'a> { connection: &'a RefCell<Connection>, id: i64 }
+
+/// Why a provider were created.
+#[derive(PartialEq, Eq, Hash)]
+pub enum ProviderType {
+    /// A provider that is predefined.
+    BuiltIn,
+    /// A provider that used to be predefined.
+    Retired,
+    /// A provider that is manually added from a file.
+    FromFile,
 }
 
-impl TranslationStore {
-    /// Returns a new `TranslationStore` that loads and saves translations to `save_path`.
-    pub fn new(save_path: PathBuf) -> Self {
-        Self {
-            providers: builtin_providers(),
-            save_path,
-            provider_caches: BTreeMap::new(),
+impl FromSql for ProviderType {
+    fn column_result(value: ValueRef) -> FromSqlResult<Self> {
+        match value.as_str()? {
+            "builtin"   => Ok(ProviderType::BuiltIn),
+            "retired"   => Ok(ProviderType::Retired),
+            "from_file" => Ok(ProviderType::FromFile),
+            _ => Err(FromSqlError::InvalidType)
         }
-    }
-
-    pub fn provider(&self, id: &str) -> Option<&Arc<dyn TranslationProvider + Send + Sync>> {
-        self.providers.iter().find(|provider| provider.id() == id)
-    }
-
-    pub fn providers(&self) -> impl Iterator<Item = &Arc<dyn TranslationProvider + Send + Sync>> {
-        self.providers.iter()
-    }
-
-    pub fn languages(&self) -> HashSet<&LanguageIdentifier> {
-        self.provider_caches
-            .values()
-            .flat_map(|provider_cache| provider_cache.translation_bundles())
-            .flat_map(|bundle| bundle.keys())
-            .collect()
-    }
-
-    /// Returns an iterator over all the translations, together with the provider and language identifiers.
-    pub fn translations(
-        &self,
-    ) -> impl Iterator<Item = (&String, &LanguageIdentifier, &Translation)> {
-        self.provider_caches
-            .iter()
-            .flat_map(|(id, provider_cache)| {
-                provider_cache
-                    .translation_bundles()
-                    .map(move |bundle| (id, bundle))
-            })
-            .flat_map(|(id, bundle)| {
-                bundle
-                    .iter()
-                    .map(move |(lang_id, translations)| (id, lang_id, translations))
-            })
-            .filter_map(|(id, lang_id, translations)| {
-                translations
-                    .as_ref()
-                    .map(|translations| (id, lang_id, translations))
-            })
-            .flat_map(|(id, lang_id, translations)| {
-                translations
-                    .iter()
-                    .map(move |translation| (id, lang_id, translation))
-            })
-    }
-
-    pub async fn generate(
-        &mut self,
-        lang_ids: Vec<LanguageIdentifier>,
-        provider_ids: Vec<String>,
-        remove_failed: bool,
-        client: Client,
-    ) -> Result<HashMap<String, Option<String>>, anyhow::Error> {
-        if lang_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let mut join_set = JoinSet::new();
-
-        for provider_id in provider_ids {
-            let Some(provider) = self
-                .providers
-                .iter()
-                .find(|provider| provider.id() == provider_id)
-                .cloned()
-            else {
-                bail!("Provider not found: {provider_id}");
-            };
-            if provider.temporary() {
-                debug!("Skipping generating temporary provider: {}", provider.id());
-                continue;
-            }
-
-            let unfinished = self
-                .provider_caches
-                .get(&provider_id)
-                .is_some_and(|provider_cache| match provider_cache {
-                    ProviderCache::Single(_) => false,
-                    ProviderCache::Multiple(multiple) => !multiple.finished,
-                });
-            let previous = if unfinished {
-                let previous = self.provider_caches.remove(&provider_id);
-                match previous {
-                    Some(ProviderCache::Multiple(multiple)) => Some(multiple),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-            let client = client.clone();
-            let lang_ids = lang_ids.clone();
-            join_set.spawn(timeout(Duration::from_secs(60), async move {
-                (
-                    provider_id,
-                    provider.generate(previous, lang_ids, client).await,
-                )
-            }));
-        }
-
-        let mut errors = HashMap::new();
-
-        while let Some(join) = join_set.join_next().await {
-            let (provider_id, provider_cache) = match join {
-                Ok(Ok(t)) => t,
-                Ok(Err(e)) => {
-                    error!("Could not generate: {e}");
-                    continue;
-                }
-                Err(e) => {
-                    error!("Could not generate: {e}");
-                    continue;
-                }
-            };
-            let provider_cache = match provider_cache {
-                Ok(provider_cache) => provider_cache,
-                Err(e) => {
-                    error!("Could not generate '{provider_id}': {e}");
-                    if remove_failed {
-                        self.provider_caches.remove(&provider_id);
-                    }
-                    errors.insert(provider_id, Some(e.to_string()));
-                    continue;
-                }
-            };
-
-            debug!(
-                "Generated '{provider_id}': up to possibly {} translations per language",
-                provider_cache
-                    .translation_bundles()
-                    .map(|bundle| {
-                        bundle
-                            .values()
-                            .filter_map(|translations| translations.as_ref())
-                            .map(|translations| translations.len())
-                            .max()
-                            .unwrap_or(0)
-                    })
-                    .sum::<usize>()
-            );
-
-            errors.insert(provider_id.clone(), None);
-            self.provider_caches.insert(provider_id, provider_cache);
-        }
-
-        Ok(errors)
     }
 }
 
-impl TranslationStore {
-    /// Load translations from the save path.
-    ///
-    /// Returns `false` if no file were found at the save path.
-    pub fn load_translations(&mut self) -> anyhow::Result<bool> {
-        if !self.save_path.exists() || !self.save_path.is_file() {
-            return Ok(false);
-        }
-
-        let now = Instant::now();
-
-        let conn = Connection::open(&self.save_path)
-            .map_err(|e| anyhow!("Could not open database file {:?}: {e}", self.save_path))?;
-
-        let mut provider_caches: HashMap<String, ProviderCache> = HashMap::new();
-
-        let mut languages_stmt = conn.prepare("SELECT id, code FROM Languages")?;
-        let languages: Vec<_> = languages_stmt
-            .query_map((), |row| {
-                let id: i64 = row.get(0)?;
-                let code = LanguageIdentifier::from_str(row.get_ref(1)?.as_str()?).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(e))
-                })?;
-                Ok((id, code))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-
-        let mut providers_stmt = conn.prepare("SELECT id, code FROM Providers")?;
-        let providers: Vec<_> = providers_stmt
-            .query_map((), |row| {
-                let id: i64 = row.get(0)?;
-                let code: String = row.get(1)?;
-                Ok((id, code))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-
-        let mut translations_stmt = conn.prepare("
-            SELECT Sources.translations_url as source, key, original, translation, comment FROM Translations
-            JOIN Sources ON Translations.source_id = Sources.id
-            WHERE Sources.provider_id = ? AND Sources.language_id = ?
-        ")?;
-
-        for (provider_id, provider_code) in providers {
-            let mut bundle: TranslationBundle = BTreeMap::new();
-
-            for (language_id, language_code) in &languages {
-                let translations: Vec<Translation> = translations_stmt
-                    .query_map((provider_id, language_id), |row| Ok(Translation {
-                        source: row.get(0)?,
-                        key: row.get(1)?,
-                        original: row.get(2)?,
-                        translation: row.get(3)?,
-                        comment: row.get(4)?,
-                    }))?
-                    .collect::<rusqlite::Result<_>>()?;
-
-                let translations = if translations.is_empty() { None } else { Some(translations) };
-                bundle.insert(language_code.clone(), translations);
-            }
-
-            provider_caches.insert(provider_code.clone(), ProviderCache::Single(bundle));
-
-            trace!("Read '{provider_code}' in {} seconds", now.elapsed().as_secs());
-        }
-
-        debug!("Read cache file in {} seconds", now.elapsed().as_secs());
-
-        provider_caches.retain(|scope, _| {
-            let retain = self.providers.iter().any(|provider| provider.id() == scope);
-            if !retain {
-                warn!("Unknown provider in translation cache: {scope}");
-            }
-            retain
-        });
-
-        self.provider_caches.extend(provider_caches);
-
-        Ok(true)
-    }
-
-    /// Write translations to the save path.
-    pub fn save_translations(&self) -> anyhow::Result<()> {
-        let now = Instant::now();
-
-        let mut temp_save_path = self.save_path.clone();
-        let Some(file_name) = self.save_path.file_name() else {
-            bail!("Save path has no file name: {:?}", self.save_path);
+impl ToSql for ProviderType {
+    fn to_sql(&self) -> SqlResult<ToSqlOutput<'_>> {
+        let provider_type = match self {
+            ProviderType::BuiltIn => "builtin",
+            ProviderType::Retired => "retired",
+            ProviderType::FromFile => "from_file",
         };
-        temp_save_path.set_file_name(format!("~{}", file_name.to_string_lossy()));
+        Ok(provider_type.into())
+    }
+}
 
-        if temp_save_path.exists() {
-            fs::remove_file(&temp_save_path).map_err(|e| {
-                anyhow!("Could not delete former temporary database file '{temp_save_path:?}': {e}")
+#[derive(PartialEq, Eq, Hash)]
+pub struct ProviderNames {
+    pub code: String,
+    pub name: String,
+    pub group_name: Option<String>,
+}
+
+pub struct SourceUrls {
+    pub originals_url: Option<String>,
+    pub translations_url: String,
+}
+
+pub struct SourceTexts {
+    pub originals_text: Option<String>,
+    pub translations_text: Option<String>,
+}
+
+pub struct Translation {
+    pub key: Option<String>,
+    pub original: String,
+    pub translation: String,
+    pub comment: Option<String>,
+}
+
+impl TranslationStore {
+    /// Open `connection` as a translation database, initiating it if necessary.
+    pub fn open(connection: Connection) -> SqlResult<Self> {
+        let has_providers_table = connection.table_exists(None, "Providers")?;
+        if !has_providers_table { connection.execute_batch(INIT_SQL)?; }
+
+        let function_flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC;
+        connection.create_scalar_function("regexp", 2, function_flags, |context| {
+            let regex = context.get_or_create_aux(0, |value| -> SqlResult<Regex> {
+                let regex = Regex::new(value.as_str()?)
+                    .map_err(|e| SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e)))?;
+                Ok(regex)
             })?;
-        }
-        let conn = Connection::open(&temp_save_path).map_err(|e| {
-            anyhow!("Could not create temporary database file '{temp_save_path:?}': {e}")
-        })?;
-        conn.execute_batch(INIT_SQL)?;
-
-        let provider_caches = self
-            .provider_caches
-            .iter()
-            .filter(|(provider_id, _)| {
-                self.provider(provider_id)
-                    .is_some_and(|provider| !provider.temporary())
-            });
-
-        let mut language_indices: HashMap<&LanguageIdentifier, i64> = HashMap::new();
-        let mut provider_indices: HashMap<&String, i64> = HashMap::new();
-        let mut source_indices: HashMap<&String, i64> = HashMap::new();
-
-        conn.execute("BEGIN", ())?;
-        for (provider_id, provider_cache) in provider_caches {
-            if let Entry::Vacant(e) = provider_indices.entry(provider_id) {
-                conn.execute("INSERT INTO Providers (code) VALUES (?)", [provider_id])?;
-                let rowid = conn.query_one("SELECT last_insert_rowid()", (), |r| r.get(0))?;
-                e.insert(rowid);
-            }
-
-            for (language_id, translations) in provider_cache.translation_bundles().flatten() {
-                let Some(translations) = translations else { continue; };
-
-                if let Entry::Vacant(e) = language_indices.entry(language_id) {
-                    conn.execute("INSERT INTO Languages (code) VALUES (?)", [language_id.to_string()])?;
-                    let rowid = conn.query_one("SELECT last_insert_rowid()", (), |r| r.get(0))?;
-                    e.insert(rowid);
-                }
-
-                for translation in translations {
-                    if let Entry::Vacant(e) = source_indices.entry(&translation.source) {
-                        conn.execute("INSERT INTO Sources (provider_id, language_id, translations_url, downloaded) VALUES (?, ?, ?, ?)", (
-                            provider_indices.get(provider_id),
-                            language_indices.get(language_id),
-                            &translation.source,
-                            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_secs() as u32
-                        ))?;
-                        let rowid = conn.query_one("SELECT last_insert_rowid()", (), |a| a.get(0))?;
-                        e.insert(rowid);
-                    }
-                    conn.execute(
-                        "INSERT INTO Translations (source_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?)",
-                        params![
-                            source_indices.get(&translation.source),
-                            translation.key,
-                            translation.original,
-                            translation.translation,
-                            translation.comment,
-                        ],
-                    )?;
-                }
-            }
-        }
-        conn.execute("COMMIT", ())?;
-        conn.close().map_err(|(_, e)| e)?; // Cannot move file without closing it
-
-        fs::rename(&temp_save_path, &self.save_path).map_err(|e| {
-            anyhow!(
-                "Could not move temporary database file from '{temp_save_path:?}' to '{:?}': {e}",
-                self.save_path
-            )
+            let value = context.get_raw(1).as_str()?;
+            Ok(regex.is_match(value))
         })?;
 
-        debug!("Wrote cache file in {} seconds", now.elapsed().as_secs());
+        Ok(Self { connection: RefCell::new(connection) })
+    }
+
+    /// Returns a set of all the language codes.
+    pub fn get_languages(&self) -> SqlResult<HashSet<LanguageIdentifier>> {
+        let languages = self.connection.borrow()
+            .prepare("SELECT code FROM Languages")?
+            .query_map((), |row| {
+                LanguageIdentifier::from_str(row.get_ref(0)?.as_str()?).map_err(|e| {
+                    SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e))
+                })
+            })?
+            .collect::<SqlResult<_>>()?;
+        Ok(languages)
+    }
+
+    /// Returns a list of all the providers.
+    pub fn get_providers(&'_ self) -> SqlResult<Vec<Provider<'_>>> {
+        let providers = self.connection.borrow().prepare("SELECT id FROM Providers")?
+            .query_map((), |row| {
+                let provider = Provider { connection: &self.connection, id: row.get(0)? };
+                Ok(provider)
+            })?
+            .collect::<SqlResult<_>>()?;
+        Ok(providers)
+    }
+
+    /// Returns the provider with code name `code`, or `None` if it does not exist.
+    pub fn get_provider(&'_ self, code: &str) -> SqlResult<Option<Provider<'_>>> {
+        let provider = self.connection.borrow()
+            .query_one("SELECT id FROM Providers WHERE code = ?", [code], |row| {
+                Ok(Provider { connection: &self.connection, id: row.get(0)? })
+            })
+            .optional()?;
+        Ok(provider)
+    }
+
+    /// Adds a new provider.
+    pub fn add_provider(&'_ self, provider_type: ProviderType, names: ProviderNames) -> SqlResult<Provider<'_>> {
+        let connection = self.connection.borrow();
+        connection.execute(
+            "INSERT INTO Providers (type, code, name, group_name) VALUES (?, ?, ?, ?)",
+            (provider_type, names.code, names.name, names.group_name),
+        )?;
+        let provider_id = connection.last_insert_rowid();
+        Ok(Provider { connection: &self.connection, id: provider_id })
+    }
+}
+
+impl Provider<'_> {
+    /// Returns the type of this provider.
+    pub fn get_type(&self) -> SqlResult<ProviderType> {
+        let provider_type = self.connection.borrow().query_one(
+            "SELECT type FROM Providers WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(provider_type)
+    }
+
+    /// Sets the type of this provider.
+    pub fn set_type(&self, provider_type: ProviderType) -> SqlResult<()> {
+        self.connection.borrow()
+            .execute("UPDATE Providers SET type = ? WHERE id = ?", (provider_type, self.id))?;
         Ok(())
+    }
+
+    /// Returns whether the provider has `failed`.
+    pub fn get_names(&self) -> SqlResult<ProviderNames> {
+        let failed = self.connection.borrow().query_one(
+            "SELECT code, name, group_name FROM Providers WHERE id = ?", [self.id],
+            |row| {
+                let names = ProviderNames {
+                    code: row.get(0)?,
+                    name: row.get(1)?,
+                    group_name: row.get(2)?,
+                };
+                Ok(names)
+            }
+        )?;
+        Ok(failed)
+    }
+
+    /// Sets whether the provider has `failed`.
+    pub fn set_names(&self, name: &str, group_name: Option<&str>) -> SqlResult<()> {
+        self.connection.borrow().execute(
+            "UPDATE Providers SET name = ?, group_name = ? WHERE id = ?",
+            (name, group_name, self.id),
+        )?;
+        Ok(())
+    }
+
+    /// Returns whether the provider has `failed`.
+    pub fn has_failed(&self) -> SqlResult<bool> {
+        let failed = self.connection.borrow().query_one(
+            "SELECT has_failed FROM Providers WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(failed)
+    }
+
+    /// Sets whether the provider has `failed`.
+    pub fn set_failed(&self, failed: bool) -> SqlResult<()> {
+        self.connection.borrow()
+            .execute("UPDATE Providers SET has_failed = ? WHERE id = ?", (failed, self.id))?;
+        Ok(())
+    }
+
+    /// Returns the sources download time of this provider.
+    pub fn get_sources_download_time(&self) -> SqlResult<bool> {
+        let sources_download_time = self.connection.borrow().query_one(
+            "SELECT sources_download_time FROM Providers WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(sources_download_time)
+    }
+
+    /// Sets the sources download time of this provider.
+    pub fn set_sources_download_time(&self, sources_download_time: Option<u32>) -> SqlResult<()> {
+        self.connection.borrow().execute(
+            "UPDATE Providers SET sources_download_time = ? WHERE id = ?",
+            (sources_download_time, self.id),
+        )?;
+        Ok(())
+    }
+
+    /// Returns a list of all the sources that are associated with this provider.
+    pub fn get_sources(&'_ self) -> SqlResult<Vec<Source<'_>>> {
+        let sources = self.connection.borrow()
+            .prepare("SELECT id FROM Sources WHERE provider_id = ?")?
+            .query_map([self.id], |row| {
+                let provider = Source { connection: self.connection, id: row.get(0)? };
+                Ok(provider)
+            })?
+            .collect::<SqlResult<_>>()?;
+        Ok(sources)
+    }
+
+    /// Adds a source to this provider with `language_code` and `urls`.
+    pub fn add_source(&'_ self, language_code: &LanguageIdentifier, urls: SourceUrls) -> SqlResult<Source<'_>> {
+        let connection = self.connection.borrow();
+        let language_id: Option<i64> = connection
+            .query_one(
+                "SELECT id FROM Languages WHERE code = ?", [language_code.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if language_id.is_none() {
+            connection.execute("INSERT INTO Languages (code) VALUES (?)", [language_code.to_string()])?;
+        }
+        let language_id = if let Some(id) = language_id { id } else { connection.last_insert_rowid() };
+
+        connection.execute(
+            "INSERT INTO Sources (provider_id, language_id, originals_url, translations_url) VALUES (?, ?, ?, ?)",
+            (self.id, language_id, urls.originals_url, urls.translations_url),
+        )?;
+        let source_id = connection.last_insert_rowid();
+        Ok(Source { connection: self.connection, id: source_id })
+    }
+
+    /// Deletes all sources that belongs to this provider. 
+    pub fn clear_sources(&self) -> SqlResult<()> {
+        self.connection.borrow().execute("DELETE FROM Sources WHERE provider_id = ?", [self.id])?;
+        Ok(())
+    }
+}
+
+impl Source<'_> {
+    /// Returns the urls of this source.
+    pub fn get_urls(&self) -> SqlResult<SourceUrls> {
+        let urls = self.connection.borrow().query_one(
+            "SELECT originals_url, translations_url FROM Sources WHERE id = ?", [self.id],
+            |row| Ok(SourceUrls { originals_url: row.get(0)?, translations_url: row.get(1)? }),
+        )?;
+        Ok(urls)
+    }
+
+    /// Returns the download time in unix time, and the downloaded texts of this source.
+    pub fn get_text(&self) -> SqlResult<(u32, SourceTexts)> {
+        let (download_time, texts) = self.connection.borrow().query_one(
+            "SELECT download_time, originals_text, translations_text FROM Sources WHERE id = ?", [self.id],
+            |row| {
+                let download_time = row.get(0)?;
+                let texts = SourceTexts {
+                    originals_text: row.get(1)?,
+                    translations_text: row.get(2)?,
+                };
+                Ok((download_time, texts))
+            }
+        )?;
+        Ok((download_time, texts))
+    }
+
+    /// Sets the downloaded texts to this source, using the current time as download time.
+    pub fn set_text(&self, texts: SourceTexts) -> SqlResult<()> {
+        self.connection.borrow().execute(
+            "UPDATE Sources SET download_time = unixepoch(), originals_text = ?, translations_text = ? WHERE id = ?",
+            (texts.originals_text, texts.translations_text, self.id),
+        )?;
+        Ok(())
+    }
+
+    /// Returns whether this source has `failed`.
+    pub fn has_failed(&self) -> SqlResult<bool> {
+        let failed = self.connection.borrow().query_one(
+            "SELECT has_failed FROM Sources WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(failed)
+    }
+
+    /// Sets whether this source has `failed`.
+    pub fn set_failed(&self, failed: bool) -> SqlResult<()> {
+        self.connection.borrow()
+            .execute("UPDATE Sources SET has_failed = ? WHERE id = ?", (failed, self.id))?;
+        Ok(())
+    }
+
+    /// Sets the translations associated with this source.
+    pub fn set_translations(&self, translations: Vec<Translation>) -> SqlResult<()> {
+        let mut connection = self.connection.borrow_mut();
+        let transaction = connection.transaction()?;
+        transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
+        for translation in translations {
+            transaction.execute(
+                "INSERT INTO Translations (source_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?)",
+                (self.id, translation.key, translation.original, translation.translation, translation.comment),
+            )?;
+        }
+        transaction.commit()
+    }
+
+    /// Deletes this source.
+    pub fn delete(self) -> SqlResult<()> {
+        let mut connection = self.connection.borrow_mut();
+        let transaction = connection.transaction()?;
+        transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
+        transaction.execute("DELETE FROM Sources WHERE id = ?", [self.id])?;
+        transaction.commit()
     }
 }
 
