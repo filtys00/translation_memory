@@ -116,13 +116,21 @@ async fn main() -> ExitCode {
     }
     logger.init();
 
-    let mut store = TranslationStore::new(DEFAULT_CACHE_PATH.into());
-
-    info!("Reading cached translations...");
-    if let Err(e) = store.load_translations() {
-        error!("Could not load cached translations: {e}");
-        return ExitCode::FAILURE;
-    }
+    info!("Reading translations from '{DEFAULT_CACHE_PATH}'...");
+    let connection = match Connection::open(DEFAULT_CACHE_PATH) {
+        Ok(connection) => connection,
+        Err(e) => {
+            error!("Could not connect to database: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let store = match TranslationStore::open(connection) {
+        Ok(store) => store,
+        Err(e) => {
+            error!("Could not initialize database: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     let store = Arc::new(Mutex::new(store));
     let console = Arc::new(Mutex::new(StandardStream::stderr(ColorChoice::Auto)));
