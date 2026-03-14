@@ -362,7 +362,7 @@ pub fn builtin_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
             lang_id: "_", true, "@", false,
         }),
         mono!("multimc",     "MultiMC",            None,                       parse_po, Some('&'), github => {
-            url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
+            url: "MultiMC/Translations/master/{}.po",
             lang_id: "_", true, "_", true,
         }),
         mono!("lyx",         "LyX",                None,                       parse_po, Some('&'), url => {
