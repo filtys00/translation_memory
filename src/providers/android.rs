@@ -11,10 +11,8 @@ use base64::{
     engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig},
 };
 use quick_xml::{Reader, events::Event};
-use reqwest::{Client, Url};
-use unic_langid::LanguageIdentifier;
 
-use super::{TranslationMessages, lang_id_to_string, unescape};
+use super::{Downloader, LangId, TranslationMessages, SourceUrls, unescape};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
@@ -102,10 +100,10 @@ pub fn parse_android(text: String) -> anyhow::Result<TranslationMessages> {
     Ok(messages)
 }
 
-pub async fn android_urls(
-    lang_ids: Vec<LanguageIdentifier>,
-    _client: Client,
-) -> anyhow::Result<HashMap<String, (Url, HashMap<LanguageIdentifier, Option<Url>>)>> {
+pub fn android_urls<'a>(
+    lang_ids: &'a [LangId],
+    _: &Downloader,
+) -> anyhow::Result<HashMap<&'a LangId, Vec<SourceUrls>>> {
     #[rustfmt::skip]
     let files = [
         ("bootable/recovery", "tools/recovery_l10n/res"),
@@ -311,23 +309,23 @@ pub async fn android_urls(
         ("packages/wallpapers/LivePicker", "res"),
     ];
 
-    let mut url_bundles = HashMap::with_capacity(files.len());
+    let mut urls: HashMap<&LangId, Vec<SourceUrls>> = HashMap::with_capacity(files.len());
 
     for (repository, folder) in files {
         let default_url = format!(
             "https://android.googlesource.com/platform/{repository}/+/master/{folder}/values/strings.xml?format=TEXT",
         );
 
-        let mut url_bundle = HashMap::with_capacity(lang_ids.len());
-        for lang_id in &lang_ids {
-            url_bundle.insert(lang_id.clone(), Some(Url::parse(&format!(
-                "https://android.googlesource.com/platform/{repository}/+/master/{folder}/values-{}/strings.xml?format=TEXT",
-                lang_id_to_string(lang_id, "-r", true, "-", false),
-            ))?));
+        for lang_id in lang_ids {
+            urls.entry(lang_id).or_default().push(SourceUrls {
+                originals: default_url.clone(),
+                translations: format!(
+                    "https://android.googlesource.com/platform/{repository}/+/master/{folder}/values-{}/strings.xml?format=TEXT",
+                    lang_id.format("-r", true, "-", false),
+                ),
+            });
         }
-
-        url_bundles.insert(default_url.clone(), (Url::parse(&default_url)?, url_bundle));
     }
 
-    Ok(url_bundles)
+    Ok(urls)
 }

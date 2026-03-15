@@ -6,9 +6,9 @@ use anyhow::{anyhow, bail};
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
 
-use super::Translation;
+use super::DbTranslation;
 
-pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_microsoft_tbx(text: String) -> anyhow::Result<Vec<DbTranslation>> {
     let tbx: Tbx = quick_xml::de::from_str(&text)?;
 
     let en_us: LanguageIdentifier = "en-US".parse()?;
@@ -60,7 +60,7 @@ pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Tra
                 .iter()
                 .find(|lang_set| lang_set.lang == *lang_id)?;
 
-            Some(Translation {
+            Some(DbTranslation {
                 original: term_entry_en.ntig.term_grp.term.text.clone(),
                 translation: term_entry.ntig.term_grp.term.text.clone(),
                 comment: term_entry_en
@@ -68,7 +68,6 @@ pub fn parse_microsoft_tbx(text: String, source: &str) -> anyhow::Result<Vec<Tra
                     .as_ref()
                     .map(|descrip_grp| descrip_grp.descrip.text.clone()),
                 key: None,
-                source: source.to_string(),
             })
         })
         .collect();

@@ -4,9 +4,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::Translation;
+use super::DbTranslation;
 
-pub fn parse_qbittorrent_ts(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_qbittorrent_ts(text: String) -> anyhow::Result<Vec<DbTranslation>> {
     let ts: Ts = quick_xml::de::from_str(&text)?;
 
     let translations = ts
@@ -22,12 +22,11 @@ pub fn parse_qbittorrent_ts(text: String, source: &str) -> anyhow::Result<Vec<Tr
                         Some(TranslationType::Unfinished)
                     )
                 })
-                .map(|message| Translation {
+                .map(|message| DbTranslation {
                     original: message.source.text,
                     translation: message.translation.text,
                     comment: message.comment.map(|comment| comment.text),
                     key: None,
-                    source: source.to_string(),
                 })
         })
         .collect();

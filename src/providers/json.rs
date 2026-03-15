@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use anyhow::bail;
 use regex::Regex;
 
-use super::{Translation, TranslationMessages, unescape};
+use super::{DbTranslation, TranslationMessages, unescape};
 
 pub fn parse_json(text: String) -> anyhow::Result<TranslationMessages> {
     let json: HashMap<String, serde_json::Value> = serde_json::from_str(&text)?;
@@ -47,7 +47,7 @@ fn parse_recursive(
     Ok(())
 }
 
-pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_elementary_json(text: String) -> anyhow::Result<Vec<DbTranslation>> {
     let json: HashMap<String, String> = serde_json::from_str(&text)?;
 
     let mut translations = Vec::new();
@@ -55,12 +55,11 @@ pub fn parse_elementary_json(text: String, source: &str) -> anyhow::Result<Vec<T
         if message_en.is_empty() || message.is_empty() {
             continue;
         }
-        translations.push(Translation {
+        translations.push(DbTranslation {
             original: message_en,
             translation: message,
             comment: None,
             key: None,
-            source: source.to_string(),
         });
     }
     Ok(translations)

@@ -2,19 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use unic_langid::LanguageIdentifier;
 
-use super::lang_id_to_string;
+use super::{Downloader, LangId};
 
 // KDE GitLab GraphiQL: https://invent.kde.org/-/graphql-explorer
 
-pub async fn graphql_kde(
-    lang_id: LanguageIdentifier,
-    client: Client,
-) -> Result<Vec<String>, anyhow::Error> {
+pub fn graphql_kde(lang_id: &LangId, downloader: &Downloader) -> anyhow::Result<Vec<String>> {
     let query = format!(
         "
         query {{
@@ -52,15 +47,13 @@ pub async fn graphql_kde(
             }}
         }}
         ",
-        lang_id_to_string(&lang_id, "_", true, "@", false),
+        lang_id.format("_", true, "@", false),
     );
 
-    let response: Response = client
-        .post("https://invent.kde.org/api/graphql")
-        .json(&json!({"query": query, "variables": ()}))
-        .send()
-        .await?;
-    let response: GraphQl = response.json().await?;
+    let response: GraphQl = downloader.post_json(
+        "https://invent.kde.org/api/graphql",
+        json!({"query": query, "variables": ()}),
+    )?;
 
     let mut urls = Vec::new();
 

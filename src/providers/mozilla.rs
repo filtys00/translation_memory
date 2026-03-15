@@ -5,9 +5,9 @@
 use anyhow::{anyhow, bail};
 use unic_langid::LanguageIdentifier;
 
-use super::Translation;
+use super::DbTranslation;
 
-pub fn parse_mozilla_tmx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_mozilla_tmx(text: String) -> anyhow::Result<Vec<DbTranslation>> {
     let tmx: tmx::Tmx = quick_xml::de::from_str(&text)?;
 
     let lang_id = tmx
@@ -49,12 +49,11 @@ pub fn parse_mozilla_tmx(text: String, source: &str) -> anyhow::Result<Vec<Trans
             let tuv_en = tu.entries.iter().find(|tuv| tuv.lang == tu.srclang)?;
             let tuv = tu.entries.iter().find(|tuv| tuv.lang == *lang_id)?;
 
-            Some(Translation {
+            Some(DbTranslation {
                 original: tuv_en.seg.text.clone(),
                 translation: tuv.seg.text.clone(),
                 comment: None,
                 key: Some(tu.tuid.clone()),
-                source: source.to_string(),
             })
         })
         .collect();
@@ -103,7 +102,7 @@ mod tmx {
     }
 }
 
-pub fn parse_mozilla_tbx(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_mozilla_tbx(text: String) -> anyhow::Result<Vec<DbTranslation>> {
     let tbx: tbx::Tbx = quick_xml::de::from_str(&text)?;
 
     let en_us: LanguageIdentifier = "en-US".parse().unwrap();
@@ -159,7 +158,7 @@ pub fn parse_mozilla_tbx(text: String, source: &str) -> anyhow::Result<Vec<Trans
                 .iter()
                 .find(|lang_sec| lang_sec.lang == *lang_id)?;
 
-            Some(Translation {
+            Some(DbTranslation {
                 original: lang_sec_en.term_sec.term.text.clone(),
                 translation: lang_sec.term_sec.term.text.clone(),
                 comment: lang_sec_en
@@ -176,7 +175,6 @@ pub fn parse_mozilla_tbx(text: String, source: &str) -> anyhow::Result<Vec<Trans
                             .reduce(|acc, descrip| acc + "\n" + &descrip)
                     }),
                 key: None,
-                source: source.to_string(),
             })
         })
         .collect();

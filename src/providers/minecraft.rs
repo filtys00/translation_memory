@@ -2,113 +2,70 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{
-    collections::{BTreeMap, HashMap},
-    io::Cursor,
-};
+use std::{collections::HashMap, io::Cursor};
 
-use anyhow::anyhow;
-use async_trait::async_trait;
-use log::trace;
-use reqwest::Client;
+use anyhow::{anyhow, bail};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use unic_langid::LanguageIdentifier;
 use zip::ZipArchive;
 
-use super::{ProviderCache, ProviderCacheMultiple, Translation, TranslationProvider, lang_id_to_string};
+use crate::providers::Provider;
 
-pub struct MinecraftProvider;
+use super::{DbProvider, DbSource, DbSourceContent, DbSourceUrls, Downloader, LangId, TranslationMessages};
 
-#[async_trait]
-impl TranslationProvider for MinecraftProvider {
-    fn id(&self) -> &str {
-        "minecraft"
+pub fn get_minecraft_sources(lang_ids: &[LangId], provider: &DbProvider, downloader: &Downloader) -> anyhow::Result<()> {
+    let manifest: Manifest = downloader.get_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")?;
+    let version = manifest
+        .versions
+        .iter()
+        .find(|version| version.id == manifest.latest.release)
+        .ok_or_else(|| {
+            anyhow!("Malformed Minecraft manifest: 'latest.release' does not exist")
+        })?;
+    let version: Version = downloader.get_json(&version.url)?;
+    let asset_index: AssetIndex = downloader.get_json(&version.asset_index.url)?;
+
+    let default_url = Url::parse(&version.downloads.client.url)?;
+
+    for lang_id in lang_ids {
+        let key = format!("minecraft/lang/{}.json", lang_id.format("_", false, "_", false));
+        let Some(object) = asset_index.objects.get(&key) else { continue; };
+        let url = Url::parse(&format!(
+            "https://resources.download.minecraft.net/{}/{}",
+            object.hash.get(0..2).unwrap_or(""),
+            object.hash,
+        ))?;
+        provider.set_sources(lang_id, &[
+            DbSourceUrls { originals: Some(default_url.clone()), translations: url }
+        ])?;
     }
 
-    fn name(&self) -> &str {
-        "Minecraft"
-    }
+    Ok(())
+}
 
-    async fn generate(
-        &self,
-        _previous: Option<ProviderCacheMultiple>,
-        lang_ids: Vec<LanguageIdentifier>,
-        client: Client,
-    ) -> anyhow::Result<ProviderCache> {
-        let manifest: Manifest = client
-            .get("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")
-            .send()
-            .await?
-            .json()
-            .await?;
-
-        let version = manifest
-            .versions
-            .iter()
-            .find(|version| version.id == manifest.latest.release)
-            .ok_or_else(|| {
-                anyhow!("Malformed Minecraft manifest: 'latest.release' does not exist")
-            })?;
-        let version: Version = client.get(&version.url).send().await?.json().await?;
-
-        let asset_index: AssetIndex = client
-            .get(version.asset_index.url)
-            .send()
-            .await?
-            .json()
-            .await?;
-
-        let mut translation_bundle = BTreeMap::new();
-
-        let messages_en: HashMap<String, String> = {
-            let bytes = client
-                .get(&version.downloads.client.url)
-                .send()
-                .await?
-                .bytes()
-                .await?;
+fn parse_content(content: DbSourceContent) -> anyhow::Result<TranslationMessages> {
+    let messages: HashMap<String, String> = match content {
+        DbSourceContent::None => bail!("No source content"),
+        DbSourceContent::Text(text ) => serde_json::from_str(&text)?,
+        DbSourceContent::Bytes(bytes) => {
             let mut zip = ZipArchive::new(Cursor::new(bytes))?;
             let lang_file = zip.by_name("assets/minecraft/lang/en_us.json")?;
             serde_json::from_reader(lang_file)?
-        };
-
-        for lang_id in lang_ids {
-            let key = format!(
-                "minecraft/lang/{}.json",
-                lang_id_to_string(&lang_id, "_", false, "_", false),
-            );
-
-            let Some(object) = asset_index.objects.get(&key) else {
-                translation_bundle.insert(lang_id, None);
-                continue;
-            };
-            let url = format!(
-                "https://resources.download.minecraft.net/{}/{}",
-                object.hash.get(0..2).unwrap_or(""),
-                object.hash,
-            );
-            let messages: HashMap<String, String> = client.get(&url).send().await?.json().await?;
-
-            let mut translations = Vec::with_capacity(messages.len());
-            for (key, message) in messages {
-                let Some(message_en) = messages_en.get(&key) else {
-                    trace!("Translation key '{key}' were found in '{lang_id}' translation but not in default translation");
-                    continue;
-                };
-
-                translations.push(Translation {
-                    original: message_en.clone(),
-                    translation: message,
-                    comment: None,
-                    key: Some(key),
-                    source: url.clone(),
-                });
-            }
-            translation_bundle.insert(lang_id, Some(translations));
         }
+    };
+    let messages = messages.into_iter()
+        .map(|(key, translation)| (key, (translation, None)))
+        .collect();
+    Ok(messages)
+}
 
-        Ok(ProviderCache::Single(translation_bundle))
-    }
+pub fn parse_minecraft(source: &DbSource) -> anyhow::Result<()> {
+    let contents = source.get_contents()?;
+    let default_messages = parse_content(contents.originals)?;
+    let messages = parse_content(contents.translations)?;
+    let translations = Provider::merge_messages(messages, default_messages);
+    source.set_translations(&translations)?;
+    Ok(())
 }
 
 #[derive(Deserialize, Serialize)]

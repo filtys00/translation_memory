@@ -2,116 +2,69 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{
-    collections::BTreeMap,
-    io::{BufReader, Cursor, Read},
-};
+use std::{io::{BufReader, Cursor}, str::FromStr};
 
-use anyhow::anyhow;
-use async_trait::async_trait;
-use reqwest::Client;
+use anyhow::bail;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use unic_langid::LanguageIdentifier;
-use zip::{read::ZipFile, ZipArchive};
+use zip::ZipArchive;
 
-use super::{ProviderCache, ProviderCacheMultiple, Translation, TranslationBundle, TranslationProvider};
+use crate::database::SourceUrls;
+
+use super::{DbProvider, DbSource, Downloader, LangId, DbSourceContent, DbTranslation};
 
 // https://joint-research-centre.ec.europa.eu/language-technology-resources_en
 
-pub struct EuProvider;
-
-#[async_trait]
-impl TranslationProvider for EuProvider {
-    fn id(&self) -> &str {
-        "eu"
+pub fn get_eu_source(lang_ids: &[LangId], provider: &DbProvider, _: &Downloader) -> anyhow::Result<()> {
+    let urls = [
+        SourceUrls {
+            originals: None,
+            translations: Url::parse("https://wt-public.emm4u.eu/Resources/EAC-TM/EAC-TM-all.zip")?,
+        },
+        SourceUrls {
+            originals: None,
+            translations: Url::parse("https://wt-public.emm4u.eu/Resources/ECDC-TM/ECDC-TM.zip")?,
+        },
+    ];
+    for lang_id in lang_ids {
+        provider.set_sources(lang_id, &urls)?;
     }
+    Ok(())
+}
 
-    fn name(&self) -> &str {
-        "European Commision"
-    }
+pub fn parse_eu_tmx(source: &DbSource) -> anyhow::Result<()> {
+    let en_lang_id = LanguageIdentifier::from_str("en")?;
+    let lang_id = source.get_language()?;
+    let DbSourceContent::Bytes(bytes) = source.get_contents()?.translations else {
+        bail!("No translation bytes");
+    };
 
-    async fn generate(
-        &self,
-        _previous: Option<ProviderCacheMultiple>,
-        lang_ids: Vec<LanguageIdentifier>,
-        client: Client,
-    ) -> anyhow::Result<ProviderCache> {
-        fn parse_tmx<R: Read>(
-            zip_file: ZipFile<R>,
-            lang_ids: &[LanguageIdentifier],
-            translation_bundle: &mut TranslationBundle,
-            en: &LanguageIdentifier,
-            url: &str,
-        ) -> anyhow::Result<()> {
-            let tmx: Tmx = quick_xml::de::from_reader(BufReader::new(zip_file))?;
-            for tu in tmx.body.entries {
-                let Some(tuv_en) = tu.entries.iter().find(|tuv| tuv.lang == *en) else {
-                    continue;
-                };
-                for lang_id in lang_ids {
-                    let Some(tuv) = tu.entries.iter().find(|tuv| tuv.lang == *lang_id) else {
-                        continue;
-                    };
-                    let Some(translations) = translation_bundle
-                        .entry(lang_id.clone())
-                        .or_insert_with(|| Some(Vec::new()))
-                    else {
-                        continue;
-                    };
-                    translations.push(Translation {
-                        original: tuv_en.seg.text.clone(),
-                        translation: tuv.seg.text.clone(),
-                        comment: None,
-                        key: None,
-                        source: url.to_string(),
-                    });
-                }
-            }
-            Ok(())
+    let mut translations = Vec::new();
+
+    let mut zip = ZipArchive::new(Cursor::new(bytes))?;
+    for file_name in zip.file_names().map(|n| n.to_string()).collect::<Vec<_>>() {
+        if !file_name.ends_with(".tmx") { continue; }
+
+        let tmx: Tmx = quick_xml::de::from_reader(BufReader::new(zip.by_name(&file_name)?))?;
+        for tu in tmx.body.entries {
+            let Some(tuv_en) = tu.entries.iter().find(|tuv| tuv.lang == en_lang_id) else {
+                continue;
+            };
+            let Some(tuv) = tu.entries.iter().find(|tuv| tuv.lang == lang_id) else {
+                continue;
+            };
+            translations.push(DbTranslation {
+                key: None,
+                original: tuv_en.seg.text.clone(),
+                translation: tuv.seg.text.clone(),
+                comment: None,
+            });
         }
-
-        let en: LanguageIdentifier = "en".parse().unwrap();
-        let mut translation_bundle = BTreeMap::new();
-
-        let url = "https://wt-public.emm4u.eu/Resources/EAC-TM/EAC-TM-all.zip";
-        let response = client.get(url).send().await?;
-        let bytes = response.bytes().await?;
-        let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-        parse_tmx(
-            zip.by_name("EAC_REFRENCE_DATA.tmx")
-                .map_err(|e| anyhow!("could not get file 'EAC_REFRENCE_DATA.tmx': {e}"))?,
-            &lang_ids,
-            &mut translation_bundle,
-            &en,
-            url,
-        )
-        .map_err(|e| anyhow!("could not parse file 'EAC_REFRENCE_DATA.tmx': {e}"))?;
-        parse_tmx(
-            zip.by_name("EAC_FORMS.tmx")
-                .map_err(|e| anyhow!("could not get file 'EAC_FORMS.tmx': {e}"))?,
-            &lang_ids,
-            &mut translation_bundle,
-            &en,
-            url,
-        )
-        .map_err(|e| anyhow!("could not parse file 'EAC_FORMS.tmx': {e}"))?;
-
-        let url = "https://wt-public.emm4u.eu/Resources/ECDC-TM/ECDC-TM.zip";
-        let response = client.get(url).send().await?;
-        let bytes = response.bytes().await?;
-        let mut zip = ZipArchive::new(Cursor::new(bytes))?;
-        parse_tmx(
-            zip.by_name("ECDC-TM/ECDC.tmx")
-                .map_err(|e| anyhow!("could not get file 'ECDC-TM/ECDC.tmx': {e}"))?,
-            &lang_ids,
-            &mut translation_bundle,
-            &en,
-            url,
-        )
-        .map_err(|e| anyhow!("could not parse file 'ECDC-TM/ECDC.tmx': {e}"))?;
-
-        Ok(ProviderCache::Single(translation_bundle))
     }
+
+    source.set_translations(&translations)?;
+    Ok(())
 }
 
 #[derive(Debug, Deserialize, Serialize)]

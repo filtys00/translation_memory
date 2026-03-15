@@ -2,29 +2,92 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{sync::Arc, vec};
+use std::vec;
 
 use super::{
-    adapt_urls_to_mass,
     android::{android_urls, parse_android, parse_android_base64},
     browser_extension::{parse_browser_extension, parse_dark_reader},
     chrome::{chromium_urls, parse_xtb_base64},
     dtd::parse_dtd,
-    eu::EuProvider,
+    eu::{get_eu_source, parse_eu_tmx},
     gnome::graphql_gnome,
     json::{parse_elementary_json, parse_geogebra_js_json, parse_json},
     kde::graphql_kde,
-    lang_id_to_string,
     libreoffice::crawl_libreoffice,
-    minecraft::MinecraftProvider,
+    minecraft::{get_minecraft_sources, parse_minecraft},
     mozilla::{parse_mozilla_tbx, parse_mozilla_tmx},
-    po::{parse_po, parse_po_base64},
+    po::{parse_po, parse_po_base64_remove_underscore, parse_po_remove_ampersand, parse_po_remove_underscore},
     properties::{parse_obs_studio_ini, parse_properties},
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
     yaml::parse_mastodon_yaml,
-    DuoProvider, MassDuoProvider, MassMonoProvider, MonoProvider, TranslationProvider,
+    Provider,
 };
+
+macro_rules! mono {
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, url => {
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        Provider::new_mono_one_per_lang($id, $name, $group_name, $parse, |lang_id| {
+            format!($url, lang_id.format($region_binder, $uppercase_region, $variant_binder, $uppercase_variant))
+        })
+    };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, github => {
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        mono!($id, $name, $group_name, $parse, url => {
+            url: concat!("https://raw.githubusercontent.com/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
+        })
+    };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, gitlab => {
+        base_url: $base_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        mono!($id, $name, $group_name, $parse, url => {
+            url: concat!("https://", $base_url, "/-/raw/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
+        })
+    };
+}
+
+macro_rules! duo {
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, url => {
+        default_url: $default_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        Provider::new_duo_one_per_lang($id, $name, $group_name, $parse, $default_url, |lang_id| {
+            format!($url, lang_id.format($region_binder, $uppercase_region, $variant_binder, $uppercase_variant))
+        })
+    };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, github => {
+        default_url: $default_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        duo!($id, $name, $group_name, $parse, url => {
+            default_url: concat!("https://raw.githubusercontent.com/", $default_url),
+            url: concat!("https://raw.githubusercontent.com/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
+        })
+    };
+    ($id:expr, $name:expr, $group_name:expr, $parse:ident, gitlab => {
+        base_url: $base_url:expr,
+        default_url: $default_url:expr,
+        url: $url:expr,
+        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
+    }) => {
+        duo!($id, $name, $group_name, $parse, url => {
+            default_url: concat!("https://", $base_url, "/-/raw/", $default_url),
+            url: concat!("https://", $base_url, "/-/raw/", $url),
+            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
+        })
+    };
+}
 
 macro_rules! android {
     ($id:literal, $name:literal, github => $repo:literal, $file_name:literal) => {
@@ -62,112 +125,15 @@ macro_rules! browser_extension {
     };
 }
 
-macro_rules! mono {
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, url => {
-        url: $url:expr,
-        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    }) => {
-        Arc::new(MonoProvider {
-            id: $id,
-            name: $name,
-            group_name: $group_name,
-            parse: $parse,
-            remove_char: $remove_char,
-            url: |lang_id| {
-                format!(
-                    $url,
-                    lang_id_to_string(
-                        lang_id,
-                        $region_binder,
-                        $uppercase_region,
-                        $variant_binder,
-                        $uppercase_variant
-                    ),
-                )
-            },
-        })
-    };
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, github => {
-        url: $url:expr,
-        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    }) => {
-        mono!($id, $name, $group_name, $parse, $remove_char, url => {
-            url: concat!("https://raw.githubusercontent.com/", $url),
-            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
-        })
-    };
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, $remove_char:expr, gitlab => {
-        base_url: $base_url:expr,
-        url: $url:expr,
-        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    }) => {
-        mono!($id, $name, $group_name, $parse, $remove_char, url => {
-            url: concat!("https://", $base_url, "/-/raw/", $url),
-            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
-        })
-    };
-}
-
-macro_rules! duo {
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, url => {
-        default_url: $default_url:expr,
-        url: $url:expr,
-        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    }) => {
-        Arc::new(DuoProvider {
-            id: $id,
-            name: $name,
-            group_name: $group_name,
-            parse: $parse,
-            default_url: $default_url,
-            url: |lang_id| {
-                format!(
-                    $url,
-                    lang_id_to_string(
-                        lang_id,
-                        $region_binder,
-                        $uppercase_region,
-                        $variant_binder,
-                        $uppercase_variant
-                    ),
-                )
-            },
-        })
-    };
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, github => {
-        default_url: $default_url:expr,
-        url: $url:expr,
-        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    }) => {
-        duo!($id, $name, $group_name, $parse, url => {
-            default_url: concat!("https://raw.githubusercontent.com/", $default_url),
-            url: concat!("https://raw.githubusercontent.com/", $url),
-            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
-        })
-    };
-    ($id:expr, $name:expr, $group_name:expr, $parse:ident, gitlab => {
-        base_url: $base_url:expr,
-        default_url: $default_url:expr,
-        url: $url:expr,
-        lang_id: $region_binder:literal, $uppercase_region:literal, $variant_binder:literal, $uppercase_variant:literal,
-    }) => {
-        duo!($id, $name, $group_name, $parse, url => {
-            default_url: concat!("https://", $base_url, "/-/raw/", $default_url),
-            url: concat!("https://", $base_url, "/-/raw/", $url),
-            lang_id: $region_binder, $uppercase_region, $variant_binder, $uppercase_variant,
-        })
-    };
-}
-
 macro_rules! elementary {
     ($id:literal, json => $path:literal) => {
-        mono!(concat!("elementary-", $id), concat!("Elementary ", $path), Some("Elementary"), parse_elementary_json, None, github => {
+        mono!(concat!("elementary-", $id), concat!("Elementary ", $path), Some("Elementary"), parse_elementary_json, github => {
             url: concat!("elementary/website/master/_lang/{}/", $path, ".json"),
             lang_id: "_", true, "@", false,
         })
     };
     ($id:literal, $name:literal, po => $repo:literal, $path:literal) => {
-        mono!(concat!("elementary-", $id), $name, Some("Elementary"), parse_po, Some('_'), github => {
+        mono!(concat!("elementary-", $id), $name, Some("Elementary"), parse_po_remove_underscore, github => {
             url: concat!("elementary/", $repo, "/", $path, "/{}.po"),
             lang_id: "_", true, "_", false,
         })
@@ -228,7 +194,7 @@ macro_rules! tor {
         })
     };
     ($id:literal, $name:literal, po => $branch:literal, $path:literal) => {
-        mono!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_po, None, gitlab => {
+        mono!(concat!("torproject-", $id), $name, Some("The Tor Project"), parse_po, gitlab => {
             base_url: "gitlab.torproject.org/tpo/translation",
             url: concat!($branch, "/", $path),
             lang_id: "-", true, "@", false,
@@ -245,84 +211,31 @@ macro_rules! tor {
 }
 
 #[rustfmt::skip]
-pub fn builtin_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
-    let providers: Vec<Arc<dyn TranslationProvider + Send + Sync>> = vec![
-        Arc::new(EuProvider),
-        Arc::new(MinecraftProvider),
-        Arc::new(MonoProvider {
-            id: "mozilla-terminology",
-            name: "Mozilla terminology",
-            parse: parse_mozilla_tbx,
-            remove_char: None,
-            group_name: Some("Mozilla"),
-            url: |lang_id| {
-                format!(
-                    "https://pontoon.mozilla.org/terminology/{}.tbx",
-                    lang_id_to_string(lang_id, "-", true, "-", false),
-                )
-            },
-        }),
-        Arc::new(MonoProvider {
-            id: "mozilla",
-            name: "Mozilla",
-            parse: parse_mozilla_tmx,
-            remove_char: None,
-            group_name: Some("Mozilla"),
-            url: |lang_id| {
-                format!(
-                    "https://pontoon.mozilla.org/translation-memory/{}.all-projects.tmx",
-                    lang_id_to_string(lang_id, "-", true, "-", false),
-                )
-            },
-        }),
-        Arc::new(MassDuoProvider {
-            id: "android",
-            name: "Android",
-            group_name: None,
-            urls: android_urls,
-            parse: parse_android_base64,
-        }),
-        Arc::new(MassDuoProvider {
-            id: "chrome",
-            name: "Chromium",
-            group_name: None,
-            urls: chromium_urls,
-            parse: parse_xtb_base64,
-        }),
-        Arc::new(MassMonoProvider {
-            id: "gnome",
-            name: "GNOME",
-            group_name: None,
-            urls: |lang_ids, client| adapt_urls_to_mass(graphql_gnome, lang_ids, client),
-            parse: parse_po,
-            remove_char: Some('_'),
-        }),
-        Arc::new(MassMonoProvider {
-            id: "kde",
-            name: "KDE",
-            group_name: None,
-            urls: |lang_ids, client| adapt_urls_to_mass(graphql_kde, lang_ids, client),
-            parse: parse_po,
-            remove_char: Some('&'),
-        }),
-        Arc::new(MassMonoProvider {
-            id: "libreoffice",
-            name: "LibreOffice",
-            group_name: None,
-            urls: |lang_ids, client| adapt_urls_to_mass(crawl_libreoffice, lang_ids, client),
-            parse: parse_po_base64,
-            remove_char: Some('_'),
-        }),
+pub fn builtin_providers() -> Vec<Provider<'static>> {
+    let providers: Vec<Provider> = vec![
+        Provider::new("eu", "European Commision", None, parse_eu_tmx, get_eu_source),
+        Provider::new("minecraft", "Minecraft", None, parse_minecraft, get_minecraft_sources),
+        Provider::new_mono_one_per_lang("mozilla-terminology", "Mozilla terminology", Some("Mozilla"), parse_mozilla_tbx,
+            |lang_id| format!("https://pontoon.mozilla.org/terminology/{}.tbx", lang_id.format("-", true, "-", false))
+        ),
+        Provider::new_mono_one_per_lang("mozilla", "Mozilla", Some("Mozilla"), parse_mozilla_tmx,
+            |lang_id| format!("https://pontoon.mozilla.org/translation-memory/{}.all-projects.tmx", lang_id.format("-", true, "-", false))
+        ),
+        Provider::new_duo_many_per_langs("android", "Android", None, parse_android_base64, android_urls),
+        Provider::new_duo_many_per_langs("chrome", "Chromium", None, parse_xtb_base64, chromium_urls),
+        Provider::new_mono_many_per_lang("gnome", "GNOME", None, parse_po_remove_underscore, graphql_gnome),
+        Provider::new_mono_many_per_lang("kde", "KDE", None, parse_po_remove_ampersand, graphql_kde),
+        Provider::new_mono_many_per_lang("libreoffice", "LibreOffice", None, parse_po_base64_remove_underscore, crawl_libreoffice),
 
-        mono!("arduino",     "Arduino IDE",        None,                       parse_po, None,     github => {
+        mono!("arduino",     "Arduino IDE",        None,                       parse_po,           github => {
             url: "arduino/Arduino/master/arduino-core/src/processing/app/i18n/Resources_{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("audacity",    "Audacity",           None,                       parse_po, None,     github => {
+        mono!("audacity",    "Audacity",           None,                       parse_po,           github => {
             url: "audacity/audacity/master/locale/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("bottles",     "Bottles",            None,                       parse_po, None,     github => {
+        mono!("bottles",     "Bottles",            None,                       parse_po,           github => {
             url: "bottlesdevs/Bottles/main/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
@@ -331,41 +244,41 @@ pub fn builtin_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
                     url: "darkreader/darkreader/main/src/_locales/{}.config",
             lang_id: "-", true, "@", false,
         }),
-        mono!("darktable",   "Darktable",          None,                       parse_po, None,      github => {
+        mono!("darktable",   "Darktable",          None,                       parse_po,           github => {
             url: "darktable-org/darktable/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("dolphin-emulator", "Dolphin",       None,                       parse_po, None,      github => {
+        mono!("dolphin-emulator", "Dolphin",       None,                       parse_po,           github => {
             url: "dolphin-emu/dolphin/master/Languages/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("duckduckgo",  "DuckDuckGo",         None,                       parse_po, None,      github => {
+        mono!("duckduckgo",  "DuckDuckGo",         None,                       parse_po,           github => {
             url: "duckduckgo/duckduckgo-locales/master/locales/{}/LC_MESSAGES/duckduckgo.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("extension-manager", "Extension Manager", None,                  parse_po, None,      github => {
+        mono!("extension-manager", "Extension Manager", None,                  parse_po,           github => {
             url: "mjakeman/extension-manager/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("flatseal",    "Flatseal",           None,                       parse_po, None,      github => {
+        mono!("flatseal",    "Flatseal",           None,                       parse_po,           github => {
             url: "tchx84/Flatseal/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        duo!( "freeshow",    "FreeShow",           None,                       parse_json,          github => {
+        duo!( "freeshow",    "FreeShow",           None,                       parse_json,         github => {
             default_url: "ChurchApps/FreeShow/main/public/lang/en.json",
                     url: "ChurchApps/FreeShow/main/public/lang/{}.json",
             lang_id: "_", true, "@", false,
         }),
-        mono!("inkscape",    "Inkscape",           Some("Inkscape"),           parse_po, Some('_'), gitlab => {
+        mono!("inkscape",    "Inkscape",           Some("Inkscape"),           parse_po_remove_underscore, gitlab => {
             base_url: "gitlab.com/inkscape/inkscape",
             url: "master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("multimc",     "MultiMC",            None,                       parse_po, Some('&'), github => {
+        mono!("multimc",     "MultiMC",            None,                       parse_po_remove_ampersand, github => {
             url: "MultiMC/Translations/master/{}.po",
             lang_id: "_", true, "_", true,
         }),
-        mono!("lyx",         "LyX",                None,                       parse_po, Some('&'), url => {
+        mono!("lyx",         "LyX",                None,                       parse_po_remove_ampersand, url => {
             url: "https://git.lyx.org/gitweb/?p=lyx.git;a=blob_plain;f=po/{}.po;hb=HEAD",
             lang_id: "_", true, "@", true,
         }),
@@ -374,58 +287,58 @@ pub fn builtin_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
                     url: "obsproject/obs-studio/master/UI/data/locale/{}.ini",
             lang_id: "-", true, "-", false,
         }),
-        duo!( "obsidian",    "Obsidian",           None,                       parse_json,          github => {
+        duo!( "obsidian",    "Obsidian",           None,                       parse_json,         github => {
             default_url: "obsidianmd/obsidian-translations/master/en.json",
                     url: "obsidianmd/obsidian-translations/master/{}.json",
             lang_id: "-", true, "-", false,
         }),
-        mono!("pacman",      "Pacman",             None,                       parse_po, None,      gitlab => {
+        mono!("pacman",      "Pacman",             None,                       parse_po,           gitlab => {
             base_url: "gitlab.archlinux.org/pacman/pacman",
             url: "master/src/pacman/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("poedit",      "Poedit",             None,                       parse_po, None,      github => {
+        mono!("poedit",      "Poedit",             None,                       parse_po,           github => {
             url: "vslavik/poedit/master/locales/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("qbittorrent", "qBittorrent",        None,                       parse_qbittorrent_ts, None, github => {
+        mono!("qbittorrent", "qBittorrent",        None,                       parse_qbittorrent_ts, github => {
             url: "qbittorrent/qBittorrent/master/src/lang/qbittorrent_{}.ts",
             lang_id: "_", true, "@", false,
         }),
-        mono!("strawberry",  "Strawberry",         None,                       parse_po, Some('&'), github => {
+        mono!("strawberry",  "Strawberry",         None,                       parse_po_remove_ampersand, github => {
             url: "strawberrymusicplayer/strawberry/master/src/translations/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("trac",        "Trac",               Some("Trac"),               parse_po, None,      url => {
+        mono!("trac",        "Trac",               Some("Trac"),               parse_po,           url => {
             url: "https://trac.edgewall.org/browser/trunk/trac/locale/{}/LC_MESSAGES/messages.po?format=txt",
             lang_id: "_", true, "@", false,
         }),
-        mono!("trac-js",     "Trac JavaScript",    Some("Trac"),               parse_po, None,      url => {
+        mono!("trac-js",     "Trac JavaScript",    Some("Trac"),               parse_po,           url => {
             url: "https://trac.edgewall.org/browser/trunk/trac/locale/{}/LC_MESSAGES/messages-js.po?format=txt",
             lang_id: "_", true, "@", false,
         }),
-        mono!("trac-ini",    "Trac INI",           Some("Trac"),               parse_po, None,      url => {
+        mono!("trac-ini",    "Trac INI",           Some("Trac"),               parse_po,           url => {
             url: "https://trac.edgewall.org/browser/trunk/trac/locale/{}/LC_MESSAGES/tracini.po?format=txt",
             lang_id: "_", true, "@", false,
         }),
-        mono!("vlc",         "VLC",                None,                       parse_po, None,      github => {
+        mono!("vlc",         "VLC",                None,                       parse_po,           github => {
             url: "videolan/vlc/master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("weblate",     "Weblate",            Some("Weblate"),            parse_po, None,      github => {
+        mono!("weblate",     "Weblate",            Some("Weblate"),            parse_po,           github => {
             url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/django.po",
             lang_id: "_", true, "_", false,
         }),
-        mono!("weblatejs",   "Weblate JavaScript", Some("Weblate"),            parse_po, None,      github => {
+        mono!("weblatejs",   "Weblate JavaScript", Some("Weblate"),            parse_po,           github => {
             url: "WeblateOrg/weblate/main/weblate/locale/{}/LC_MESSAGES/djangojs.po",
             lang_id: "_", true, "_", false,
         }),
-        mono!("wine",        "Wine",               None,                       parse_po, Some('&'), gitlab => {
+        mono!("wine",        "Wine",               None,                       parse_po_remove_ampersand, gitlab => {
             base_url: "gitlab.winehq.org/wine/wine",
             url: "master/po/{}.po",
             lang_id: "_", true, "@", false,
         }),
-        mono!("xdg-shared-mime-info", "XDG shared mime info", None, parse_po, None, gitlab => {
+        mono!("xdg-shared-mime-info", "XDG shared mime info", None, parse_po, gitlab => {
             base_url: "gitlab.freedesktop.org/xdg/shared-mime-info",
             url: "master/po/{}.po",
             lang_id: "_", true, "@", false,
@@ -617,17 +530,17 @@ pub fn builtin_providers() -> Vec<Arc<dyn TranslationProvider + Send + Sync>> {
 
         let mut set = HashSet::with_capacity(providers.len());
         for (i, provider) in providers.iter().enumerate() {
-            if !provider.id().chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
-                panic!("Invalid id: '{}', at index {i}", provider.id());
+            if !provider.code().chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') {
+                panic!("Invalid code: '{}', at index {i}", provider.code());
             }
             if provider.name() == "" {
-                panic!("Provider has empty name: '{}', at index {i}", provider.id());
+                panic!("Provider has empty name: '{}', at index {i}", provider.code());
             }
 
-            if set.contains(provider.id()) {
-                panic!("Duplicate id: '{}', second at index {i}", provider.id());
+            if set.contains(provider.code()) {
+                panic!("Duplicate code: '{}', second at index {i}", provider.code());
             }
-            set.insert(provider.id());
+            set.insert(provider.code());
 
             if !provider.name().is_empty() && set.contains(provider.name()) {
                 panic!("Duplicate name: '{}', second at index {i}", provider.name());

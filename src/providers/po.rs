@@ -8,7 +8,7 @@ use anyhow::anyhow;
 use base64::{alphabet::Alphabet, engine::{GeneralPurpose, GeneralPurposeConfig}, Engine};
 use log::trace;
 
-use super::{Translation, unescape};
+use super::{DbTranslation, unescape};
 
 const BASE64: GeneralPurpose = GeneralPurpose::new(
     match &Alphabet::new("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/") {
@@ -18,23 +18,40 @@ const BASE64: GeneralPurpose = GeneralPurpose::new(
     GeneralPurposeConfig::new(),
 );
 
-pub fn parse_po_base64(base64: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+fn parse_po_remove_char(text: String, char: char) -> anyhow::Result<Vec<DbTranslation>> {
+    let mut translations = parse_po(text)?;
+    translations.iter_mut().for_each(|translation| {
+        translation.original = translation.original.replace(char, "");
+        translation.translation = translation.translation.replace(char, "");
+    });
+    Ok(translations)
+}
+
+pub fn parse_po_remove_underscore(text: String) -> anyhow::Result<Vec<DbTranslation>> {
+    parse_po_remove_char(text, '_')
+}
+
+pub fn parse_po_remove_ampersand(text: String) -> anyhow::Result<Vec<DbTranslation>> {
+    parse_po_remove_char(text, '&')
+}
+
+pub fn parse_po_base64_remove_underscore(base64: String) -> anyhow::Result<Vec<DbTranslation>> {
     let bytes = BASE64
         .decode(&base64)
         .map_err(|e| anyhow!("Invalid base64: {e}\n{base64}"))?;
     let text =
         String::from_utf8(bytes).map_err(|e| anyhow!("Invalid text from base64: {e}\n{base64}"))?;
-    parse_po(text, source)
+    parse_po_remove_underscore(text)
 }
 
-pub fn parse_po(text: String, source: &str) -> anyhow::Result<Vec<Translation>> {
+pub fn parse_po(text: String) -> anyhow::Result<Vec<DbTranslation>> {
     let mut translations = Vec::new();
 
     let mut values: HashMap<&str, String> = HashMap::new();
     let mut last: Option<&mut String> = None;
     for line in text.lines().chain(iter::once("")) {
         if line.is_empty() {
-            translations.push(Translation {
+            translations.push(DbTranslation {
                 original: {
                     let Some(msgid) = values.remove("msgid") else {
                         values.clear();
@@ -63,7 +80,6 @@ pub fn parse_po(text: String, source: &str) -> anyhow::Result<Vec<Translation>> 
                 },
                 comment: values.remove("#.").or_else(|| values.remove("msgctxt")),
                 key: None,
-                source: source.to_string(),
             });
 
             values.clear();

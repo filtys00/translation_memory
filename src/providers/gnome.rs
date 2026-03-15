@@ -2,19 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use unic_langid::LanguageIdentifier;
 
-use crate::providers::lang_id_to_string;
+use super::{Downloader, LangId};
 
 // GNOME GitLab GraphiQL: https://gitlab.gnome.org/-/graphql-explorer
 
-pub async fn graphql_gnome(
-    lang_id: LanguageIdentifier,
-    client: Client,
-) -> Result<Vec<String>, anyhow::Error> {
+pub fn graphql_gnome(lang_id: &LangId, downloader: &Downloader) -> anyhow::Result<Vec<String>> {
     let query = format!(
         "
 		query {{
@@ -41,15 +36,13 @@ pub async fn graphql_gnome(
   			}}
 		}}
         ",
-        lang_id_to_string(&lang_id, "_", true, "@", false),
+        lang_id.format("_", true, "@", false),
     );
 
-    let response: Response = client
-        .post("https://gitlab.gnome.org/api/graphql")
-        .json(&json!({"query": query, "variables": ()}))
-        .send()
-        .await?;
-    let response: GraphQl = response.json().await?;
+    let response: GraphQl = downloader.post_json(
+        "https://gitlab.gnome.org/api/graphql",
+        json!({"query": query, "variables": ()}),
+    )?;
 
     let mut urls = Vec::new();
 

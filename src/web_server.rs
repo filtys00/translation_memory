@@ -25,6 +25,7 @@ use crate::database::TranslationStore;
 #[folder = "src/web_server"]
 struct Assets;
 
+#[tokio::main]
 pub async fn web_server(store: Arc<Mutex<TranslationStore>>) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/", get(index))

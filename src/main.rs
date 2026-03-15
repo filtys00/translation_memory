@@ -45,8 +45,7 @@ struct Args {
     command: Option<Command>,
 }
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let args = Args::parse();
 
     let term_width = crossterm::terminal::size().map_or(80, |(cols, _)| cols as usize);
@@ -143,18 +142,6 @@ async fn main() -> ExitCode {
     }
 
     ExitCode::SUCCESS
-}
-
-/// Returns a properly configured `Client`.
-fn create_client() -> anyhow::Result<Client> {
-    let client = Client::builder()
-        .user_agent(concat!(
-            env!("CARGO_PKG_NAME"),
-            "/",
-            env!("CARGO_PKG_VERSION"),
-        ))
-        .build()?;
-    Ok(client)
 }
 
 /// Converts `number` to `String` with every three digits seperated by non-breaking spaces.

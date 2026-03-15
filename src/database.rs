@@ -5,6 +5,7 @@
 use std::{cell::RefCell, collections::HashSet, str::FromStr};
 
 use regex::Regex;
+use reqwest::Url;
 use rusqlite::{
     functions::FunctionFlags,
     types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, Type as SqlType, ValueRef},
@@ -29,7 +30,7 @@ CREATE TABLE Providers (
     name                  TEXT NOT NULL,
     group_name            TEXT,
     sources_download_time INTEGER,
-    has_failed            INTEGER NOT NULL DEFAULT 0,
+    sources_has_failed    INTEGER NOT NULL DEFAULT 0,
     CHECK type in ("builtin", "retired", "from_file")
 ) STRICT;
 
@@ -39,14 +40,14 @@ CREATE TABLE Sources (
     provider_id INTEGER NOT NULL,
     language_id INTEGER NOT NULL,
 
-    originals_url     TEXT UNIQUE,
-    translations_url  TEXT NOT NULL UNIQUE,
+    originals_url        TEXT,
+    translations_url     TEXT NOT NULL,
 
-    download_time     INTEGER,
-    originals_text    TEXT,
-    translations_text TEXT,
+    download_time        INTEGER,
+    originals_content    TEXT,
+    translations_content TEXT,
 
-    has_failed        INTEGER NOT NULL DEFAULT 0,
+    has_failed           INTEGER NOT NULL DEFAULT 0,
 
     FOREIGN KEY (provider_id) REFERENCES Providers(id),
     FOREIGN KEY (language_id) REFERENCES Languages(id)
@@ -72,10 +73,10 @@ CREATE INDEX Sources_ProviderId ON Sources (provider_id);
 /// A connection to a translation database.
 pub struct TranslationStore { connection: RefCell<Connection> }
 
-/// An independent provider of translation sources.
+/// A provider of translation sources.
 pub struct Provider<'a> { connection: &'a RefCell<Connection>, id: i64 }
 
-/// An independent source of translations.
+/// A source of translations.
 pub struct Source<'a> { connection: &'a RefCell<Connection>, id: i64 }
 
 /// Why a provider were created.
@@ -111,7 +112,6 @@ impl ToSql for ProviderType {
     }
 }
 
-#[derive(PartialEq, Eq, Hash)]
 pub struct ProviderNames {
     pub code: String,
     pub name: String,
@@ -119,13 +119,66 @@ pub struct ProviderNames {
 }
 
 pub struct SourceUrls {
-    pub originals_url: Option<String>,
-    pub translations_url: String,
+    pub originals: Option<Url>,
+    pub translations: Url,
 }
 
-pub struct SourceTexts {
-    pub originals_text: Option<String>,
-    pub translations_text: Option<String>,
+#[derive(Clone)]
+pub enum SourceContent {
+    None,
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
+impl SourceContent {
+    pub fn is_none(&self) -> bool { matches!(self, Self::None) }
+}
+
+impl From<Option<String>> for SourceContent {
+    fn from(value: Option<String>) -> Self {
+        match value {
+            None => Self::None,
+            Some(value) => Self::Text(value),
+        }
+    }
+}
+
+impl FromSql for SourceContent {
+    fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
+        match value.as_str_or_null() {
+            Ok(None) => Ok(Self::None),
+            Ok(Some(value)) => Ok(Self::Text(value.to_string())),
+            Err(_) => Ok(Self::Bytes(value.as_blob()?.to_vec()))
+        }
+    }
+}
+
+impl ToSql for SourceContent {
+    fn to_sql(&self) -> SqlResult<ToSqlOutput<'_>> {
+        match self {
+            Self::None => Ok(ToSqlOutput::Borrowed(ValueRef::Null)),
+            Self::Text(value) => Ok(ToSqlOutput::Borrowed(ValueRef::Text(value.as_bytes()))),
+            Self::Bytes(value) => Ok(ToSqlOutput::Borrowed(ValueRef::Blob(value))),
+        }
+    }
+}
+
+pub struct SourceContents {
+    pub originals: SourceContent,
+    pub translations: SourceContent,
+}
+
+pub enum SourceFailed {
+    None,
+    Download,
+    Parse,
+}
+
+impl SourceFailed {
+    pub fn is_none(&self)     -> bool { matches!(self, Self::None)     }
+    pub fn is_download(&self) -> bool { matches!(self, Self::Download) }
+    pub fn is_parse(&self)    -> bool { matches!(self, Self::Parse)    }
+    pub fn is_some(&self)     -> bool { !matches!(self, Self::None)    }
 }
 
 pub struct Translation {
@@ -202,82 +255,36 @@ impl TranslationStore {
 }
 
 impl Provider<'_> {
-    /// Returns the type of this provider.
-    pub fn get_type(&self) -> SqlResult<ProviderType> {
-        let provider_type = self.connection.borrow().query_one(
-            "SELECT type FROM Providers WHERE id = ?", [self.id],
-            |row| row.get(0),
-        )?;
-        Ok(provider_type)
-    }
-
-    /// Sets the type of this provider.
-    pub fn set_type(&self, provider_type: ProviderType) -> SqlResult<()> {
-        self.connection.borrow()
-            .execute("UPDATE Providers SET type = ? WHERE id = ?", (provider_type, self.id))?;
-        Ok(())
-    }
-
-    /// Returns whether the provider has `failed`.
-    pub fn get_names(&self) -> SqlResult<ProviderNames> {
+    /// Returns whether this provider has failed at downloading sources.
+    pub fn has_sources_failed(&self) -> SqlResult<bool> {
         let failed = self.connection.borrow().query_one(
-            "SELECT code, name, group_name FROM Providers WHERE id = ?", [self.id],
-            |row| {
-                let names = ProviderNames {
-                    code: row.get(0)?,
-                    name: row.get(1)?,
-                    group_name: row.get(2)?,
-                };
-                Ok(names)
-            }
-        )?;
-        Ok(failed)
-    }
-
-    /// Sets whether the provider has `failed`.
-    pub fn set_names(&self, name: &str, group_name: Option<&str>) -> SqlResult<()> {
-        self.connection.borrow().execute(
-            "UPDATE Providers SET name = ?, group_name = ? WHERE id = ?",
-            (name, group_name, self.id),
-        )?;
-        Ok(())
-    }
-
-    /// Returns whether the provider has `failed`.
-    pub fn has_failed(&self) -> SqlResult<bool> {
-        let failed = self.connection.borrow().query_one(
-            "SELECT has_failed FROM Providers WHERE id = ?", [self.id],
+            "SELECT sources_has_failed FROM Providers WHERE id = ?", [self.id],
             |row| row.get(0),
         )?;
         Ok(failed)
     }
 
-    /// Sets whether the provider has `failed`.
-    pub fn set_failed(&self, failed: bool) -> SqlResult<()> {
+    /// Set that this provider has failed at downloading sources.
+    pub fn set_sources_failed(&self) -> SqlResult<()> {
         self.connection.borrow()
-            .execute("UPDATE Providers SET has_failed = ? WHERE id = ?", (failed, self.id))?;
+            .execute("UPDATE Providers SET sources_has_failed = true WHERE id = ?", [self.id])?;
         Ok(())
     }
 
-    /// Returns the sources download time of this provider.
-    pub fn get_sources_download_time(&self) -> SqlResult<bool> {
-        let sources_download_time = self.connection.borrow().query_one(
-            "SELECT sources_download_time FROM Providers WHERE id = ?", [self.id],
-            |row| row.get(0),
-        )?;
-        Ok(sources_download_time)
+    /// Returns a set of all the languages that have at least one source.
+    pub fn get_source_languages(&self) -> SqlResult<HashSet<LanguageIdentifier>> {
+        let languages = self.connection.borrow()
+            .prepare("SELECT UNIQUE Languages.code FROM Sources JOIN Languages ON Sources.language_id = Languages.id WHERE Sources.provider_id = ?")?
+            .query_map([self.id], |row| {
+                LanguageIdentifier::from_str(row.get_ref(0)?.as_str()?).map_err(|e| {
+                    SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e))
+                })
+            })?
+            .collect::<SqlResult<_>>()?;
+        Ok(languages)
     }
 
-    /// Sets the sources download time of this provider.
-    pub fn set_sources_download_time(&self, sources_download_time: Option<u32>) -> SqlResult<()> {
-        self.connection.borrow().execute(
-            "UPDATE Providers SET sources_download_time = ? WHERE id = ?",
-            (sources_download_time, self.id),
-        )?;
-        Ok(())
-    }
-
-    /// Returns a list of all the sources that are associated with this provider.
+    /// Returns a list of all the sources that belongs to this provider.
     pub fn get_sources(&'_ self) -> SqlResult<Vec<Source<'_>>> {
         let sources = self.connection.borrow()
             .prepare("SELECT id FROM Sources WHERE provider_id = ?")?
@@ -289,106 +296,138 @@ impl Provider<'_> {
         Ok(sources)
     }
 
-    /// Adds a source to this provider with `language_code` and `urls`.
-    pub fn add_source(&'_ self, language_code: &LanguageIdentifier, urls: SourceUrls) -> SqlResult<Source<'_>> {
+    /// Returns the database ID of `lang_id`, adding it to the database if it does not exist.
+    fn get_or_add_language_id(&self, lang_id: &LanguageIdentifier) -> SqlResult<i64> {
         let connection = self.connection.borrow();
         let language_id: Option<i64> = connection
             .query_one(
-                "SELECT id FROM Languages WHERE code = ?", [language_code.to_string()],
+                "SELECT id FROM Languages WHERE code = ?", [lang_id.to_string()],
                 |row| row.get(0),
             )
             .optional()?;
-        if language_id.is_none() {
-            connection.execute("INSERT INTO Languages (code) VALUES (?)", [language_code.to_string()])?;
+        if let Some(language_id) = language_id {
+            Ok(language_id)
+        } else {
+            connection.execute("INSERT INTO Languages (code) VALUES (?)", [lang_id.to_string()])?;
+            Ok(connection.last_insert_rowid())
         }
-        let language_id = if let Some(id) = language_id { id } else { connection.last_insert_rowid() };
-
-        connection.execute(
-            "INSERT INTO Sources (provider_id, language_id, originals_url, translations_url) VALUES (?, ?, ?, ?)",
-            (self.id, language_id, urls.originals_url, urls.translations_url),
-        )?;
-        let source_id = connection.last_insert_rowid();
-        Ok(Source { connection: self.connection, id: source_id })
     }
 
-    /// Deletes all sources that belongs to this provider. 
-    pub fn clear_sources(&self) -> SqlResult<()> {
-        self.connection.borrow().execute("DELETE FROM Sources WHERE provider_id = ?", [self.id])?;
-        Ok(())
-    }
-}
-
-impl Source<'_> {
-    /// Returns the urls of this source.
-    pub fn get_urls(&self) -> SqlResult<SourceUrls> {
-        let urls = self.connection.borrow().query_one(
-            "SELECT originals_url, translations_url FROM Sources WHERE id = ?", [self.id],
-            |row| Ok(SourceUrls { originals_url: row.get(0)?, translations_url: row.get(1)? }),
-        )?;
-        Ok(urls)
-    }
-
-    /// Returns the download time in unix time, and the downloaded texts of this source.
-    pub fn get_text(&self) -> SqlResult<(u32, SourceTexts)> {
-        let (download_time, texts) = self.connection.borrow().query_one(
-            "SELECT download_time, originals_text, translations_text FROM Sources WHERE id = ?", [self.id],
-            |row| {
-                let download_time = row.get(0)?;
-                let texts = SourceTexts {
-                    originals_text: row.get(1)?,
-                    translations_text: row.get(2)?,
-                };
-                Ok((download_time, texts))
-            }
-        )?;
-        Ok((download_time, texts))
-    }
-
-    /// Sets the downloaded texts to this source, using the current time as download time.
-    pub fn set_text(&self, texts: SourceTexts) -> SqlResult<()> {
-        self.connection.borrow().execute(
-            "UPDATE Sources SET download_time = unixepoch(), originals_text = ?, translations_text = ? WHERE id = ?",
-            (texts.originals_text, texts.translations_text, self.id),
-        )?;
-        Ok(())
-    }
-
-    /// Returns whether this source has `failed`.
-    pub fn has_failed(&self) -> SqlResult<bool> {
-        let failed = self.connection.borrow().query_one(
-            "SELECT has_failed FROM Sources WHERE id = ?", [self.id],
-            |row| row.get(0),
-        )?;
-        Ok(failed)
-    }
-
-    /// Sets whether this source has `failed`.
-    pub fn set_failed(&self, failed: bool) -> SqlResult<()> {
-        self.connection.borrow()
-            .execute("UPDATE Sources SET has_failed = ? WHERE id = ?", (failed, self.id))?;
-        Ok(())
-    }
-
-    /// Sets the translations associated with this source.
-    pub fn set_translations(&self, translations: Vec<Translation>) -> SqlResult<()> {
+    /// Set all the sources with language `lang_id` that belongs to this provider to `urls`.
+    pub fn set_sources(&'_ self, lang_id: &LanguageIdentifier, urls: &[SourceUrls]) -> SqlResult<()> {
+        let language_id = self.get_or_add_language_id(lang_id)?;
         let mut connection = self.connection.borrow_mut();
         let transaction = connection.transaction()?;
-        transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
-        for translation in translations {
+        transaction.execute("DELETE Sources WHERE provider_id = ?, language_id = ?", (self.id, language_id))?;
+        for urls in urls {
             transaction.execute(
-                "INSERT INTO Translations (source_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?)",
-                (self.id, translation.key, translation.original, translation.translation, translation.comment),
+                "INSERT INTO Sources (provider_id, language_id, originals_url, translations_url) VALUES (?, ?, ?, ?)",
+                (self.id, language_id, &urls.originals, &urls.translations),
             )?;
         }
         transaction.commit()
     }
+}
 
-    /// Deletes this source.
-    pub fn delete(self) -> SqlResult<()> {
+impl Source<'_> {
+    /// Returns the language of this source.
+    pub fn get_language(&self) -> SqlResult<LanguageIdentifier> {
+        let lang_id = self.connection.borrow().query_one(
+            "SELECT Languages.code FROM Sources JOIN Languages ON Sources.language_id = Language.id WHERE Sources.id = ?", [self.id],
+            |row| {
+                LanguageIdentifier::from_str(row.get_ref(0)?.as_str()?).map_err(|e| {
+                    SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e))
+                })
+            },
+        )?;
+        Ok(lang_id)
+    }
+
+    /// Returns the urls of this source.
+    pub fn get_urls(&self) -> SqlResult<SourceUrls> {
+        let urls = self.connection.borrow().query_one(
+            "SELECT originals_url, translations_url FROM Sources WHERE id = ?", [self.id],
+            |row| Ok(SourceUrls { originals: row.get(0)?, translations: row.get(1)? }),
+        )?;
+        Ok(urls)
+    }
+
+    /// Returns the download time of this source in unix time.
+    pub fn get_download_time(&self) -> SqlResult<Option<u32>> {
+        let download_time = self.connection.borrow().query_one(
+            "SELECT download_time FROM Sources WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(download_time)
+    }
+
+    /// Returns the downloaded text content of this source.
+    pub fn get_contents(&self) -> SqlResult<SourceContents> {
+        let texts = self.connection.borrow().query_one(
+            "SELECT originals_content, translations_content FROM Sources WHERE id = ?", [self.id],
+            |row| {
+                let texts = SourceContents {
+                    originals: row.get(0)?,
+                    translations: row.get(1)?,
+                };
+                Ok(texts)
+            }
+        )?;
+        Ok(texts)
+    }
+
+    /// Set the downloaded text content of this source, using the current time as download time.
+    pub fn set_contents(&self, contents: SourceContents) -> SqlResult<()> {
+        self.connection.borrow().execute(
+            "UPDATE Sources SET download_time = unixepoch(), originals_content = ?, translations_content = ?, failed = 0 WHERE id = ?",
+            (contents.originals, contents.translations, self.id),
+        )?;
+        Ok(())
+    }
+
+    /// Returns whether this source has failed.
+    pub fn has_failed(&self) -> SqlResult<SourceFailed> {
+        let (download_time, failed): (Option<u32>, bool) = self.connection.borrow().query_one(
+            "SELECT download_time, has_failed FROM Sources WHERE id = ?", [self.id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        if !failed {
+            Ok(SourceFailed::None)
+        } else if download_time.is_none() {
+            Ok(SourceFailed::Download)
+        } else {
+            Ok(SourceFailed::Parse)
+        }
+    }
+
+    /// Set whether this source has failed.
+    pub fn set_failed(&self) -> SqlResult<()> {
+        self.connection.borrow()
+            .execute("UPDATE Sources SET has_failed = true WHERE id = ?", [self.id])?;
+        Ok(())
+    }
+
+    /// Set the translations that belong to this source.
+    pub fn set_translations(&self, translations: &[Translation]) -> SqlResult<()> {
         let mut connection = self.connection.borrow_mut();
         let transaction = connection.transaction()?;
+
         transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
-        transaction.execute("DELETE FROM Sources WHERE id = ?", [self.id])?;
+        let mut stmt = transaction.prepare(
+            "INSERT INTO Translations (source_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?)"
+        )?;
+        for translation in translations {
+            stmt.execute((
+                self.id,
+                &translation.key,
+                &translation.original,
+                &translation.translation,
+                &translation.comment,
+            ))?;
+        }
+        stmt.finalize()?;
+        transaction.execute("UPDATE Sources SET has_failed = 0 WHERE source_id = ?", [self.id])?;
+
         transaction.commit()
     }
 }

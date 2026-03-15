@@ -3,45 +3,29 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use anyhow::anyhow;
-use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-use unic_langid::LanguageIdentifier;
 
-use super::lang_id_to_string;
+use super::{Downloader, LangId};
 
-pub async fn crawl_libreoffice(
-    lang_id: LanguageIdentifier,
-    client: Client,
-) -> Result<Vec<String>, anyhow::Error> {
+pub fn crawl_libreoffice(lang_id: &LangId, downloader: &Downloader) -> anyhow::Result<Vec<String>> {
     let mut urls = Vec::new();
 
-    crawl(&mut urls, "", &lang_id, &client).await?;
+    crawl(&mut urls, "", lang_id, downloader)?;
 
     Ok(urls)
 }
 
-async fn crawl(
+fn crawl(
     urls: &mut Vec<String>,
     path: &str,
-    lang_id: &LanguageIdentifier,
-    client: &Client,
+    lang_id: &LangId,
+    downloader: &Downloader,
 ) -> anyhow::Result<()> {
     let url = format!(
         "https://git.libreoffice.org/translations/+/refs/heads/master/source/{}{path}?format=JSON",
-        lang_id_to_string(lang_id, "-", true, "-", false),
+        lang_id.format("-", true, "-", false),
     );
-    let response: Response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("Could not send request: {e}\n{url}"))?;
-    if response.status() == StatusCode::NOT_FOUND {
-        return Ok(());
-    }
-    let response = response
-        .text()
-        .await
-        .map_err(|e| anyhow!("Could not parse as text: {e}\n{url}"))?;
+    let Some(response) = downloader.get_text(&url)? else { return Ok(()); };
     let response: String = response.lines().skip(1).collect();
     let response: Tree = serde_json::from_str(&response)
         .map_err(|e| anyhow!("Could not parse as JSON (skipping first line): {e}\n{url}"))?;
@@ -51,18 +35,17 @@ async fn crawl(
             EntryType::Blob => {
                 urls.push(format!(
                     "https://git.libreoffice.org/translations/+/refs/heads/master/source/{}{path}/{}?format=TEXT",
-                    lang_id_to_string(lang_id, "-", true, "-", false),
+                    lang_id.format("-", true, "-", false),
                     entry.name,
                 ));
             }
             EntryType::Tree => {
-                Box::pin(crawl(
+                crawl(
                     urls,
                     &format!("{path}/{}", entry.name),
                     lang_id,
-                    client,
-                ))
-                .await?;
+                    downloader,
+                )?;
             }
         }
     }
