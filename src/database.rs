@@ -17,58 +17,61 @@ use rusqlite::{
 use unic_langid::LanguageIdentifier;
 
 /// SQL to initialize the SQLite database.
-const INIT_SQL: &str = r#"
-CREATE TABLE Languages (
-    id INTEGER PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE
-) STRICT;
+const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 1] = [
+    (|connection| connection.table_exists(None, "Providers"),
+    r#"
+    CREATE TABLE Languages (
+        id INTEGER PRIMARY KEY,
+        code TEXT NOT NULL UNIQUE
+    ) STRICT;
 
-CREATE TABLE Providers (
-    id INTEGER PRIMARY KEY,
-    type                  TEXT NOT NULL,
-    code                  TEXT NOT NULL UNIQUE,
-    name                  TEXT NOT NULL,
-    group_name            TEXT,
-    sources_download_time INTEGER,
-    sources_has_failed    INTEGER NOT NULL DEFAULT 0,
-    CHECK type in ("builtin", "retired", "from_file")
-) STRICT;
+    CREATE TABLE Providers (
+        id INTEGER PRIMARY KEY,
+        type                  TEXT NOT NULL,
+        code                  TEXT NOT NULL UNIQUE,
+        name                  TEXT NOT NULL,
+        group_name            TEXT,
+        sources_download_time INTEGER,
+        sources_has_failed    INTEGER NOT NULL DEFAULT 0,
+        CHECK type in ("builtin", "retired", "from_file")
+    ) STRICT;
 
-CREATE TABLE Sources (
-    id INTEGER PRIMARY KEY,
+    CREATE TABLE Sources (
+        id INTEGER PRIMARY KEY,
 
-    provider_id INTEGER NOT NULL,
-    language_id INTEGER NOT NULL,
+        provider_id INTEGER NOT NULL,
+        language_id INTEGER NOT NULL,
 
-    originals_url        TEXT,
-    translations_url     TEXT NOT NULL,
+        originals_url        TEXT,
+        translations_url     TEXT NOT NULL,
 
-    download_time        INTEGER,
-    originals_content    TEXT,
-    translations_content TEXT,
+        download_time        INTEGER,
+        originals_content    TEXT,
+        translations_content TEXT,
 
-    has_failed           INTEGER NOT NULL DEFAULT 0,
+        has_failed           INTEGER NOT NULL DEFAULT 0,
 
-    FOREIGN KEY (provider_id) REFERENCES Providers(id),
-    FOREIGN KEY (language_id) REFERENCES Languages(id)
-) STRICT;
+        FOREIGN KEY (provider_id) REFERENCES Providers(id),
+        FOREIGN KEY (language_id) REFERENCES Languages(id)
+    ) STRICT;
 
-CREATE TABLE Translations (
-    id INTEGER PRIMARY KEY,
+    CREATE TABLE Translations (
+        id INTEGER PRIMARY KEY,
 
-    source_id   INTEGER NOT NULL,
+        source_id   INTEGER NOT NULL,
 
-    key         TEXT,
-    original    TEXT NOT NULL,
-    translation TEXT NOT NULL,
-    comment     TEXT,
+        key         TEXT,
+        original    TEXT NOT NULL,
+        translation TEXT NOT NULL,
+        comment     TEXT,
 
-    FOREIGN KEY (source_id)   REFERENCES Sources(id)
-) STRICT;
+        FOREIGN KEY (source_id)   REFERENCES Sources(id)
+    ) STRICT;
 
-CREATE INDEX Translations_SourceId ON Translations (source_id);
-CREATE INDEX Sources_ProviderId ON Sources (provider_id);
-"#;
+    CREATE INDEX Translations_SourceId ON Translations (source_id);
+    CREATE INDEX Sources_ProviderId ON Sources (provider_id);
+    "#)
+];
 
 /// A connection to a translation database.
 pub struct TranslationStore { connection: RefCell<Connection> }
@@ -191,8 +194,10 @@ pub struct Translation {
 impl TranslationStore {
     /// Open `connection` as a translation database, initiating it if necessary.
     pub fn open(connection: Connection) -> SqlResult<Self> {
-        let has_providers_table = connection.table_exists(None, "Providers")?;
-        if !has_providers_table { connection.execute_batch(INIT_SQL)?; }
+        for (has_init, init_sql) in INIT_SQL {
+            if has_init(&connection)? { continue; }
+            connection.execute_batch(init_sql)?;
+        }
 
         let function_flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC;
         connection.create_scalar_function("regexp", 2, function_flags, |context| {
