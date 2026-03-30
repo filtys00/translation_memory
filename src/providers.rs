@@ -24,8 +24,8 @@ mod yaml;
 
 use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt::Display, ops::Deref};
 
-use anyhow::bail;
-use log::{trace};
+use anyhow::{bail};
+use log::{debug, trace};
 use reqwest::{blocking::Client, IntoUrl, StatusCode, Url};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
@@ -232,42 +232,57 @@ impl<'a> Provider<'a> {
             lang_ids.difference(&source_lang_ids).map(|lang_id| LangId(lang_id.clone())).collect()
         };
 
-        if let Err(e) = (self.get_sources)(&lang_ids, provider, downloader) {
+
+        trace!("Finding sources...");
+        debug!("Languages: {}", lang_ids.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(", "));
+        if !lang_ids.is_empty() && let Err(e) = (self.get_sources)(&lang_ids, provider, downloader) {
             provider.set_sources_failed()?;
-            bail!("Could not find sources for '{}': {e}", self.code());
+            bail!("Could not find sources: {e}");
         };
 
         // Download source contents
+        trace!("Downloading source contents...");
         for source in provider.get_sources()? {
             if !retry_policy.download_finished_source && source.get_download_time()?.is_some() { continue; }
             if !retry_policy.download_failed_source && source.has_failed()?.is_download() { continue; }
 
             let urls = source.get_urls()?;
-            let translations_text = downloader.get_text(urls.translations);
-            let originals_text = if matches!(translations_text, Ok(Some(_))) && let Some(url) = urls.originals {
-                downloader.get_text(url)
-            } else {
-                Ok(None)
+            let translations_content = match downloader.get_content(urls.translations.clone()) {
+                Ok(content) => content,
+                Err(e) => {
+                    source.set_failed()?;
+                    bail!("Could not download source translations content from '{}': {e}", urls.translations);
+                }
             };
-            match (originals_text, translations_text) {
-                (Err(_), _) | (_, Err(_)) => { source.set_failed()?; continue; },
-                (Ok(originals), Ok(translations)) => {
-                    source.set_contents(DbSourceContents {
-                        originals: originals.into(),
-                        translations: translations.into(),
-                    })?;
-                },
+            if let Some(originals_url) = urls.originals {
+                let originals_content = match downloader.get_content(originals_url.clone()) {
+                    Ok(content) => content,
+                    Err(e) => {
+                        source.set_failed()?;
+                        bail!("Could not download source originals content from '{}': {e}", originals_url);
+                    }
+                };
+                source.set_contents(DbSourceContents {
+                    originals: originals_content,
+                    translations: translations_content,
+                })?;
+            } else {
+                source.set_contents(DbSourceContents {
+                    originals: DbSourceContent::None,
+                    translations: translations_content,
+                })?;
             }
         }
 
         // Parse source contents
+        trace!("Parsing source contents...");
         for source in provider.get_sources()? {
             if !retry_policy.parse_finished_source && source.get_contents()?.translations.is_none() { continue; }
             if !retry_policy.parse_failed_source && source.has_failed()?.is_some() { continue; }
 
             if let Err(e) = (self.parse_source)(&source) {
                 source.set_failed()?;
-                bail!("Could not parse sources for '{}': {e}", self.code());
+                bail!("Could not parse source: {e}");
             };
         }
 

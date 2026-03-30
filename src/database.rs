@@ -347,14 +347,14 @@ impl Provider<'_> {
     /// Set that this provider has failed at downloading sources.
     pub fn set_sources_failed(&self) -> SqlResult<()> {
         self.connection.borrow()
-            .execute("UPDATE Providers SET sources_has_failed = true WHERE id = ?", [self.id])?;
+            .execute("UPDATE Providers SET sources_has_failed = 1 WHERE id = ?", [self.id])?;
         Ok(())
     }
 
     /// Returns a set of all the languages that have at least one source.
     pub fn get_source_languages(&self) -> SqlResult<HashSet<LanguageIdentifier>> {
         let languages = self.connection.borrow()
-            .prepare("SELECT UNIQUE Languages.code FROM Sources JOIN Languages ON Sources.language_id = Languages.id WHERE Sources.provider_id = ?")?
+            .prepare("SELECT DISTINCT Languages.code FROM Sources JOIN Languages ON Sources.language_id = Languages.id WHERE Sources.provider_id = ?")?
             .query_map([self.id], |row| {
                 LanguageIdentifier::from_str(row.get_ref(0)?.as_str()?).map_err(|e| {
                     SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e))
@@ -410,7 +410,8 @@ impl Provider<'_> {
         let language_id = self.get_or_add_language_id(lang_id)?;
         let mut connection = self.connection.borrow_mut();
         let transaction = connection.transaction()?;
-        transaction.execute("DELETE Sources WHERE provider_id = ?, language_id = ?", (self.id, language_id))?;
+        transaction.execute("UPDATE Providers SET sources_has_failed = 0 WHERE id = ?", [self.id])?;
+        transaction.execute("DELETE FROM Sources WHERE provider_id = ? AND language_id = ?", (self.id, language_id))?;
         for urls in urls {
             transaction.execute(
                 "INSERT INTO Sources (provider_id, language_id, originals_url, translations_url) VALUES (?, ?, ?, ?)",
@@ -435,7 +436,7 @@ impl Source<'_> {
     /// Returns the language of this source.
     pub fn get_language(&self) -> SqlResult<LanguageIdentifier> {
         let lang_id = self.connection.borrow().query_one(
-            "SELECT Languages.code FROM Sources JOIN Languages ON Sources.language_id = Language.id WHERE Sources.id = ?", [self.id],
+            "SELECT Languages.code FROM Sources JOIN Languages ON Sources.language_id = Languages.id WHERE Sources.id = ?", [self.id],
             |row| {
                 LanguageIdentifier::from_str(row.get_ref(0)?.as_str()?).map_err(|e| {
                     SqlError::FromSqlConversionFailure(0, SqlType::Text, Box::new(e))
@@ -481,7 +482,7 @@ impl Source<'_> {
     /// Set the downloaded text content of this source, using the current time as download time.
     pub fn set_contents(&self, contents: SourceContents) -> SqlResult<()> {
         self.connection.borrow().execute(
-            "UPDATE Sources SET download_time = unixepoch(), originals_content = ?, translations_content = ?, failed = 0 WHERE id = ?",
+            "UPDATE Sources SET download_time = unixepoch(), originals_content = ?, translations_content = ?, has_failed = 0 WHERE id = ?",
             (contents.originals, contents.translations, self.id),
         )?;
         Ok(())
@@ -528,7 +529,7 @@ impl Source<'_> {
             ))?;
         }
         stmt.finalize()?;
-        transaction.execute("UPDATE Sources SET has_failed = 0 WHERE source_id = ?", [self.id])?;
+        transaction.execute("UPDATE Sources SET has_failed = 0 WHERE id = ?", [self.id])?;
 
         transaction.commit()
     }
