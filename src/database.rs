@@ -17,7 +17,8 @@ use rusqlite::{
 use unic_langid::LanguageIdentifier;
 
 /// SQL to initialize the SQLite database.
-const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 1] = [
+#[allow(clippy::type_complexity)]
+const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 2] = [
     (|connection| connection.table_exists(None, "Providers"),
     r#"
     CREATE TABLE Languages (
@@ -27,13 +28,12 @@ const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 1] = [
 
     CREATE TABLE Providers (
         id INTEGER PRIMARY KEY,
-        type                  TEXT NOT NULL,
+        type                  TEXT NOT NULL CHECK (type IN ("builtin", "retired", "from_file")),
         code                  TEXT NOT NULL UNIQUE,
         name                  TEXT NOT NULL,
         group_name            TEXT,
         sources_download_time INTEGER,
-        sources_has_failed    INTEGER NOT NULL DEFAULT 0,
-        CHECK type in ("builtin", "retired", "from_file")
+        sources_has_failed    INTEGER NOT NULL DEFAULT 0
     ) STRICT;
 
     CREATE TABLE Sources (
@@ -70,6 +70,25 @@ const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 1] = [
 
     CREATE INDEX Translations_SourceId ON Translations (source_id);
     CREATE INDEX Sources_ProviderId ON Sources (provider_id);
+    "#),
+    // Change the type of 'originals_content' and 'translations_content' to ANY.
+    (|connection| {
+        let translations_content_type: String = connection.query_one(
+            "SELECT type FROM pragma_table_info('Sources') WHERE name = 'translations_content'", (),
+            |row| row.get(0),
+        )?;
+        Ok(translations_content_type == "ANY")
+    },
+    r#"
+    ALTER TABLE Sources RENAME COLUMN originals_content TO _originals_content;
+    ALTER TABLE Sources ADD COLUMN originals_content ANY;
+    UPDATE Sources SET originals_content = _originals_content;
+    ALTER TABLE Sources DROP COLUMN _originals_content;
+
+    ALTER TABLE Sources RENAME COLUMN translations_content TO _translations_content;
+    ALTER TABLE Sources ADD COLUMN translations_content ANY;
+    UPDATE Sources SET translations_content = _translations_content;
+    ALTER TABLE Sources DROP COLUMN _translations_content;
     "#)
 ];
 
