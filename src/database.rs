@@ -156,15 +156,6 @@ impl SourceContent {
     pub fn is_none(&self) -> bool { matches!(self, Self::None) }
 }
 
-impl From<Option<String>> for SourceContent {
-    fn from(value: Option<String>) -> Self {
-        match value {
-            None => Self::None,
-            Some(value) => Self::Text(value),
-        }
-    }
-}
-
 impl FromSql for SourceContent {
     fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
         match value.as_str_or_null() {
@@ -196,6 +187,7 @@ pub enum SourceFailed {
     Parse,
 }
 
+#[allow(dead_code)]
 impl SourceFailed {
     pub fn is_none(&self)     -> bool { matches!(self, Self::None)     }
     pub fn is_download(&self) -> bool { matches!(self, Self::Download) }
@@ -245,6 +237,20 @@ impl TranslationStore {
         Ok(languages)
     }
 
+    /// Delete a language along with all associated sources and translations.
+    pub fn delete_language(&self, lang_id: &LanguageIdentifier) -> SqlResult<()> {
+        let mut connection = self.connection.borrow_mut();
+        let transaction = connection.transaction()?;
+        let language_id: i32 = transaction.query_one(
+            "SELECT id FROM Languages WHERE code = ?", [lang_id.to_string()],
+            |row| row.get(0),
+        )?;
+        transaction.execute("DELETE FROM Translations WHERE source_id IN (SELECT id FROM Sources WHERE language_id = ?)", [language_id])?;
+        transaction.execute("DELETE FROM Sources WHERE language_id = ?", [language_id])?;
+        transaction.execute("DELETE FROM Languages WHERE id = ?", [language_id])?;
+        transaction.commit()
+    }
+
     /// Returns a list of all the providers.
     pub fn get_providers(&'_ self) -> SqlResult<Vec<Provider<'_>>> {
         let providers = self.connection.borrow().prepare("SELECT id FROM Providers")?
@@ -266,7 +272,7 @@ impl TranslationStore {
         Ok(provider)
     }
 
-    /// Adds a new provider.
+    /// Add a new provider.
     pub fn add_provider(&'_ self, provider_type: ProviderType, names: ProviderNames) -> SqlResult<Provider<'_>> {
         let connection = self.connection.borrow();
         connection.execute(
@@ -279,6 +285,56 @@ impl TranslationStore {
 }
 
 impl Provider<'_> {
+    /// Returns the type of this provider.
+    pub fn get_type(&self) -> SqlResult<ProviderType> {
+        let code = self.connection.borrow().query_one(
+            "SELECT type FROM Providers WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(code)
+    }
+
+    /// Set the type of this provider.
+    pub fn set_type(&self, provider_type: ProviderType) -> SqlResult<()> {
+        self.connection.borrow()
+            .execute("UPDATE Providers SET type = ? WHERE id = ?", (provider_type, self.id))?;
+        Ok(())
+    }
+
+    /// Returns the code name of this provider.
+    pub fn get_code(&self) -> SqlResult<String> {
+        let code = self.connection.borrow().query_one(
+            "SELECT code FROM Providers WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(code)
+    }
+
+    /// Returns the code name, name and group name of this provider.
+    pub fn get_names(&self) -> SqlResult<ProviderNames> {
+        let code = self.connection.borrow().query_one(
+            "SELECT code, name, group_name FROM Providers WHERE id = ?", [self.id],
+            |row| {
+                let names = ProviderNames {
+                    code: row.get(0)?,
+                    name: row.get(1)?,
+                    group_name: row.get(2)?,
+                };
+                Ok(names)
+            }
+        )?;
+        Ok(code)
+    }
+
+    /// Set the name and group name of this provider.
+    pub fn set_names(&self, name: &str, group_name: Option<&str>) -> SqlResult<()> {
+        self.connection.borrow().execute(
+            "UPDATE Providers SET name = ?, group_name = ? WHERE id = ?",
+            (name, group_name, self.id)
+        )?;
+        Ok(())
+    }
+
     /// Returns whether this provider has failed at downloading sources.
     pub fn has_sources_failed(&self) -> SqlResult<bool> {
         let failed = self.connection.borrow().query_one(
@@ -313,8 +369,20 @@ impl Provider<'_> {
         let sources = self.connection.borrow()
             .prepare("SELECT id FROM Sources WHERE provider_id = ?")?
             .query_map([self.id], |row| {
-                let provider = Source { connection: self.connection, id: row.get(0)? };
-                Ok(provider)
+                let source = Source { connection: self.connection, id: row.get(0)? };
+                Ok(source)
+            })?
+            .collect::<SqlResult<_>>()?;
+        Ok(sources)
+    }
+
+    /// Returns a list of all the sources that belongs to this provider and have `lang_id`.
+    pub fn get_sources_with_language(&self, lang_id: &LanguageIdentifier) -> SqlResult<Vec<Source<'_>>> {
+        let sources = self.connection.borrow()
+            .prepare("SELECT Sources.id FROM Sources JOIN Languages ON Sources.language_id = Languages.id WHERE Languages.code = ?")?
+            .query_map([lang_id.to_string()], |row| {
+                let source = Source { connection: self.connection, id: row.get(0)? };
+                Ok(source)
             })?
             .collect::<SqlResult<_>>()?;
         Ok(sources)
@@ -349,6 +417,16 @@ impl Provider<'_> {
                 (self.id, language_id, &urls.originals, &urls.translations),
             )?;
         }
+        transaction.commit()
+    }
+
+    /// Delete this provider.
+    pub fn delete(self) -> SqlResult<()> {
+        let mut connection = self.connection.borrow_mut();
+        let transaction = connection.transaction()?;
+        transaction.execute("DELETE FROM Translations WHERE source_id IN (SELECT id FROM Sources WHERE provider_id = ?)", [self.id])?;
+        transaction.execute("DELETE FROM Sources WHERE provider_id = ?", [self.id])?;
+        transaction.execute("DELETE FROM Providers WHERE id = ?", [self.id])?;
         transaction.commit()
     }
 }
@@ -452,6 +530,15 @@ impl Source<'_> {
         stmt.finalize()?;
         transaction.execute("UPDATE Sources SET has_failed = 0 WHERE source_id = ?", [self.id])?;
 
+        transaction.commit()
+    }
+
+    /// Delete this source.
+    pub fn delete(self) -> SqlResult<()> {
+        let mut connection = self.connection.borrow_mut();
+        let transaction = connection.transaction()?;
+        transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
+        transaction.execute("DELETE FROM Sources WHERE id = ?", [self.id])?;
         transaction.commit()
     }
 }

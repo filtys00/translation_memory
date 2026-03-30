@@ -160,6 +160,7 @@ impl Downloader {
 }
 
 /// Weather to retry finished and failed operations.
+#[derive(Default)]
 pub struct RetryPolicy {
     /// Download source lists for languages that already exist.
     pub download_finished_sources: bool,

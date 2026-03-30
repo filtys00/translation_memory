@@ -7,15 +7,14 @@ mod providers;
 mod cli;
 mod web_server;
 
-use std::{io::{self, Write}, process::ExitCode, sync::Arc};
+use std::{io::Write, process::ExitCode};
 
 use clap::{Parser, ValueEnum};
 use log::{Level, LevelFilter, error, info};
-use reqwest::Client;
+use rusqlite::Connection;
 use termcolor::{ColorChoice, StandardStream};
-use tokio::sync::Mutex;
 
-use crate::{database::TranslationStore, cli::{Command, perform_command}};
+use crate::{cli::{Command, perform_command, writeln_max_width}, database::TranslationStore};
 
 const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
 
@@ -131,191 +130,13 @@ fn main() -> ExitCode {
         }
     };
 
-    let store = Arc::new(Mutex::new(store));
-    let console = Arc::new(Mutex::new(StandardStream::stderr(ColorChoice::Auto)));
-
-    let command = args.command.unwrap_or(Command::Run { open_browser: true });
-    let result = perform_command(command, console, term_width, store).await;
-    if let Err(e) = result {
+    
+    let command = args.command.unwrap_or(Command::Start { open_browser: true });
+    let console = StandardStream::stderr(ColorChoice::Auto);
+    if let Err(e) = perform_command(command, console, term_width, store) {
         error!("{e}");
         return ExitCode::FAILURE;
     }
 
     ExitCode::SUCCESS
-}
-
-/// Converts `number` to `String` with every three digits seperated by non-breaking spaces.
-fn display_number(number: usize) -> String {
-    let number = number.to_string();
-    if number.len() < 4 {
-        return number;
-    }
-
-    let mut new_number = String::new();
-    for (i, c) in number.chars().rev().enumerate() {
-        if i > 0 && i % 3 == 0 {
-            new_number.push('\u{00A0}');
-        }
-        new_number.push(c);
-    }
-    new_number.chars().rev().collect()
-}
-
-/// Write `list` of labels and optional numbers to `buf`.
-/// Each entry is written on it's own line with an indent of `indent` spaces.
-/// The entries are aligned vertically, and the numbers are formatted to be more human-readable.
-///
-/// `list` is sorted by number first, and then label.
-///
-/// # Example
-///
-/// ```
-/// #use std::io::stderr;
-/// #fn main() {
-/// let list = vec![
-///     ("first entry", None),
-///     ("second entry", Some(2167)),
-///     ("third entry", Some(5422)),
-///     ("fourth entry", Some(2167)),
-/// ];
-/// writeln!("Entries:").unwrap();
-/// write_labeled_number_list(stderr(), 2).unwrap();
-/// #}
-/// ```
-///
-/// Expected output:
-/// ```terminal
-/// Entries:
-///    third entry: 5 422
-///    first entry: 3 773
-///   fourth entry: 2 167
-///   second entry: 2 167
-/// ```
-fn write_labeled_number_list(
-    mut buf: impl Write,
-    indent: usize,
-    mut list: Vec<(impl AsRef<str>, Option<usize>)>,
-) -> anyhow::Result<()> {
-    list.sort_by(|(lang_id_a, count_a), (lang_id_b, count_b)| {
-        let ordering = count_a.cmp(count_b).reverse();
-        if ordering.is_eq() {
-            lang_id_a.as_ref().cmp(lang_id_b.as_ref())
-        } else {
-            ordering
-        }
-    });
-
-    let label_max_length = list
-        .iter()
-        .map(|(label, _)| label.as_ref().chars().count())
-        .max()
-        .unwrap_or(0);
-    let value_max_length = list
-        .iter()
-        .map(|(_, value)| {
-            value
-                .as_ref()
-                .map(|value| display_number(*value).chars().count())
-                .unwrap_or(0)
-        })
-        .max()
-        .unwrap_or(0);
-
-    for (label, value) in &*list {
-        let value = value.as_ref().map(|value| display_number(*value));
-
-        write!(
-            buf,
-            "{}",
-            " ".repeat(indent + (label_max_length - label.as_ref().chars().count()))
-        )?;
-        write!(buf, "{}: ", label.as_ref())?;
-
-        if let Some(value) = value {
-            write!(
-                buf,
-                "{}",
-                " ".repeat(value_max_length - value.chars().count())
-            )?;
-            writeln!(buf, "{value}")?;
-        } else {
-            writeln!(buf, "none")?;
-        }
-    }
-    Ok(())
-}
-
-/// Write `args` to `buf`, preventing any line from becoming longer than `max_width`
-/// and indenting every new line with `indent` amount of spaces.
-///
-/// `line_length` is the length of the current line.
-///
-/// # Panics
-///
-/// Panics if `indent` is not smaller than `max_width`.
-fn writeln_max_width(
-    mut buf: impl Write,
-    args: &str,
-    mut line_length: usize,
-    indent: usize,
-    max_width: usize,
-) -> io::Result<()> {
-    if args.is_empty() {
-        return writeln!(buf);
-    }
-
-    macro_rules! new_line {
-        () => {
-            writeln!(buf)?;
-            for _ in 0..indent {
-                write!(buf, " ")?;
-            }
-            #[allow(unused_assignments)]
-            {
-                line_length = indent;
-            }
-        };
-    }
-
-    for (i, line) in args.split('\n').enumerate() {
-        if line.is_empty() {
-            writeln!(buf)?;
-            line_length = 0;
-            continue;
-        }
-
-        if i > 0 {
-            new_line!();
-        }
-
-        if line_length + 1 + args.len() <= max_width {
-            write!(buf, " {line}")?;
-            line_length = 0;
-            continue;
-        }
-
-        for term in line.split(' ') {
-            if line_length + 1 + term.len() > max_width {
-                if term.len() + 1 + indent > max_width {
-                    let mut term = term;
-                    while let Some(part) = term.get(..(max_width - line_length - 1)) {
-                        term = &term[(max_width - line_length - 1)..];
-
-                        write!(buf, " {part}")?;
-                        new_line!();
-                    }
-                    write!(buf, " {term}")?;
-                    line_length += 1 + term.len();
-                    continue;
-                } else {
-                    new_line!();
-                }
-            }
-
-            write!(buf, " {term}")?;
-            line_length += 1 + term.len();
-        }
-    }
-
-    writeln!(buf)
 }
