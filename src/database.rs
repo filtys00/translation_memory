@@ -413,6 +413,7 @@ impl Provider<'_> {
         let mut connection = self.connection.borrow_mut();
         let transaction = connection.transaction()?;
         transaction.execute("UPDATE Providers SET sources_has_failed = 0 WHERE id = ?", [self.id])?;
+        transaction.execute("DELETE FROM Translations WHERE source_id IN (SELECT id FROM Sources WHERE provider_id = ? AND language_id = ?)", (self.id, language_id))?;
         transaction.execute("DELETE FROM Sources WHERE provider_id = ? AND language_id = ?", (self.id, language_id))?;
         for urls in urls {
             transaction.execute(
