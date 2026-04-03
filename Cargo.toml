@@ -15,7 +15,7 @@ clap = { version = "4.6.0", features = ["derive"] }
 crossterm = { version = "0.29.0", features = ["windows"], default-features = false }
 env_logger = { version = "0.11.10", features = ["color"] }
 log = "0.4.29"
-quick-xml = { version = "0.39.2", features = ["serialize", "overlapped-lists"] }
+quick-xml = { version = "0.31.0", features = ["serialize", "overlapped-lists"] } # Newer versions fails when deserializing 'microsoft'
 regex = "1.12.3"
 reqwest = { version = "0.13.2", features = ["blocking", "json"] }
 rusqlite = { version = "0.39.0", features = ["bundled", "functions", "url"] }
