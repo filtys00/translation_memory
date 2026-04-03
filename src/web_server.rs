@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{borrow::Cow, collections::HashMap, str::FromStr, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -14,12 +14,17 @@ use axum::{
 use log::{debug, trace};
 use regex::Regex;
 use rust_embed::Embed;
-use serde::{de::{self, Unexpected}, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::json;
 use tokio::{net::TcpListener, sync::Mutex};
-use unic_langid::LanguageIdentifier;
 
-use crate::database::TranslationStore;
+use crate::database::{
+    QueryCountOptions,
+    QueryFilter as DbFilter,
+    QueryFilterMode as DbMode,
+    QueryOptions,
+    TranslationStore,
+};
 
 #[derive(Embed)]
 #[folder = "src/web_server"]
@@ -73,34 +78,19 @@ static_page!(search_icon, "search.svg", "image/svg+xml");
 struct QueryParams {
     search: Option<String>,
 
-    #[serde(deserialize_with = "deserialize_languages")]
-    languages: Vec<LanguageIdentifier>,
+    #[serde(deserialize_with = "deserialize_string_vec")]
+    languages: Vec<String>,
 
-    #[serde(deserialize_with = "deserialize_scopes")]
+    #[serde(deserialize_with = "deserialize_string_vec")]
     scopes: Vec<String>,
 
-    limit: Option<usize>,
-    skip: Option<usize>,
+    limit: Option<u32>,
+    skip: Option<u32>,
 
     count: Option<bool>,
 }
 
-fn deserialize_languages<'de, D>(deserializer: D) -> Result<Vec<LanguageIdentifier>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: String = String::deserialize(deserializer)?;
-    let mut list = Vec::new();
-    for value in value.split(',') {
-        list.push(
-            LanguageIdentifier::from_str(value)
-                .map_err(|_| de::Error::invalid_value(Unexpected::Str(value), &"a language ID"))?,
-        )
-    }
-    Ok(list)
-}
-
-fn deserialize_scopes<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+fn deserialize_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -150,57 +140,21 @@ async fn query_api(
         },
     );
 
-    let search_filters = if let Some(search) = &params.search {
+    let mut search_filters = if let Some(search) = &params.search {
         parse_search(search).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     } else {
         vec![]
     };
+    search_filters.push((DbFilter::Providers { names: params.scopes }, DbMode::Require));
+    search_filters.push((DbFilter::Languages { lang_ids: params.languages }, DbMode::Require));
+
+    trace!("Search filters: {search_filters:?}");
 
     let store = store.lock().await;
-    let translations = store
-        .translations()
-        .filter(|(scope, lang_id, translation)| {
-            if !params.languages.contains(lang_id) {
-                return false;
-            }
-            if !params.scopes.contains(scope) {
-                return false;
-            }
-
-            for (filter, filter_mode) in &search_filters {
-                let matches = match filter {
-                    SearchFilter::OriginalRegex(regex) => regex.is_match(&translation.original),
-                    SearchFilter::TranslationRegex(regex) => {
-                        regex.is_match(&translation.translation)
-                    }
-                    SearchFilter::EitherRegex(regex) => {
-                        regex.is_match(&translation.original)
-                            || regex.is_match(&translation.translation)
-                    }
-                    SearchFilter::Scope(s) => {
-                        if s == *scope {
-                            true
-                        } else if let Some(provider) = store.provider(scope) {
-                            provider.name() == s || provider.group_name() == Some(s)
-                        } else {
-                            false
-                        }
-                    }
-                    SearchFilter::Language(l) => l == *lang_id,
-                };
-                match (filter_mode, matches) {
-                    (SearchFilterMode::Require, true) => {}
-                    (SearchFilterMode::Require, false) => return false,
-                    (SearchFilterMode::Block, true) => return false,
-                    (SearchFilterMode::Block, false) => {}
-                }
-            }
-
-            true
-        });
 
     if params.count.unwrap_or(false) {
-        let count = translations.count();
+        let count = store.query_translation_count(QueryCountOptions { filters: search_filters })
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         trace!("Request for '/query': returning {count}",);
 
@@ -209,7 +163,16 @@ async fn query_api(
         })?));
     }
 
-    let translations = translations.map(|(scope, lang_id, translation)| {
+    let translations = store
+        .query_translations(QueryOptions {
+            limit: params.limit.unwrap_or(u32::MAX),
+            offset: params.skip.unwrap_or(0),
+            filters: search_filters.clone(),
+        })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+
+    let translations = translations.into_iter().map(|translation| {
         fn regex_parse(regex: Option<&Regex>, string: &str) -> Vec<serde_json::Value> {
             if let Some(regex) = regex {
                 let mut original = Vec::new();
@@ -233,8 +196,8 @@ async fn query_api(
             .iter()
             .filter_map(|filter| match filter {
                 (
-                    SearchFilter::OriginalRegex(regex) | SearchFilter::EitherRegex(regex),
-                    SearchFilterMode::Require,
+                    DbFilter::Original { regex } | DbFilter::All { regex },
+                    DbMode::Require,
                 ) => Some(regex),
                 _ => None,
             })
@@ -243,19 +206,19 @@ async fn query_api(
             .iter()
             .filter_map(|filter| match filter {
                 (
-                    SearchFilter::TranslationRegex(regex) | SearchFilter::EitherRegex(regex),
-                    SearchFilterMode::Require,
+                    DbFilter::Translation { regex } | DbFilter::All { regex },
+                    DbMode::Require,
                 ) => Some(regex),
                 _ => None,
             })
             .find(|regex| regex.is_match(&translation.translation));
 
         let mut json = json!({
-            "scope": scope,
-            "language": lang_id,
+            "scope": translation.provider_code,
+            "language": translation.language_id,
             "original": regex_parse(original_regex, &translation.original),
             "translation": regex_parse(translation_regex, &translation.translation),
-            "source": translation.source,
+            "source": translation.translations_url,
         });
         if let Some(comment) = &translation.comment {
             json["comment"] = json!(comment);
@@ -266,12 +229,7 @@ async fn query_api(
         json
     });
 
-    let translations: Vec<serde_json::Value> = match (params.limit, params.skip) {
-        (Some(limit), Some(skip)) => translations.skip(skip).take(limit).collect(),
-        (Some(limit), None) => translations.take(limit).collect(),
-        (None, Some(skip)) => translations.skip(skip).collect(),
-        (None, None) => translations.collect(),
-    };
+    let translations: Vec<_> = translations.collect();
 
     trace!(
         "Request for '/query': returning {} translations",
@@ -283,34 +241,14 @@ async fn query_api(
     })?))
 }
 
-enum SearchFilter {
-    /// Check if either `original` or `translation` matches the regex.
-    EitherRegex(Regex),
-    /// Check if `original` matches the regex.
-    OriginalRegex(Regex),
-    /// Check if `translation` matches the regex.
-    TranslationRegex(Regex),
-    /// Check if translation is from the provider with the specified id.
-    Scope(String),
-    /// Check if translation is translated to the specified language.
-    Language(LanguageIdentifier),
-}
-
-enum SearchFilterMode {
-    /// Require a search filter to be `true` to include translation in the results.
-    Require,
-    /// Require a search filter to be `false` to include translation in the results.
-    Block,
-}
-
-fn parse_search(search: &str) -> anyhow::Result<Vec<(SearchFilter, SearchFilterMode)>> {
+fn parse_search(search: &str) -> anyhow::Result<Vec<(DbFilter, DbMode)>> {
     if !search.contains(':') {
         if search.is_empty() {
             return Ok(vec![]);
         } else {
             return Ok(vec![(
-                SearchFilter::EitherRegex(Regex::new(&format!("(?i){search}"))?),
-                SearchFilterMode::Require,
+                DbFilter::All { regex: Regex::new(&format!("(?i){search}"))? },
+                DbMode::Require,
             )]);
         }
     }
@@ -322,32 +260,32 @@ fn parse_search(search: &str) -> anyhow::Result<Vec<(SearchFilter, SearchFilterM
     for part in split_search(search) {
         if let Some((key, value)) = part.split_once(':') {
             let (key, mode) = if let Some(base_key) = key.strip_prefix('-') {
-                (base_key, SearchFilterMode::Block)
+                (base_key, DbMode::Deny)
             } else {
-                (key, SearchFilterMode::Require)
+                (key, DbMode::Require)
             };
 
             match key {
                 "o" | "original" => {
                     search_filters.push((
-                        SearchFilter::OriginalRegex(Regex::new(&format!("(?i){value}"))?),
+                        DbFilter::Original { regex: Regex::new(&format!("(?i){value}"))? },
                         mode,
                     ));
                     continue;
                 }
                 "t" | "translation" => {
                     search_filters.push((
-                        SearchFilter::TranslationRegex(Regex::new(&format!("(?i){value}"))?),
+                        DbFilter::Translation { regex: Regex::new(&format!("(?i){value}"))? },
                         mode,
                     ));
                     continue;
                 }
                 "s" | "scope" => {
-                    search_filters.push((SearchFilter::Scope(value.to_string()), mode));
+                    search_filters.push((DbFilter::Provider { name: value.to_string() }, mode));
                     continue;
                 }
                 "l" | "lang" | "language" => {
-                    search_filters.push((SearchFilter::Language(value.parse()?), mode));
+                    search_filters.push((DbFilter::Language { lang_id: value.to_string() }, mode));
                     continue;
                 }
                 _ => {}
@@ -364,8 +302,8 @@ fn parse_search(search: &str) -> anyhow::Result<Vec<(SearchFilter, SearchFilterM
 
     if !search_rest.is_empty() {
         search_filters.push((
-            SearchFilter::EitherRegex(Regex::new(&format!("(?i){search_rest}"))?),
-            SearchFilterMode::Require,
+            DbFilter::All { regex: Regex::new(&format!("(?i){search_rest}"))? },
+            DbMode::Require,
         ));
     }
 
@@ -436,8 +374,10 @@ async fn metadata_api(
     let store = store.lock().await;
 
     let mut scopes = HashMap::new();
-    for provider in store.providers() {
-        if let Some(group_name) = provider.group_name() {
+    for provider in store.get_providers().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
+        let names = provider.get_names().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        if let Some(group_name) = names.group_name {
             let scopes = scopes
                 .entry(group_name)
                 .or_insert(json!([]))
@@ -445,19 +385,19 @@ async fn metadata_api(
                 .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
 
             scopes.push(json!({
-                "id": provider.id(),
-                "name": provider.name(),
-                "downloaded": store.provider_caches.contains_key(provider.id()),
+                "id": &names.code,
+                "name": &names.name,
+                "downloaded": true,
             }));
         } else {
-            scopes.insert(provider.name(), json!(provider.id()));
+            scopes.insert(names.name, json!(names.code));
         }
     }
     let scopes: Vec<serde_json::Value> = scopes
         .iter()
         .map(|(group_name, value)| {
             if let Some(id) = value.as_str() {
-                json!({ "name": group_name, "id": id, "downloaded": store.provider_caches.contains_key(id), })
+                json!({ "name": group_name, "id": id, "downloaded": true })
             } else {
                 json!({ "name": group_name, "scopes": value })
             }
@@ -466,6 +406,6 @@ async fn metadata_api(
 
     Ok(Json(json!({
         "scopes": scopes,
-        "languages": store.languages(),
+        "languages": store.get_languages().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
     })))
 }

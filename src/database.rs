@@ -2,8 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{cell::RefCell, collections::HashSet, str::FromStr};
+use std::{cell::RefCell, collections::HashSet, fmt::Debug, str::FromStr};
 
+use log::trace;
 use regex::Regex;
 use reqwest::Url;
 use rusqlite::{
@@ -12,6 +13,7 @@ use rusqlite::{
     Connection,
     OptionalExtension,
     Error as SqlError,
+    Params,
     Result as SqlResult,
 };
 use unic_langid::LanguageIdentifier;
@@ -541,5 +543,162 @@ impl Source<'_> {
         transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
         transaction.execute("DELETE FROM Sources WHERE id = ?", [self.id])?;
         transaction.commit()
+    }
+}
+
+// Query API
+
+#[derive(Debug, Clone)]
+pub enum QueryFilter {
+    /// Applies if either the original or translation string matches `regex`.
+    All { regex: Regex },
+    /// Applies if the original string matches `regex`.
+    Original { regex: Regex },
+    /// Applies if the translation string matches `regex`.
+    Translation { regex: Regex },
+    /// Applies if the provider name, code name or group name is `name`.
+    Provider { name: String },
+    /// Applies if the provider name, code name or group name is one of `names`.
+    Providers { names: Vec<String> },
+    /// Applies if the translated to language is `lang_id`.
+    Language { lang_id: String },
+    /// Applies if the translated to language is one of `lang_ids`.
+    Languages { lang_ids: Vec<String> },
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum QueryFilterMode { Require, Deny }
+
+pub struct QueryOptions {
+    pub limit: u32,
+    pub offset: u32,
+    pub filters: Vec<(QueryFilter, QueryFilterMode)>,
+}
+
+pub struct QueryCountOptions {
+    pub filters: Vec<(QueryFilter, QueryFilterMode)>,
+}
+
+pub struct ExtendedTranslation {
+    pub translations_url: String,
+    pub provider_code: String,
+    pub language_id: String,
+    pub key: Option<String>,
+    pub original: String,
+    pub translation: String,
+    pub comment: Option<String>,
+}
+
+/// Returns `filters` as SQL WHERE conditions and parameters.
+fn filters_to_sql(filters: &[(QueryFilter, QueryFilterMode)]) -> (String, impl Params + Debug) {
+    let mut where_conditions = String::from("1=1"); // Needs at least one condition if `filters` is empty
+    let mut params: Vec<&str> = Vec::new();
+
+    for (filter, mode) in filters {
+        where_conditions += " AND "; // `where_conditions` has one default condition
+        if *mode == QueryFilterMode::Deny { where_conditions += "NOT " }
+        match filter {
+            QueryFilter::All { regex } => {
+                where_conditions += "(original REGEXP ? OR translation REGEXP ?)";
+                params.push(regex.as_str());
+                params.push(regex.as_str());
+            },
+            QueryFilter::Original { regex } => {
+                where_conditions += "original REGEXP ?";
+                params.push(regex.as_str());
+            },
+            QueryFilter::Translation { regex } => {
+                where_conditions += "translation REGEXP ?";
+                params.push(regex.as_str());
+            },
+            QueryFilter::Provider { name } => {
+                where_conditions += "(Providers.code = ? OR Providers.name = ? OR Providers.group_name IS ?)";
+                params.push(name);
+                params.push(name);
+                params.push(name);
+            },
+            QueryFilter::Providers { names } => {
+                where_conditions += "(1=0"; // Default is false, if `names` is empty
+                for name in names {
+                    where_conditions += " OR Providers.code = ? OR Providers.name = ? OR Providers.group_name IS ?";
+                    params.push(name);
+                    params.push(name);
+                    params.push(name);
+                }
+                where_conditions += ")";
+            },
+            QueryFilter::Language { lang_id } => {
+                where_conditions += "Languages.code = ?";
+                params.push(lang_id);
+            },
+            QueryFilter::Languages { lang_ids } => {
+                where_conditions += "(1=0"; // Default is false, if `lang_ids` is empty
+                for lang_id in lang_ids {
+                    where_conditions += " OR Languages.code = ?";
+                    params.push(lang_id);
+                }
+                where_conditions += ")";
+            },
+        }
+    }
+
+    (where_conditions, rusqlite::params_from_iter(params))
+}
+
+impl TranslationStore {
+    /// Query translations according to `options`.
+    pub fn query_translations(&self, options: QueryOptions) -> anyhow::Result<Vec<ExtendedTranslation>> {
+        let (where_conditions, params) = filters_to_sql(&options.filters);
+
+        let sql = format!("
+            SELECT Sources.translations_url, Providers.code, Languages.code, key, original, translation, comment
+            FROM Translations
+            JOIN Sources ON Translations.source_id = Sources.id
+            JOIN Providers ON Sources.provider_id = Providers.id
+            JOIN Languages ON Sources.language_id = Languages.id
+            WHERE {where_conditions} LIMIT {} OFFSET {}
+        ", options.limit, options.offset); // Inline numeric args to avoid fighting the type system
+        trace!("SQL Query: {sql}\nParameters: {params:?}");
+
+        let connection = self.connection.borrow();
+        let translations = connection
+            .prepare(&sql)?
+            .query_map(params, |row| -> SqlResult<ExtendedTranslation> {
+                let translation = ExtendedTranslation {
+                    translations_url: row.get(0)?,
+                    provider_code: row.get(1)?,
+                    language_id: row.get(2)?,
+                    key: row.get(3)?,
+                    original: row.get(4)?,
+                    translation: row.get(5)?,
+                    comment: row.get(6)?,
+                };
+                Ok(translation)
+            })?
+            .collect::<SqlResult<_>>()?;
+
+        Ok(translations)
+    }
+
+    // Make the count and translation queryies separate
+    // so the translations query do not need to wait for the count query.
+
+    /// Query translations according to `options`, and return the total amount of translations.
+    pub fn query_translation_count(&self, options: QueryCountOptions) -> anyhow::Result<u32> {
+        let (where_conditions, params) = filters_to_sql(&options.filters);
+
+        let connection = self.connection.borrow();
+        let total_count = connection.query_one(
+            &format!("
+                SELECT COUNT(*) FROM Translations
+                JOIN Sources ON Translations.source_id = Sources.id
+                JOIN Providers ON Sources.provider_id = Providers.id
+                JOIN Languages ON Sources.language_id = Languages.id
+                WHERE {where_conditions}
+            "),
+            params,
+            |row| row.get(0),
+        )?;
+        Ok(total_count)
     }
 }
