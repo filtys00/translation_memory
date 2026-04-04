@@ -149,15 +149,15 @@ pub fn perform_command(
             }
 
             info!("Starting web UI server at 'http://127.0.0.1:2013/'...");
-            info!("Press 'q' to stop the server");
+            info!("Press 'q' or 'Ctrl+C' to stop the server");
             let stop_listener = async {
                 crossterm::terminal::enable_raw_mode()?;
                 loop {
                     let c = stdin().read_u8().await?;
-                    if c == b'q' {
+                    if c == b'q' || c == 3 /* Ctrl+C */ {
                         break;
                     }
-                    warn!("Press 'q' to stop the server");
+                    warn!("Press 'q' or 'Ctrl+C' to stop the server");
                 }
                 crossterm::terminal::disable_raw_mode()?;
                 Ok::<_, anyhow::Error>(())
