@@ -2,11 +2,20 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+pub use super::{
+    android::parse_android,
+    browser_extension::parse_browser_extension,
+    microsoft::parse_microsoft_tbx,
+    po::parse_po,
+    properties::parse_properties,
+    merge_messages,
+};
+
 use std::vec;
 
 use super::{
-    android::{android_urls, parse_android, parse_android_base64},
-    browser_extension::{parse_browser_extension, parse_dark_reader},
+    android::{android_urls, parse_android_base64},
+    browser_extension::parse_dark_reader,
     chrome::{chromium_urls, parse_xtb_base64},
     dtd::parse_dtd,
     eu::{get_eu_source, parse_eu_tmx},
@@ -16,8 +25,8 @@ use super::{
     libreoffice::crawl_libreoffice,
     minecraft::{get_minecraft_sources, parse_minecraft},
     mozilla::{parse_mozilla_tbx, parse_mozilla_tmx},
-    po::{parse_po, parse_po_base64_remove_underscore, parse_po_remove_ampersand, parse_po_remove_underscore},
-    properties::{parse_obs_studio_ini, parse_properties},
+    po::{parse_po_base64_remove_underscore, parse_po_remove_ampersand, parse_po_remove_underscore},
+    properties::parse_obs_studio_ini,
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
     yaml::parse_mastodon_yaml,
@@ -211,7 +220,7 @@ macro_rules! tor {
 }
 
 #[rustfmt::skip]
-pub fn builtin_providers() -> Vec<Provider<'static>> {
+pub fn providers() -> Vec<Provider<'static>> {
     let providers: Vec<Provider> = vec![
         Provider::new("eu", "European Commision", None, parse_eu_tmx, get_eu_source),
         Provider::new("minecraft", "Minecraft", None, parse_minecraft, get_minecraft_sources),

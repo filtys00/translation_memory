@@ -194,7 +194,7 @@ pub struct Provider<'a> {
 impl<'a> Provider<'a> {
     /// Create a new provider that finds sources with `get_sources`
     /// and parses them to translations with `parse_source`.
-    pub fn new(
+    fn new(
         code: &str, name: &str, group_name: Option<&str>,
         parse_source: impl Fn(&DbSource) -> anyhow::Result<()> + 'a,
         get_sources: impl Fn(&[LangId], &DbProvider, &Downloader) -> anyhow::Result<()> + 'a,
@@ -299,25 +299,6 @@ struct SourceUrls {
 }
 
 impl<'a> Provider<'a> {
-    /// Creates `DbTranslation`s by merging `messages` and `default_messages`.
-    fn merge_messages(messages: TranslationMessages, mut default_messages: TranslationMessages) -> Vec<DbTranslation> {
-        let mut translations = Vec::with_capacity(messages.len());
-
-        for (key, (translation, comment)) in messages {
-            let Some((original, default_comment)) = default_messages.remove(&key) else {
-                continue;
-            };
-            translations.push(DbTranslation {
-                key: Some(key),
-                original,
-                translation,
-                comment: comment.or(default_comment),
-            });
-        }
-
-        translations
-    }
-
     /// Returns a closure that parses a mono source using `parse_text`.
     fn mono_text_parser(parse_text: impl Fn(String) -> anyhow::Result<Vec<DbTranslation>>) -> impl Fn(&DbSource) -> anyhow::Result<()> {
         move |source: &DbSource| {
@@ -340,7 +321,7 @@ impl<'a> Provider<'a> {
 
             let default_messages = parse_text(originals)?;
             let messages = parse_text(translations)?;
-            let translations = Self::merge_messages(messages, default_messages);
+            let translations = merge_messages(messages, default_messages);
             source.set_translations(&translations)?;
             Ok(())
         }
@@ -483,4 +464,23 @@ fn unescape(text: &str, allowed_escapes: &[char]) -> String {
     }
 
     new_text
+}
+
+/// Creates `Translation`s by merging `messages` and `default_messages`.
+pub fn merge_messages(messages: TranslationMessages, mut default_messages: TranslationMessages) -> Vec<DbTranslation> {
+    let mut translations = Vec::with_capacity(messages.len());
+
+    for (key, (translation, comment)) in messages {
+        let Some((original, default_comment)) = default_messages.remove(&key) else {
+            continue;
+        };
+        translations.push(DbTranslation {
+            key: Some(key),
+            original,
+            translation,
+            comment: comment.or(default_comment),
+        });
+    }
+
+    translations
 }

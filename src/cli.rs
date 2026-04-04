@@ -2,18 +2,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{cmp::Ordering, collections::HashSet, io::{self, Write}, sync::Arc};
+use std::{cmp::Ordering, collections::{HashMap, HashSet}, fs, io::{self, Write}, path::PathBuf, sync::{Arc, LazyLock}};
 
 use anyhow::{anyhow, bail};
-use clap::{Subcommand, ValueEnum};
+use clap::{Subcommand, ValueEnum, builder::PossibleValue};
 use log::{error, info, warn};
+use reqwest::Url;
 use termcolor::StandardStream;
 use tokio::{io::{AsyncReadExt, stdin}, select, runtime::Runtime as TokioRuntime, sync::Mutex};
 use unic_langid::LanguageIdentifier;
 
 use crate::{
-    database::{ProviderNames, ProviderType, TranslationStore},
-    providers::{builtin::builtin_providers, Downloader, RetryPolicy},
+    database::{ProviderNames, ProviderType, SourceContent, SourceContents, SourceUrls, Translation, TranslationStore},
+    providers::{builtin, Downloader, RetryPolicy},
     web_server::web_server,
 };
 
@@ -25,6 +26,41 @@ pub enum RetryValue {
     Failed,
     All,
 }
+
+#[derive(Debug, Clone, ValueEnum)]
+pub enum ParserValue {
+    AndroidXml,
+    BrowserExtension,
+    MicrosoftTbx,
+    Po,
+    Properties,
+}
+
+#[allow(clippy::type_complexity)]
+enum Parser {
+    Mono(fn(String) -> anyhow::Result<Vec<Translation>>),
+    Duo(fn(String) -> anyhow::Result<HashMap<String, (String, Option<String>)>>),
+}
+impl ParserValue {
+    /// Returns the function for parsing translations.
+    fn get_parser(&self) -> Parser {
+        match self {
+            ParserValue::AndroidXml => Parser::Duo(builtin::parse_android),
+            ParserValue::BrowserExtension => Parser::Duo(builtin::parse_browser_extension),
+            ParserValue::MicrosoftTbx => Parser::Mono(builtin::parse_microsoft_tbx),
+            ParserValue::Po => Parser::Mono(builtin::parse_po),
+            ParserValue::Properties => Parser::Duo(builtin::parse_properties),
+        }
+    }
+}
+
+/// List of parser values that are duo parsers.
+static DUO_PARSER_VALUES: LazyLock<Vec<PossibleValue>> = LazyLock::new(||
+    ParserValue::value_variants().iter()
+        .filter(|v| matches!(v.get_parser(), Parser::Duo { .. }))
+        .filter_map(|v| v.to_possible_value())
+        .collect()
+);
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
@@ -48,6 +84,36 @@ pub enum Command {
         /// Weather to retry finished and failed downloads.
         #[arg(short, long)]
         retry: Option<RetryValue>,
+    },
+    /// Add a new provider with translations.
+    Add {
+        #[arg()]
+        /// The code name of the provider.
+        code: String,
+
+        #[arg(short, long)]
+        /// The name of the provider.
+        name: Option<String>,
+
+        #[arg(short, long, requires = "name")]
+        /// The group name of the provider.
+        group_name: Option<String>,
+
+        #[arg(short, long = "language")]
+        /// The language of the translations.
+        lang_id: LanguageIdentifier,
+
+        #[arg(short, long)]
+        /// The file format of the translations file.
+        parser: ParserValue,
+
+        #[arg(short, long, required_if_eq_any(DUO_PARSER_VALUES.iter().map(|v| ("parser", v.get_name()))))]
+        /// Path to the file containing the default strings if the parser requires it.
+        originals_file: Option<PathBuf>,
+        
+        #[arg(short, long)]
+        /// Path to the file containing the translations.
+        translations_file: PathBuf,
     },
     /// Remove the translations of one or more providers.
     #[command(alias = "rm")]
@@ -111,7 +177,7 @@ pub fn perform_command(
             Ok(())
         },
         Command::Download { provider_codes, lang_ids, retry } => {
-            let mut providers = builtin_providers();
+            let mut providers = builtin::providers();
             if !provider_codes.is_empty() {
                 for arg_code in &provider_codes {
                     let is_match = providers.iter().any(|provider| {
@@ -224,6 +290,70 @@ pub fn perform_command(
 
             Ok(())
         },
+        Command::Add {
+            code, name, group_name,
+            lang_id, parser,
+            originals_file, translations_file,
+        } => {
+            let translations_text = fs::read_to_string(&translations_file)?;
+            let translations_content = SourceContent::Text(translations_text.clone());
+
+            let (translations, originals_content) = match parser.get_parser() {
+                Parser::Duo(parse) => {
+                    let originals_text = if let Some(originals_file) = &originals_file {
+                        fs::read_to_string(originals_file)?
+                    } else {
+                        unreachable!("Cannot parse with '{parser:?}' without an originals file");
+                    };
+                    let originals_content = SourceContent::Text(originals_text.clone());
+
+                    let translations = builtin::merge_messages(
+                        parse(translations_text)?,
+                        parse(originals_text)?,
+                    );
+                    (translations, originals_content)
+                },
+                Parser::Mono(parse) => {
+                    let translations = parse(translations_text)?;
+                    (translations, SourceContent::None)
+                },
+            };
+
+            let provider = if let Some(provider) = db.get_provider(&code)? {
+                if provider.get_type()? != ProviderType::FromFile {
+                    bail!("Cannot add to builtin provider '{code}'");
+                }
+                if let Some(name) = name {
+                    provider.set_names(&name, group_name.as_deref())?;
+                };
+                provider
+            } else {
+                let Some(name) = name else { bail!("Cannot add new provider without a name"); };
+                db.add_provider(ProviderType::FromFile, ProviderNames { code, name, group_name })?
+            };
+
+            let originals_url = if let Some(originals_file) = originals_file {
+                let url = Url::from_file_path(originals_file)
+                    .map_err(|_| anyhow!("Could not resolve originals path to an URL"))?;
+                Some(url)
+            } else {
+                None
+            };
+            let translations_url = Url::from_file_path(translations_file)
+                .map_err(|_| anyhow!("Could not resolve translations path to an URL"))?;
+            let source = provider.set_source(&lang_id, SourceUrls {
+                originals: originals_url,
+                translations: translations_url,
+            })?;
+
+            source.set_contents(SourceContents {
+                originals: originals_content,
+                translations: translations_content,
+            })?;
+            source.set_translations(&translations)?;
+
+            Ok(())
+        },
         Command::Remove { provider_codes, lang_ids } => {
             for code in &provider_codes {
                 let Some(db_provider) = db.get_provider(code)? else {
@@ -246,7 +376,7 @@ pub fn perform_command(
         },
         Command::Status { all } => {
             // Divide providers into groups
-            let mut builtin_providers: HashSet<_> = builtin_providers().into_iter()
+            let mut builtin_providers: HashSet<_> = builtin::providers().into_iter()
                 .map(|provider| provider.code().to_string())
                 .collect();
             let mut finished_providers = Vec::new();

@@ -407,7 +407,7 @@ impl Provider<'_> {
         }
     }
 
-    /// Set all the sources with language `lang_id` that belongs to this provider to `urls`.
+    /// Replace all the sources, with language `lang_id`, that belongs to this provider with `urls`.
     pub fn set_sources(&'_ self, lang_id: &LanguageIdentifier, urls: &[SourceUrls]) -> SqlResult<()> {
         let language_id = self.get_or_add_language_id(lang_id)?;
         let mut connection = self.connection.borrow_mut();
@@ -422,6 +422,21 @@ impl Provider<'_> {
             )?;
         }
         transaction.commit()
+    }
+
+    /// Replace all the sources, with language `lang_id`, that belongs to this provider with `urls`.
+    pub fn set_source(&'_ self, lang_id: &LanguageIdentifier, urls: SourceUrls) -> SqlResult<Source<'_>> {
+        self.set_sources(lang_id, &[urls])?;
+        Ok(Source { connection: self.connection, id: self.connection.borrow().last_insert_rowid() })
+    }
+
+    /// Get a count of all the translations that belong to this provider.
+    pub fn get_translation_count(&'_ self) -> SqlResult<u32> {
+        let count = self.connection.borrow().query_one(
+            "SELECT count(*) FROM Translations JOIN Sources ON Sources.id = Translations.source_id WHERE provider_id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
     }
 
     /// Delete this provider.

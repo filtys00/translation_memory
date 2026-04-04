@@ -9,9 +9,16 @@ use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
-use crate::providers::Provider;
-
-use super::{DbProvider, DbSource, DbSourceContent, DbSourceUrls, Downloader, LangId, TranslationMessages};
+use super::{
+    DbProvider,
+    DbSource,
+    DbSourceContent,
+    DbSourceUrls,
+    Downloader,
+    LangId,
+    TranslationMessages,
+    merge_messages,
+};
 
 pub fn get_minecraft_sources(lang_ids: &[LangId], provider: &DbProvider, downloader: &Downloader) -> anyhow::Result<()> {
     let manifest: Manifest = downloader.get_json("https://piston-meta.mojang.com/mc/game/version_manifest_v2.json")?;
@@ -63,7 +70,7 @@ pub fn parse_minecraft(source: &DbSource) -> anyhow::Result<()> {
     let contents = source.get_contents()?;
     let default_messages = parse_content(contents.originals)?;
     let messages = parse_content(contents.translations)?;
-    let translations = Provider::merge_messages(messages, default_messages);
+    let translations = merge_messages(messages, default_messages);
     source.set_translations(&translations)?;
     Ok(())
 }
