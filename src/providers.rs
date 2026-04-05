@@ -22,7 +22,7 @@ mod srt;
 mod ts;
 mod yaml;
 
-use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt::Display, ops::Deref};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt::Display, ops::Deref, thread, time::Duration};
 
 use anyhow::{bail};
 use log::{debug, trace};
@@ -84,7 +84,14 @@ impl LangId {
 /// Helper for downloading content from the internet.
 pub struct Downloader {
     client: Client,
+    /// Cache for only dowloading content once per URL.
     cache: RefCell<HashMap<Url, DbSourceContent>>,
+    /// Map of timeouts per host.
+    timeouts: RefCell<HashMap<String, Duration>>,
+    /// The initial timout, timeout increase, and timeout decrease per download.
+    default_timeout: (Duration, Duration, Duration),
+    /// Maximum attemts at downloading and receiving a `HTTP 429 Too Many Requests` before giving up.
+    max_attempts: u32,
 }
 
 impl Downloader {
@@ -92,43 +99,82 @@ impl Downloader {
         let client = Client::builder()
             .user_agent(concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")))
             .build()?; // Returns an error within an async runtime
-        Ok(Self { client, cache: RefCell::new(HashMap::new()) })
+        let downloader = Self {
+            client,
+            cache: RefCell::new(HashMap::new()),
+            timeouts: RefCell::new(HashMap::new()),
+            default_timeout: (Duration::from_secs(2), Duration::from_secs(2), Duration::from_secs_f32(0.1)),
+            max_attempts: 3,
+        };
+        Ok(downloader)
     }
 
     /// Download `url` and return the content.
     pub fn get_content(&'_ self, url: impl IntoUrl) -> anyhow::Result<DbSourceContent> {
-        fn download(client: &Client, url: &Url) -> anyhow::Result<DbSourceContent> {
-            trace!("Sending request: {url}");
-            let response = client.get(url.clone()).send()?;
-            match response.status() {
-                StatusCode::OK => {}
-                StatusCode::NOT_FOUND => return Ok(DbSourceContent::None),
-                status_code => bail!("Unexpected status code: {status_code}\n{url}"),
-            }
-            let content_type = response.headers().get("content-type")
-                .and_then(|t| t.to_str().ok());
-            let content = if content_type == Some("application/octet-stream") {
-                DbSourceContent::Bytes(response.bytes()?.to_vec())
-            } else {
-                DbSourceContent::Text(response.text()?)
-            };
-            Ok(content)
-        }
-
         let url = url.into_url()?;
 
-        let cache = self.cache.borrow();
-        let content = match cache.get(&url) {
-            Some(content) => content.clone(),
-            None => {
-                let content = download(&self.client, &url)?;
-                drop(cache);
-                let mut cache = self.cache.borrow_mut();
-                cache.insert(url.clone(), content.clone());
-                content
+        if let Some(content) = self.cache.borrow().get(&url) {
+            return Ok(content.clone());
+        }
+
+        for _ in 0..self.max_attempts {
+            if let Some(host) = url.host_str() && let Some(timeout) = self.timeouts.borrow_mut().get_mut(host) {
+                thread::sleep(*timeout);
+                *timeout = timeout.saturating_sub(self.default_timeout.2);
             }
-        };
-        Ok(content)
+
+            trace!("Sending request to '{url}'");
+            let response = self.client.get(url.clone()).send()?;
+
+            let content = match response.status() {
+                StatusCode::NOT_FOUND => DbSourceContent::None,
+                StatusCode::OK => {
+                    let content_type = response.headers().get("content-type")
+                        .and_then(|t| t.to_str().ok());
+
+                    if content_type == Some("application/octet-stream") {
+                        DbSourceContent::Bytes(response.bytes()?.to_vec())
+                    } else {
+                        DbSourceContent::Text(response.text()?)
+                    }
+                },
+                StatusCode::TOO_MANY_REQUESTS => {
+                    let retry_after = response.headers().get("retry-after")
+                        .and_then(|r| r.to_str().ok())
+                        .and_then(|r| r.parse().ok());
+
+                    if let Some(retry_after) = retry_after {
+                        trace!("Waiting for {retry_after}s due to 'Retry-After'");
+                        let timeout = Duration::from_secs(retry_after);
+                        let max_timeout = self.default_timeout.0 + self.default_timeout.1 * (self.max_attempts - 1);
+                        if timeout > max_timeout {
+                            bail!("'Retry-After' is too high at {retry_after}s (max is {}s)", max_timeout.as_secs_f32());
+                        }
+                        thread::sleep(timeout);
+                    } else {
+                        let host = url.host_str().unwrap_or("placeholder").to_string();
+                        let mut timeouts = self.timeouts.borrow_mut();
+
+                        if let Some(timeout) = timeouts.get_mut(&host) {
+                            *timeout += self.default_timeout.1;
+                            trace!("Increased waiting time for '{host}' to {}s", timeout.as_secs_f32());
+                        } else {
+                            timeouts.insert(host.to_string(), self.default_timeout.0);
+                            trace!("Set waiting time for '{host}' {}s", self.default_timeout.0.as_secs_f32());
+                        }
+                    }
+
+                    continue;
+                },
+                status_code => bail!("Unexpected status code '{status_code}'\n{url}"),
+            };
+
+            self.cache.borrow_mut().insert(url.clone(), content.clone());
+
+            return Ok(content);
+        }
+        
+        bail!("Gave up on downloading '{url}' after {} attempts", self.max_attempts);
     }
 
     /// Download `url` and return the content as a string.
