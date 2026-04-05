@@ -278,13 +278,27 @@ impl<'a> Provider<'a> {
             lang_ids.difference(&source_lang_ids).map(|lang_id| LangId(lang_id.clone())).collect()
         };
 
-
+        // Find sources
         trace!("Finding sources...");
         debug!("Languages: {}", lang_ids.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(", "));
         if !lang_ids.is_empty() && let Err(e) = (self.get_sources)(&lang_ids, provider, downloader) {
             provider.set_sources_failed()?;
             bail!("Could not find sources: {e}");
         };
+        // Add placeholder sources for languages that were not found
+        let found_languages = provider.get_source_languages()?;
+        for lang_id in lang_ids {
+            if found_languages.contains(&lang_id) { continue; }
+
+            let source = provider.set_source(&lang_id, DbSourceUrls {
+                originals: None,
+                translations: Url::parse("placeholder:").expect("Invalid constant URL"),
+            })?;
+            source.set_contents(DbSourceContents {
+                originals: DbSourceContent::None,
+                translations: DbSourceContent::None,
+            })?;
+        }
 
         // Download source contents
         trace!("Downloading source contents...");
@@ -293,6 +307,8 @@ impl<'a> Provider<'a> {
             if !retry_policy.download_failed_source && source.has_failed()?.is_download() { continue; }
 
             let urls = source.get_urls()?;
+            if urls.translations.scheme() != "https" && urls.translations.scheme() != "http" { continue; }
+
             let translations_content = match downloader.get_content(urls.translations.clone()) {
                 Ok(content) => content,
                 Err(e) => {
