@@ -20,6 +20,7 @@ mod po;
 mod properties;
 mod srt;
 mod ts;
+mod xfce;
 mod yaml;
 
 use std::{cell::RefCell, collections::{HashMap, HashSet}, fmt::Display, ops::Deref, thread, time::Duration};

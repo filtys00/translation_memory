@@ -29,6 +29,7 @@ use super::{
     properties::parse_obs_studio_ini,
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
+    xfce::get_xfce_sources,
     yaml::parse_mastodon_yaml,
     Provider,
 };
@@ -224,6 +225,7 @@ pub fn providers() -> Vec<Provider<'static>> {
     let providers: Vec<Provider> = vec![
         Provider::new("eu", "European Commision", None, parse_eu_tmx, get_eu_source),
         Provider::new("minecraft", "Minecraft", None, parse_minecraft, get_minecraft_sources),
+        Provider::new("xfce", "XFCE", None, Provider::mono_text_parser(parse_po_remove_underscore), get_xfce_sources),
         Provider::new_mono_one_per_lang("mozilla-terminology", "Mozilla terminology", Some("Mozilla"), parse_mozilla_tbx,
             |lang_id| format!("https://pontoon.mozilla.org/terminology/{}.tbx", lang_id.format("-", true, "-", false))
         ),
