@@ -72,6 +72,12 @@ refreshAll();
 
 // Add listeners to elements
 
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { return; }
+    searchField.select();
+    searchField.focus();
+});
+
 translationList.onscroll = e => {
     if (e.target.scrollTop === 0) {
         header.classList.remove("floating");
