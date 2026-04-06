@@ -9,7 +9,7 @@ mod web_server;
 
 use std::{io::Write, process::ExitCode};
 
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser};
 use log::{Level, LevelFilter, error, info};
 use rusqlite::Connection;
 use termcolor::{ColorChoice, StandardStream};
@@ -18,27 +18,11 @@ use crate::{cli::{Command, perform_command, writeln_max_width}, database::Transl
 
 const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
 
-#[derive(Clone, Debug, ValueEnum)]
-enum VerboseMode {
-    None,
-    Info,
-    Debug,
-    WebServer,
-    Providers,
-    All,
-}
-
 #[derive(Debug, Parser)]
 struct Args {
-    /// Wich log messages to print.
-    #[arg(
-        long, global = true,
-        value_enum, value_name = "MODE",
-        default_value_t = VerboseMode::Info,
-        default_missing_value = "all",
-        num_args = 0..=1, require_equals = true,
-    )]
-    verbose: VerboseMode,
+    /// How verbose the logging should be [possible repeats: 2]
+    #[arg(global = true, short, long, action = ArgAction::Count)]
+    verbose: u8,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -84,33 +68,10 @@ fn main() -> ExitCode {
             term_width,
         )
     });
-    match args.verbose {
-        VerboseMode::None => {
-            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Off);
-        }
-        VerboseMode::Info => {
-            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info);
-        }
-        VerboseMode::Debug => {
-            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Debug);
-        }
-        VerboseMode::WebServer => {
-            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info);
-            logger.filter_module(
-                concat!(env!("CARGO_PKG_NAME"), "::web_server"),
-                LevelFilter::max(),
-            );
-        }
-        VerboseMode::Providers => {
-            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info);
-            logger.filter_module(
-                concat!(env!("CARGO_PKG_NAME"), "::providers"),
-                LevelFilter::max(),
-            );
-        }
-        VerboseMode::All => {
-            logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::max());
-        }
+    match args.verbose { // Only filter module env!("CARGO_PKG_NAME") to prevent logs from dependencies.
+        0 => { logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info); }
+        1 => { logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Debug); }
+        _ => { logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::max()); }
     }
     logger.init();
 
