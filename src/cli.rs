@@ -131,6 +131,14 @@ pub enum Command {
         /// Print all providers without hiding any.
         #[arg(short, long)]
         all: bool,
+
+        /// Print how many sources each provider have.
+        #[arg(short = 's', long, conflicts_with = "show_translations")]
+        show_sources: bool,
+
+        /// Print how many translations each provider have.
+        #[arg(short = 't', long, conflicts_with = "show_sources")]
+        show_translations: bool,
     },
 }
 
@@ -374,20 +382,61 @@ pub fn perform_command(
 
             Ok(())
         },
-        Command::Status { all } => {
-            // Divide providers into groups
-            let mut builtin_providers: HashSet<_> = builtin::providers().into_iter()
+        Command::Status { all, show_sources, show_translations } => {
+            #[derive(Clone)]
+            enum Info {
+                None,
+                Number(u32),
+                Fraction { amount: u32, total: u32 },
+            }
+
+            let mut languages = Vec::new();
+            for lang_id in db.get_languages()? {
+                let info = if show_sources {
+                    Info::Number(db.count_sources_by_lang(&lang_id)?)
+                } else if show_translations {
+                    Info::Number(db.count_translations_by_lang(&lang_id)?)
+                } else {
+                    Info::None
+                };
+                languages.push((lang_id.to_string(), info));
+            }
+
+            let mut builtin_provider_codes: HashSet<_> = builtin::providers().into_iter()
                 .map(|provider| provider.code().to_string())
                 .collect();
+
+            let mut builtin_providers = Vec::new();
+            let mut retired_providers = Vec::new();
+            let mut added_providers = Vec::new();
+
             let mut finished_providers = Vec::new();
             let mut unfinished_providers = Vec::new();
             let mut failed_providers = Vec::new();
+
             for provider in db.get_providers()? {
                 let code = provider.get_code()?;
-                builtin_providers.remove(&code);
+                builtin_provider_codes.remove(&code);
+
+                let info = if show_sources {
+                    Info::Number(provider.count_sources()?)
+                } else if show_translations {
+                    Info::Number(provider.count_translations()?)
+                } else {
+                    Info::None
+                };
+
+                match provider.get_type()? {
+                    ProviderType::BuiltIn => { builtin_providers.push((code.clone(), info.clone())); },
+                    ProviderType::Retired => { retired_providers.push((code.clone(), info.clone())); },
+                    ProviderType::FromFile => { added_providers.push((code.clone(), info.clone())); },
+                }
+
+                // Skip work if will not be needed.
+                if show_sources || show_translations { continue; }
 
                 if provider.has_sources_failed()? {
-                    failed_providers.push((code, (0, 0)));
+                    failed_providers.push((code, info.clone()));
                     continue;
                 }
 
@@ -405,75 +454,98 @@ pub fn perform_command(
                 }
 
                 let total = finished + unfinished + failed;
-                if finished > 0   {   finished_providers.push((code.clone(), (finished,   total))); }
-                if unfinished > 0 { unfinished_providers.push((code.clone(), (unfinished, total))); }
-                if failed > 0     {     failed_providers.push((code.clone(), (failed,     total))); }
+                let lists = [
+                    (finished, &mut finished_providers),
+                    (unfinished, &mut unfinished_providers),
+                    (failed, &mut failed_providers),
+                ];
+                for (count, providers) in lists {
+                    if count == 0 { continue; }
+                    let info = if count == total { Info::None } else {
+                        Info::Fraction { amount: count, total }
+                    };
+                    providers.push((code.clone(), info));
+                }
             }
-            for provider in builtin_providers {
-                unfinished_providers.push((provider, (0, 0)));
+
+            for provider in builtin_provider_codes {
+                unfinished_providers.push((provider, Info::None));
             }
 
             // Print providers to console
 
             /// Format providers to be displayed.
-            fn format_providers(
-                mut all_providers: Vec<(String, (u32, u32))>,
-                all: bool,
-                partial_first: bool,
-                partial_color: &str,
-                full_color: &str,
-            ) -> Vec<String> {
-                // Sort providers
-                all_providers.sort_by(|a, b| {
-                    let av = a.1.0 == a.1.1;
-                    let bv = b.1.0 == b.1.1;
-                    if !partial_first &&  bv && !av { return Ordering::Greater }
-                    if !partial_first && !bv &&  av { return Ordering::Less }
-                    if  partial_first &&  bv && !av { return Ordering::Less }
-                    if  partial_first && !bv &&  av { return Ordering::Greater }
+            fn format(mut codes: Vec<(String, Info)>, show_all: bool, color: Option<&str>) -> Vec<String> {
+                codes.sort_by(|(a_code, a_info), (b_code, b_info)| {
+                    match (a_info, b_info) {
+                        (Info::None, Info::Number(_)) => Ordering::Less,
+                        (Info::Number(_), Info::None) => Ordering::Greater,
 
-                    let ord = (a.1.0 as f32 / a.1.1 as f32)
-                        .partial_cmp(&(b.1.0 as f32 / b.1.1 as f32));
-                    if ord == Some(Ordering::Less) { return Ordering::Less }
-                    if ord == Some(Ordering::Greater) { return Ordering::Greater }
+                        (Info::None, Info::Fraction { .. }) => Ordering::Less,
+                        (Info::Fraction { .. }, Info::None) => Ordering::Greater,
 
-                    a.0.cmp(&b.0)
+                        (Info::Number(_), Info::Fraction { .. }) => Ordering::Less,
+                        (Info::Fraction { .. }, Info::Number(_)) => Ordering::Greater,
+
+                        (Info::None, Info::None) => a_code.cmp(b_code),
+                        (Info::Number(a_num), Info::Number(b_num)) => {
+                            a_num.cmp(b_num).reverse().then_with(|| a_code.cmp(b_code))
+                        },
+                        (Info::Fraction { amount: a_amount, total: a_total }, Info::Fraction { amount: b_amount, total: b_total }) => {
+                            (*a_amount as f32 / *a_total as f32)
+                                .partial_cmp(&(*b_amount as f32 / *b_total as f32))
+                                .unwrap_or(Ordering::Equal)
+                                .reverse()
+                                .then_with(|| a_code.cmp(b_code))
+                        }
+                    }
                 });
 
-                // Select what providers to display
-                let mut providers: Vec<_> = all_providers.iter()
-                    .filter(|(_, (amount, total))| amount != total || all)
+                // Select which providers to display
+                let mut shown_codes: Vec<_> = codes.iter()
+                    .filter(|(_, info)| show_all || !matches!(info, Info::None))
+                    .take(if show_all { usize::MAX } else { 40 })
                     .collect();
-                if providers.is_empty() { providers = all_providers.iter().take(10).collect(); }
+                if shown_codes.is_empty() { shown_codes = codes.iter().take(10).collect(); }
+                if codes.len() - shown_codes.len() < 3 { shown_codes = codes.iter().collect(); }
 
                 // Format providers
-                let mut codes: Vec<String> = providers.iter()
-                    .map(|(code, (amount, total))| {
-                        if amount == total {
-                            format!("\x1b[{full_color}m{code}\x1b[0m")
-                        } else {
-                            format!("\x1b[{partial_color}m{code}\u{00A0}({amount}/{total})\x1b[0m")
-                        }
+                let mut shown_codes: Vec<String> = shown_codes.iter()
+                    .map(|(code, info)| match info {
+                        Info::None if color.is_none() => code.clone(),
+                        Info::Number(num) if color.is_none() => format!("{code}\u{00A0}({num})"),
+                        Info::None => {
+                            format!("\x1b[{}m{code}\x1b[0m", color.unwrap_or("0"))
+                        },
+                        Info::Number(num) => {
+                            format!("\x1b[{}m{code}\u{00A0}({num})\x1b[0m", color.unwrap_or("0"))
+                        },
+                        Info::Fraction { amount, total } => {
+                            format!("\x1b[33m{code}\u{00A0}({amount}/{total})\x1b[0m")
+                        },
                     })
                     .collect();
-                if !all && all_providers.len() != codes.len() {
-                    codes.push(format!("...and\u{00A0}{}\u{00A0}other(s)", all_providers.len() - codes.len()));
+                if codes.len() != shown_codes.len() {
+                    shown_codes.push(format!("...and\u{00A0}{}\u{00A0}other(s)", codes.len() - shown_codes.len()));
                 }
-                codes
+                shown_codes
             }
 
-            let mut languages: Vec<String> = db.get_languages()?.into_iter()
-                .map(|l| l.to_string())
-                .collect();
-            languages.sort();
-
-            let titles = [
-                ("Languages", languages),
-                ("Finished providers",   format_providers(finished_providers, all, true, "1;33", "32")),
-                ("Unfinished providers", format_providers(unfinished_providers, all, false, "1;33", "0")),
-                ("Failed providers",     format_providers(failed_providers, true, false, "1;33", "31")),
-            ];
-            for (i, (title, codes)) in titles.iter().enumerate() {
+            let titles: &[(bool, &str, Vec<String>)] = if show_sources || show_translations { &[
+                (false, "Languages",            format(languages, true, None)),
+                (false, "Built-in providers",   format(builtin_providers, all, None)),
+                (true,  "Retired providers",    format(retired_providers, true, None)),
+                (true,  "Added providers",      format(added_providers, true, None)),
+            ] } else { &[
+                (false, "Languages",            format(languages, true, None)),
+                (false, "Finished providers",   format(finished_providers, all, Some("32"))),
+                (false, "Unfinished providers", format(unfinished_providers, all, None)),
+                (false, "Failed providers",     format(failed_providers, true, Some("31"))),
+                (true,  "Retired providers",    format(retired_providers, true, None)),
+                (true,  "Added providers",      format(added_providers, true, None)),
+            ] };
+            for (i, (hide_when_empty, title, codes)) in titles.iter().enumerate() {
+                if *hide_when_empty && codes.is_empty() { continue; }
                 write!(console, "\x1b[1m{title}:\x1b[0m")?;
                 if codes.is_empty() {
                     writeln!(console, " \x1b[3mnone\x1b[0m")?;

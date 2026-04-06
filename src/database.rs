@@ -253,6 +253,31 @@ impl TranslationStore {
         transaction.commit()
     }
 
+    /// Get a count of all the sources that are of the language `lang_id`.
+    pub fn count_sources_by_lang(&self, lang_id: &LanguageIdentifier) -> SqlResult<u32> {
+        let count = self.connection.borrow().query_one(
+            "SELECT count(*) FROM Sources
+            JOIN Languages ON Languages.id = Sources.language_id
+            WHERE Languages.code = ?",
+            [lang_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Get a count of all the translations that are of the language `lang_id`.
+    pub fn count_translations_by_lang(&self, lang_id: &LanguageIdentifier) -> SqlResult<u32> {
+        let count = self.connection.borrow().query_one(
+            "SELECT count(*) FROM Translations
+            JOIN Sources ON Sources.id = Translations.source_id
+            JOIN Languages ON Languages.id = Sources.language_id
+            WHERE Languages.code = ?",
+            [lang_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     /// Returns a list of all the providers.
     pub fn get_providers(&'_ self) -> SqlResult<Vec<Provider<'_>>> {
         let providers = self.connection.borrow().prepare("SELECT id FROM Providers")?
@@ -430,10 +455,22 @@ impl Provider<'_> {
         Ok(Source { connection: self.connection, id: self.connection.borrow().last_insert_rowid() })
     }
 
-    /// Get a count of all the translations that belong to this provider.
-    pub fn get_translation_count(&'_ self) -> SqlResult<u32> {
+    /// Get a count of all the sources that are of the language `lang_id` that belong to this provider.
+    pub fn count_sources(&self) -> SqlResult<u32> {
         let count = self.connection.borrow().query_one(
-            "SELECT count(*) FROM Translations JOIN Sources ON Sources.id = Translations.source_id WHERE provider_id = ?", [self.id],
+            "SELECT count(*) FROM Sources WHERE Sources.provider_id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Get a count of all the translations that belong to this provider.
+    pub fn count_translations(&'_ self) -> SqlResult<u32> {
+        let count = self.connection.borrow().query_one(
+            "SELECT count(*) FROM Translations
+            JOIN Sources ON Sources.id = Translations.source_id
+            WHERE provider_id = ?",
+            [self.id],
             |row| row.get(0),
         )?;
         Ok(count)
