@@ -18,7 +18,8 @@ use crate::{cli::{Command, perform_command, writeln_max_width}, database::Transl
 
 const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
+#[command(version)]
 struct Args {
     /// How verbose the logging should be [possible repeats: 2]
     #[arg(global = true, short, long, action = ArgAction::Count)]
