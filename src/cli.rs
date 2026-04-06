@@ -329,13 +329,16 @@ pub fn perform_command(
 
             let provider = if let Some(provider) = db.get_provider(&code)? {
                 if provider.get_type()? != ProviderType::FromFile {
-                    bail!("Cannot add to builtin provider '{code}'");
+                    bail!("Cannot add to built-in provider '{code}'");
                 }
                 if let Some(name) = name {
                     provider.set_names(&name, group_name.as_deref())?;
                 };
                 provider
             } else {
+                if builtin::providers().iter().any(|provider| provider.code() == code) {
+                    bail!("Cannot add to built-in provider '{code}'");
+                }
                 let Some(name) = name else { bail!("Cannot add new provider without a name"); };
                 db.add_provider(ProviderType::FromFile, ProviderNames { code, name, group_name })?
             };
