@@ -7,16 +7,23 @@ mod providers;
 mod cli;
 mod web_server;
 
-use std::{io::Write, process::ExitCode};
+use std::{env, io::Write, path::PathBuf, process::ExitCode};
 
 use clap::{ArgAction, Parser};
-use log::{Level, LevelFilter, error, info};
+use log::{Level, LevelFilter, debug, error};
 use rusqlite::Connection;
 use termcolor::{ColorChoice, StandardStream};
 
 use crate::{cli::{Command, perform_command, writeln_max_width}, database::TranslationStore};
 
-const DEFAULT_CACHE_PATH: &str = "translations.sqlite";
+/// Returns the default file name of the database file.
+fn default_database_path() -> String {
+    let mut db_file_name = env::current_exe().ok()
+        .and_then(|p| p.file_stem().and_then(|n| n.to_str()).map(|n| n.to_string()))
+        .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string());
+    db_file_name.push_str(".sqlite");
+    db_file_name
+}
 
 #[derive(Parser)]
 #[command(version)]
@@ -24,6 +31,10 @@ struct Args {
     /// How verbose the logging should be [possible repeats: 2]
     #[arg(global = true, short, long, action = ArgAction::Count)]
     verbose: u8,
+
+    /// Where the translations database file is located.
+    #[arg(global = true, long, value_name = "PATH", default_value = default_database_path())]
+    database_file: PathBuf,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -76,8 +87,8 @@ fn main() -> ExitCode {
     }
     logger.init();
 
-    info!("Reading translations from '{DEFAULT_CACHE_PATH}'...");
-    let connection = match Connection::open(DEFAULT_CACHE_PATH) {
+    debug!("Using database file located at {:?}", args.database_file);
+    let connection = match Connection::open(args.database_file) {
         Ok(connection) => connection,
         Err(e) => {
             error!("Could not connect to database: {e}");
