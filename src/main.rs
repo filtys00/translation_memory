@@ -14,7 +14,7 @@ use log::{Level, LevelFilter, debug, error};
 use rusqlite::Connection;
 use termcolor::{ColorChoice, StandardStream};
 
-use crate::{cli::{Command, perform_command, writeln_max_width}, database::TranslationStore};
+use crate::{cli::{Command, perform_command, wrapped_writeln}, database::TranslationStore};
 
 /// Returns the default file name of the database file.
 fn default_database_path() -> String {
@@ -72,12 +72,11 @@ fn main() -> ExitCode {
             Level::Warn | Level::Info => 4,
         };
 
-        writeln_max_width(
+        wrapped_writeln(
             buf,
             &record.args().to_string(),
-            3 + level_length + record.target().len(),
-            1 + level_length,
             term_width,
+            1 + level_length,
         )
     });
     match args.verbose { // Only filter module env!("CARGO_PKG_NAME") to prevent logs from dependencies.

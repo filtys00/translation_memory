@@ -554,11 +554,7 @@ pub fn perform_command(
                     writeln!(console, " \x1b[3mnone\x1b[0m")?;
                 } else {
                     write!(console, "\n  ")?;
-                    writeln_max_width(
-                        &mut console,
-                        &codes.join("  "),
-                        0, 2, term_width,
-                    )?;
+                    wrapped_writeln(&mut console, &codes.join("  "), term_width, 2)?;
                 }
                 if i != titles.len() - 1 { writeln!(console)?; }
             }
@@ -568,77 +564,62 @@ pub fn perform_command(
     }
 }
 
-/// Write `args` to `buf`, preventing any line from becoming longer than `max_width`
-/// and indenting every new line with `indent` amount of spaces.
-///
-/// `line_length` is the length of the current line.
-///
-/// # Panics
-///
-/// Panics if `indent` is not smaller than `max_width`.
-pub fn writeln_max_width(
-    mut buf: impl Write,
-    args: &str,
-    mut line_length: usize,
-    indent: usize,
-    max_width: usize,
-) -> io::Result<()> {
-    if args.is_empty() {
-        return writeln!(buf);
+/// Returns the amount of chars in `s` that will be visible when printed to `stdout`.
+fn visible_len(s: &str) -> usize {
+    let mut len = 0;
+    let mut is_ansi = false;
+    for c in s.chars() {
+        if !is_ansi && c as u8 == 0x1b { is_ansi = true; continue; }
+        if is_ansi && c != '[' && c != ';' && !c.is_ascii_digit() { is_ansi = false; continue; }
+        if is_ansi { continue; }
+        len += 1;
     }
+    len
+}
 
-    macro_rules! new_line {
-        () => {
-            writeln!(buf)?;
-            for _ in 0..indent {
-                write!(buf, " ")?;
-            }
-            #[allow(unused_assignments)]
-            {
-                line_length = indent;
-            }
-        };
+/// Splits of the next line from `s`, returning it together with the remainder.
+fn split_of_line(s: &str, width: usize, indent: usize) -> (&str, &str) {
+    let width = width as i32;
+    let indent = indent as i32;
+
+    let mut index = 0;
+    let mut length: i32 = -1; // Starts with -1 because all words start with +1
+    for word in s.split(' ') {
+        let visible_word_len = visible_len(word) as i32;
+        if length + 1 + visible_word_len <= width {
+            index += 1 + word.len();
+            length += 1 + visible_word_len;
+        } else if visible_word_len > width {
+            index += 1 + word.len();
+            length += 1 + visible_word_len;
+            length -= width;
+            length %= indent + width;
+            length -= indent;
+        } else {
+            index -= 1; // Remove one because all words start with a +1
+            return (s[0..index].trim_end(), s[index..].trim_start());
+        }
     }
+    (s, "")
+}
 
-    for (i, line) in args.split('\n').enumerate() {
-        if line.is_empty() {
-            writeln!(buf)?;
-            line_length = 0;
-            continue;
-        }
+/// Write `s` to `buf`, while ensuring that no line is longer than `max_width`,
+/// and that every line is indented by `indent` spaces.
+pub fn wrapped_writeln(mut out: impl Write, s: &str, max_width: usize, indent: usize) -> io::Result<()> {
+    let indent_str = " ".repeat(indent);
 
-        if i > 0 {
-            new_line!();
-        }
+    let mut first = true;
+    for mut line in s.split('\n') {
+        while !line.is_empty() {
+            let (next_line, rest) = split_of_line(line, max_width - indent, indent);
+            line = rest;
 
-        if line_length + 1 + args.len() <= max_width {
-            write!(buf, " {line}")?;
-            line_length = 0;
-            continue;
-        }
-
-        for term in line.split(' ') {
-            if line_length + 1 + term.len() > max_width {
-                if term.len() + 1 + indent > max_width {
-                    let mut term = term;
-                    while let Some(part) = term.get(..(max_width - line_length - 1)) {
-                        term = &term[(max_width - line_length - 1)..];
-
-                        write!(buf, " {part}")?;
-                        new_line!();
-                    }
-                    write!(buf, " {term}")?;
-                    line_length += 1 + term.len();
-                    continue;
-                } else {
-                    new_line!();
-                }
+            if first { first = false; } else {
+                write!(out, "{indent_str}")?;
             }
-
-            write!(buf, " {term}")?;
-            line_length += 1 + term.len();
+            writeln!(out, "{next_line}")?;
         }
     }
 
-    writeln!(buf)
+    Ok(())
 }
