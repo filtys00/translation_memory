@@ -8,7 +8,6 @@ use anyhow::{anyhow, bail};
 use clap::{Subcommand, ValueEnum, builder::PossibleValue};
 use log::{info, warn};
 use reqwest::Url;
-use termcolor::StandardStream;
 use tokio::{io::{AsyncReadExt, stdin}, select, runtime::Runtime as TokioRuntime, sync::Mutex};
 use unic_langid::LanguageIdentifier;
 
@@ -145,7 +144,6 @@ pub enum Command {
 /// Perform the action associated with `command`.
 pub fn perform_command(
     command: Command,
-    mut console: StandardStream,
     term_width: usize,
     db: TranslationStore,
 ) -> anyhow::Result<()> {
@@ -601,14 +599,14 @@ pub fn perform_command(
             ] };
             for (i, (hide_when_empty, title, codes)) in titles.iter().enumerate() {
                 if *hide_when_empty && codes.is_empty() { continue; }
-                write!(console, "\x1b[1m{title}:\x1b[0m")?;
+                print!("\x1b[1m{title}:\x1b[0m");
                 if codes.is_empty() {
-                    writeln!(console, " \x1b[3mnone\x1b[0m")?;
+                    println!(" \x1b[3mnone\x1b[0m");
                 } else {
-                    write!(console, "\n  ")?;
-                    wrapped_writeln(&mut console, &codes.join("  "), term_width, 2)?;
+                    print!("\n  ");
+                    wrapped_writeln(io::stdout(), &codes.join("  "), term_width, 2)?;
                 }
-                if i != titles.len() - 1 { writeln!(console)?; }
+                if i != titles.len() - 1 { println!(); }
             }
 
             Ok(())

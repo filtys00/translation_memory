@@ -12,7 +12,6 @@ use std::{env, io::Write, path::PathBuf, process::ExitCode};
 use clap::{ArgAction, Parser};
 use log::{Level, LevelFilter, debug, error};
 use rusqlite::Connection;
-use termcolor::{ColorChoice, StandardStream};
 
 use crate::{cli::{Command, perform_command, wrapped_writeln}, database::TranslationStore};
 
@@ -83,8 +82,7 @@ fn main() -> ExitCode {
 
     
     let command = args.command.unwrap_or(Command::Start { open_browser: true });
-    let console = StandardStream::stderr(ColorChoice::Auto);
-    if let Err(e) = perform_command(command, console, term_width, store) {
+    if let Err(e) = perform_command(command, term_width, store) {
         error!("{e}");
         return ExitCode::FAILURE;
     }
