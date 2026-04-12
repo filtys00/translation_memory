@@ -383,7 +383,8 @@ impl<'a> Provider<'a> {
 
         let mut sources_to_parse = Vec::new();
         for source in provider.get_sources()? {
-            if !retry_policy.parse_finished_source && source.get_contents()?.translations.is_none() { continue; }
+            if source.get_contents()?.translations.is_none() { continue; }
+            if !retry_policy.parse_finished_source && source.has_parsed()? { continue; }
             if !retry_policy.parse_failed_source && source.has_failed()?.is_some() { continue; }
 
             sources_to_parse.push(source);
