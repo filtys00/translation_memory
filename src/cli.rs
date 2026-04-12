@@ -14,7 +14,7 @@ use unic_langid::LanguageIdentifier;
 
 use crate::{
     database::{ProviderNames, ProviderType, SourceContent, SourceContents, SourceUrls, Translation, TranslationStore},
-    providers::{builtin, Downloader, RetryPolicy},
+    providers::{Downloader, Progress, RetryPolicy, builtin},
     web_server::web_server,
 };
 
@@ -255,7 +255,58 @@ pub fn perform_command(
             let downloader = Downloader::new()?;
 
             for (i, provider) in providers.iter().enumerate() {
-                info!("Downloading provider '{}' ({}/{})", provider.code(), i + 1, providers.len());
+                let on_progress = |progress| {
+                    let reset = "\x1b[2K"; // Clear current line
+                    let clear = "\x1b[0m";
+                    let clear_highlight = "\x1b[0;1m";
+                    let blue = "\x1b[36;1m";
+                    let green = "\x1b[32;1m";
+                    let gray = "\x1b[30m";
+
+                    let ongoing_base = format_args!(
+                        "{blue}Downloading {clear_highlight}{0}{clear}\t{1}/{2}",
+                        provider.code(), i + 1, providers.len()
+                    );
+
+                    match progress {
+                        Progress::DownloadingSources { lang_ids } => {
+                            let languages = lang_ids.into_iter()
+                                .map(|l| l.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            eprint!("{ongoing_base}, downloading sources for {languages}\r");
+                        },
+                        Progress::StartDownloadingSources { .. } => {
+                            eprint!("{reset}{ongoing_base}\r");
+                        },
+                        Progress::DownloadingSource { current, total } => {
+                            eprint!("{ongoing_base}, downloading source {current}/{total}\r");
+                        },
+                        Progress::StartParsingSources { .. } => {
+                            eprint!("{reset}{ongoing_base}\r");
+                        },
+                        Progress::ParsingSource { current, total } => {
+                            eprint!("{ongoing_base}, parsing source {current}/{total}\r");
+                        },
+                        Progress::Done { downloaded_sources, parsed_sources } => {
+                            let base = format_args!(
+                                "{reset}{green}Downloaded {clear_highlight}{0}{clear}",
+                                provider.code(),
+                            );
+
+                            if downloaded_sources > 0 { // Always print parsed sources when at least one source were downloaded
+                                println!("{base} {gray}(downloaded {downloaded_sources} sources, parsed {parsed_sources} sources){clear}");
+                            } else if parsed_sources > 0 {
+                                println!("{base} {gray}(parsed {parsed_sources} sources){clear}");
+                            } else if !provider_codes.is_empty() { // Only print when nothing changed if explicit
+                                println!("{base}");
+                            }
+                        },
+                    };
+                    // Must flush so that stderr() is not line-buffered, but printed immediately
+                    io::stderr().flush()?;
+                    Ok(())
+                };
 
                 let db_provider = if let Some(db_provider) = db.get_provider(provider.code())? {
                     db_provider
@@ -278,7 +329,7 @@ pub fn perform_command(
                     db_provider.set_names(provider.name(), provider.group_name())?;
                 }
 
-                if let Err(e) = provider.download(&lang_ids, &db_provider, &downloader, &retry_policy) {
+                if let Err(e) = provider.download(&lang_ids, &db_provider, &downloader, &retry_policy, on_progress) {
                     error!("Could not download translations for provider '{}': {e}", provider.code());
                 }
             }

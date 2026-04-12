@@ -238,6 +238,27 @@ pub struct Provider<'a> {
     parse_source: Box<dyn Fn(&DbSource) -> anyhow::Result<()> + 'a>,
 }
 
+/// How far a provider download has come.
+#[derive(PartialEq, Eq)]
+pub enum Progress {
+    /// Sent before downloading list of sources for `lang_ids` languages.\
+    /// May not be sent if `lang_ids` is empty.
+    DownloadingSources { lang_ids: Vec<LanguageIdentifier> },
+    /// Sent before downloading `total` sources.\
+    /// May not be sent if `total` is zero.
+    StartDownloadingSources { total: usize },
+    /// Sent before downloading source `current` of `total`.
+    DownloadingSource { current: usize, total: usize },
+    /// Sent before parsing `total` sources.\
+    /// May not be sent if `total` is zero.
+    StartParsingSources { total: usize },
+    /// Sent before parsing source `current` of `total`.
+    ParsingSource { current: usize, total: usize },
+    /// Sent after downloading `downloaded` sources and parsing `parsed` sources.\
+    /// Will always be sent.
+    Done { downloaded_sources: usize, parsed_sources: usize },
+}
+
 impl<'a> Provider<'a> {
     /// Create a new provider that finds sources with `get_sources`
     /// and parses them to translations with `parse_source`.
@@ -269,6 +290,7 @@ impl<'a> Provider<'a> {
         provider: &DbProvider<'_>,
         downloader: &Downloader,
         retry_policy: &RetryPolicy,
+        mut on_progress: impl FnMut(Progress) -> anyhow::Result<()>
     ) -> anyhow::Result<()> {
         if !retry_policy.download_failed_sources && provider.has_sources_failed()? { return Ok(()); }
 
@@ -282,33 +304,52 @@ impl<'a> Provider<'a> {
         // Find sources
         trace!("Finding sources...");
         debug!("Languages: {}", lang_ids.iter().map(|l| l.to_string()).collect::<Vec<_>>().join(", "));
-        if !lang_ids.is_empty() && let Err(e) = (self.get_sources)(&lang_ids, provider, downloader) {
-            provider.set_sources_failed()?;
-            bail!("Could not find sources: {e}");
-        };
-        // Add placeholder sources for languages that were not found
-        let found_languages = provider.get_source_languages()?;
-        for lang_id in lang_ids {
-            if found_languages.contains(&lang_id) { continue; }
+        if !lang_ids.is_empty() {
+            let language_ids = lang_ids.iter()
+                .map(|l| l.deref())
+                .cloned()
+                .collect();
+            on_progress(Progress::DownloadingSources { lang_ids: language_ids })?;
 
-            let source = provider.set_source(&lang_id, DbSourceUrls {
-                originals: None,
-                translations: Url::parse("placeholder:").expect("Invalid constant URL"),
-            })?;
-            source.set_contents(DbSourceContents {
-                originals: DbSourceContent::None,
-                translations: DbSourceContent::None,
-            })?;
+            if let Err(e) = (self.get_sources)(&lang_ids, provider, downloader) {
+                provider.set_sources_failed()?;
+                bail!("Could not find sources: {e}");
+            };
+
+            // Add placeholder sources for languages that were not found
+            let found_languages = provider.get_source_languages()?;
+            for lang_id in lang_ids {
+                if found_languages.contains(&lang_id) { continue; }
+
+                let source = provider.set_source(&lang_id, DbSourceUrls {
+                    originals: None,
+                    translations: Url::parse("placeholder:").expect("Invalid constant URL"),
+                })?;
+                source.set_contents(DbSourceContents {
+                    originals: DbSourceContent::None,
+                    translations: DbSourceContent::None,
+                })?;
+            }
         }
 
         // Download source contents
         trace!("Downloading source contents...");
+
+        let mut sources_to_download = Vec::new();
         for source in provider.get_sources()? {
             if !retry_policy.download_finished_source && source.get_download_time()?.is_some() { continue; }
             if !retry_policy.download_failed_source && source.has_failed()?.is_download() { continue; }
 
             let urls = source.get_urls()?;
             if urls.translations.scheme() != "https" && urls.translations.scheme() != "http" { continue; }
+
+            sources_to_download.push((source, urls));
+        }
+
+        let download_count = sources_to_download.len();
+        if !sources_to_download.is_empty() { on_progress(Progress::StartDownloadingSources { total: download_count })?; }
+        for (i, (source, urls)) in sources_to_download.into_iter().enumerate() {
+            on_progress(Progress::DownloadingSource { current: i + 1, total: download_count })?;
 
             let translations_content = match downloader.get_content(urls.translations.clone()) {
                 Ok(content) => content,
@@ -339,15 +380,27 @@ impl<'a> Provider<'a> {
 
         // Parse source contents
         trace!("Parsing source contents...");
+
+        let mut sources_to_parse = Vec::new();
         for source in provider.get_sources()? {
             if !retry_policy.parse_finished_source && source.get_contents()?.translations.is_none() { continue; }
             if !retry_policy.parse_failed_source && source.has_failed()?.is_some() { continue; }
+
+            sources_to_parse.push(source);
+        }
+
+        let parse_count = sources_to_parse.len();
+        if !sources_to_parse.is_empty() { on_progress(Progress::StartParsingSources { total: parse_count })?; }
+        for (i, source) in sources_to_parse.into_iter().enumerate() {
+            on_progress(Progress::ParsingSource { current: i + 1, total: parse_count })?;
 
             if let Err(e) = (self.parse_source)(&source) {
                 source.set_failed()?;
                 bail!("Could not parse source: {e}");
             };
         }
+
+        on_progress(Progress::Done { downloaded_sources: download_count, parsed_sources: parse_count })?;
 
         Ok(())
     }
