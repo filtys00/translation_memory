@@ -6,7 +6,7 @@ use std::{cmp::Ordering, collections::{HashMap, HashSet}, fs, io::{self, Write},
 
 use anyhow::{anyhow, bail};
 use clap::{Subcommand, ValueEnum, builder::PossibleValue};
-use log::{error, info, warn};
+use log::{info, warn};
 use reqwest::Url;
 use termcolor::StandardStream;
 use tokio::{io::{AsyncReadExt, stdin}, select, runtime::Runtime as TokioRuntime, sync::Mutex};
@@ -254,15 +254,16 @@ pub fn perform_command(
 
             let downloader = Downloader::new()?;
 
+            let reset = "\x1b[2K"; // Clear current line
+            let clear = "\x1b[0m";
+            let clear_highlight = "\x1b[0;1m";
+            let red = "\x1b[31;1m";
+            let green = "\x1b[32;1m";
+            let blue = "\x1b[36;1m";
+            let gray = "\x1b[30m";
+
             for (i, provider) in providers.iter().enumerate() {
                 let on_progress = |progress| {
-                    let reset = "\x1b[2K"; // Clear current line
-                    let clear = "\x1b[0m";
-                    let clear_highlight = "\x1b[0;1m";
-                    let blue = "\x1b[36;1m";
-                    let green = "\x1b[32;1m";
-                    let gray = "\x1b[30m";
-
                     let ongoing_base = format_args!(
                         "{blue}Downloading {clear_highlight}{0}{clear}\t{1}/{2}",
                         provider.code(), i + 1, providers.len()
@@ -330,7 +331,7 @@ pub fn perform_command(
                 }
 
                 if let Err(e) = provider.download(&lang_ids, &db_provider, &downloader, &retry_policy, on_progress) {
-                    error!("Could not download translations for provider '{}': {e}", provider.code());
+                    println!("{reset}{red}Failed to download {clear_highlight}{0}{clear}: {e}", provider.code());
                 }
             }
 
