@@ -46,38 +46,17 @@ fn main() -> ExitCode {
     let term_width = crossterm::terminal::size().map_or(80, |(cols, _)| cols as usize);
     let mut logger = env_logger::builder();
     logger.format(move |buf, record| {
-        let dimmed_style = env_logger::fmt::style::Style::new()
-            .fg_color(Some(env_logger::fmt::style::Color::Ansi(
-                env_logger::fmt::style::AnsiColor::Black,
-            )))
-            .bold();
-
-        dimmed_style.write_to(buf)?;
-        write!(buf, "[")?;
-        dimmed_style.write_reset_to(buf)?;
-
         let level_style = buf.default_level_style(record.level());
         level_style.write_to(buf)?;
-        write!(buf, "{}", record.level().as_str())?;
+        write!(buf, "{}: ", record.level().as_str().to_ascii_lowercase())?;
         level_style.write_reset_to(buf)?;
 
-        write!(buf, " {}", record.target())?;
-
-        dimmed_style.write_to(buf)?;
-        write!(buf, "]")?;
-        dimmed_style.write_reset_to(buf)?;
-
-        let level_length = match record.level() {
-            Level::Error | Level::Debug | Level::Trace => 5,
-            Level::Warn | Level::Info => 4,
+        let indent = match record.level() {
+            Level::Error | Level::Debug | Level::Trace => 5 + 2,
+            Level::Warn | Level::Info => 4 + 2,
         };
 
-        wrapped_writeln(
-            buf,
-            &record.args().to_string(),
-            term_width,
-            1 + level_length,
-        )
+        wrapped_writeln(buf, &record.args().to_string(), term_width, indent)
     });
     match args.verbose { // Only filter module env!("CARGO_PKG_NAME") to prevent logs from dependencies.
         0 => { logger.filter_module(env!("CARGO_PKG_NAME"), LevelFilter::Info); }
