@@ -20,7 +20,7 @@ use unic_langid::LanguageIdentifier;
 
 /// SQL to initialize the SQLite database.
 #[allow(clippy::type_complexity)]
-const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 2] = [
+const INIT_SQL: &[(fn(&Connection) -> SqlResult<bool>, &str)] = &[
     (|connection| connection.table_exists(None, "Providers"),
     r#"
     CREATE TABLE Languages (
@@ -91,7 +91,12 @@ const INIT_SQL: [(fn(&Connection) -> SqlResult<bool>, &str); 2] = [
     ALTER TABLE Sources ADD COLUMN translations_content ANY;
     UPDATE Sources SET translations_content = _translations_content;
     ALTER TABLE Sources DROP COLUMN _translations_content;
-    "#)
+    "#),
+    // Add a 'has_parsed' field to source
+    (|connection| connection.column_exists(None, "Sources", "has_parsed"),
+    r#"
+    ALTER TABLE Sources ADD COLUMN has_parsed INTEGER NOT NULL DEFAULT 0;
+    "#),
 ];
 
 /// A connection to a translation database.
@@ -584,9 +589,18 @@ impl Source<'_> {
             ))?;
         }
         stmt.finalize()?;
-        transaction.execute("UPDATE Sources SET has_failed = 0 WHERE id = ?", [self.id])?;
+        transaction.execute("UPDATE Sources SET has_failed = 0, has_parsed = 1 WHERE id = ?", [self.id])?;
 
         transaction.commit()
+    }
+
+    /// Returns whether this source has been parsed.
+    pub fn has_parsed(&self) -> SqlResult<bool> {
+        let has_parsed = self.connection.borrow().query_one(
+            "SELECT has_parsed FROM Sources WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(has_parsed)
     }
 
     /// Delete this source.
