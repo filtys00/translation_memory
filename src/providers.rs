@@ -292,7 +292,9 @@ impl<'a> Provider<'a> {
         retry_policy: &RetryPolicy,
         mut on_progress: impl FnMut(Progress) -> anyhow::Result<()>
     ) -> anyhow::Result<()> {
-        if !retry_policy.download_failed_sources && provider.has_sources_failed()? { return Ok(()); }
+        if !retry_policy.download_failed_sources && provider.get_sources_error_message()?.is_some() {
+            return Ok(());
+        }
 
         let lang_ids: Vec<_> = if retry_policy.download_finished_sources {
             lang_ids.iter().map(|lang_id| LangId(lang_id.clone())).collect()
@@ -312,8 +314,9 @@ impl<'a> Provider<'a> {
             on_progress(Progress::DownloadingSources { lang_ids: language_ids })?;
 
             if let Err(e) = (self.get_sources)(&lang_ids, provider, downloader) {
-                provider.set_sources_failed()?;
-                bail!("Could not find sources: {e}");
+                let error_msg = format!("Could not find sources: {e}");
+                provider.set_sources_error_message(&error_msg)?;
+                bail!("{error_msg}");
             };
 
             // Add placeholder sources for languages that were not found
@@ -354,16 +357,24 @@ impl<'a> Provider<'a> {
             let translations_content = match downloader.get_content(urls.translations.clone()) {
                 Ok(content) => content,
                 Err(e) => {
-                    source.set_failed()?;
-                    bail!("Could not download source translations content from '{}': {e}", urls.translations);
+                    let error_msg = format!(
+                        "Could not download source translations content from '{}': {e}",
+                        urls.translations,
+                    );
+                    source.set_error_message(&error_msg)?;
+                    bail!("{error_msg}");
                 }
             };
             if let Some(originals_url) = urls.originals {
                 let originals_content = match downloader.get_content(originals_url.clone()) {
                     Ok(content) => content,
                     Err(e) => {
-                        source.set_failed()?;
-                        bail!("Could not download source originals content from '{}': {e}", originals_url);
+                        let error_msg = format!(
+                            "Could not download source originals content from '{}': {e}",
+                            originals_url,
+                        );
+                        source.set_error_message(&error_msg)?;
+                        bail!("{error_msg}");
                     }
                 };
                 source.set_contents(DbSourceContents {
@@ -396,8 +407,9 @@ impl<'a> Provider<'a> {
             on_progress(Progress::ParsingSource { current: i + 1, total: parse_count })?;
 
             if let Err(e) = (self.parse_source)(&source) {
-                source.set_failed()?;
-                bail!("Could not parse source: {e}");
+                let error_msg = format!("Could not parse source: {e}");
+                source.set_error_message(&error_msg)?;
+                bail!("{error_msg}");
             };
         }
 

@@ -488,7 +488,7 @@ pub fn perform_command(
                 // Skip work if will not be needed.
                 if show_sources || show_translations { continue; }
 
-                if provider.has_sources_failed()? {
+                if provider.get_sources_error_message()?.is_some() {
                     failed_providers.push((code, info.clone()));
                     continue;
                 }

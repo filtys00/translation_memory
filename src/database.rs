@@ -97,6 +97,17 @@ const INIT_SQL: &[(fn(&Connection) -> SqlResult<bool>, &str)] = &[
     r#"
     ALTER TABLE Sources ADD COLUMN has_parsed INTEGER NOT NULL DEFAULT 0;
     "#),
+    // Replace 'has_failed' with 'error_message'
+    (|connection| connection.column_exists(None, "Sources", "error_message"),
+    r#"
+    ALTER TABLE Providers ADD COLUMN sources_error_message TEXT;
+    UPDATE Providers SET sources_error_message = "Error message were not saved" WHERE sources_has_failed = 1;
+    ALTER TABLE Providers DROP COLUMN sources_has_failed;
+
+    ALTER TABLE Sources ADD COLUMN error_message TEXT;
+    UPDATE Sources SET error_message = "Error message were not saved" WHERE has_failed = 1;
+    ALTER TABLE Sources DROP COLUMN has_failed;
+    "#),
 ];
 
 /// A connection to a translation database.
@@ -367,19 +378,21 @@ impl Provider<'_> {
         Ok(())
     }
 
-    /// Returns whether this provider has failed at downloading sources.
-    pub fn has_sources_failed(&self) -> SqlResult<bool> {
-        let failed = self.connection.borrow().query_one(
-            "SELECT sources_has_failed FROM Providers WHERE id = ?", [self.id],
+    /// Returns the error message if this provider has failed at downloading sources.
+    pub fn get_sources_error_message(&self) -> SqlResult<Option<String>> {
+        let error_msg: Option<String> = self.connection.borrow().query_one(
+            "SELECT sources_error_message FROM Providers WHERE id = ?", [self.id],
             |row| row.get(0),
         )?;
-        Ok(failed)
+        Ok(error_msg)
     }
 
-    /// Set that this provider has failed at downloading sources.
-    pub fn set_sources_failed(&self) -> SqlResult<()> {
-        self.connection.borrow()
-            .execute("UPDATE Providers SET sources_has_failed = 1 WHERE id = ?", [self.id])?;
+    /// Set that this provider has failed at downloading sources due to `error_msg`.
+    pub fn set_sources_error_message(&self, error_msg: &str) -> SqlResult<()> {
+        self.connection.borrow().execute(
+            "UPDATE Providers SET sources_error_message = ? WHERE id = ?",
+            (error_msg, self.id),
+        )?;
         Ok(())
     }
 
@@ -442,7 +455,7 @@ impl Provider<'_> {
         let language_id = self.get_or_add_language_id(lang_id)?;
         let mut connection = self.connection.borrow_mut();
         let transaction = connection.transaction()?;
-        transaction.execute("UPDATE Providers SET sources_has_failed = 0 WHERE id = ?", [self.id])?;
+        transaction.execute("UPDATE Providers SET sources_error_message = NULL WHERE id = ?", [self.id])?;
         transaction.execute("DELETE FROM Translations WHERE source_id IN (SELECT id FROM Sources WHERE provider_id = ? AND language_id = ?)", (self.id, language_id))?;
         transaction.execute("DELETE FROM Sources WHERE provider_id = ? AND language_id = ?", (self.id, language_id))?;
         for urls in urls {
@@ -542,7 +555,7 @@ impl Source<'_> {
     /// Set the downloaded text content of this source, using the current time as download time.
     pub fn set_contents(&self, contents: SourceContents) -> SqlResult<()> {
         self.connection.borrow().execute(
-            "UPDATE Sources SET download_time = unixepoch(), originals_content = ?, translations_content = ?, has_failed = 0 WHERE id = ?",
+            "UPDATE Sources SET download_time = unixepoch(), originals_content = ?, translations_content = ?, error_message = NULL WHERE id = ?",
             (contents.originals, contents.translations, self.id),
         )?;
         Ok(())
@@ -550,11 +563,11 @@ impl Source<'_> {
 
     /// Returns whether this source has failed.
     pub fn has_failed(&self) -> SqlResult<SourceFailed> {
-        let (download_time, failed): (Option<u32>, bool) = self.connection.borrow().query_one(
-            "SELECT download_time, has_failed FROM Sources WHERE id = ?", [self.id],
+        let (download_time, error_msg): (Option<u32>, Option<String>) = self.connection.borrow().query_one(
+            "SELECT download_time, error_message FROM Sources WHERE id = ?", [self.id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
-        if !failed {
+        if error_msg.is_none() {
             Ok(SourceFailed::None)
         } else if download_time.is_none() {
             Ok(SourceFailed::Download)
@@ -563,10 +576,19 @@ impl Source<'_> {
         }
     }
 
-    /// Set whether this source has failed.
-    pub fn set_failed(&self) -> SqlResult<()> {
+    /// Returns the error message if this source has failed.
+    pub fn get_error_message(&self) -> SqlResult<Option<String>> {
+        let error_msg = self.connection.borrow().query_one(
+            "SELECT error_message FROM Sources WHERE id = ?", [self.id],
+            |row| row.get(0),
+        )?;
+        Ok(error_msg)
+    }
+
+    /// Set that this source has failed due to `error_msg`.
+    pub fn set_error_message(&self, error_msg: &str) -> SqlResult<()> {
         self.connection.borrow()
-            .execute("UPDATE Sources SET has_failed = true WHERE id = ?", [self.id])?;
+            .execute("UPDATE Sources SET error_message = ? WHERE id = ?", (error_msg, self.id))?;
         Ok(())
     }
 
@@ -589,7 +611,7 @@ impl Source<'_> {
             ))?;
         }
         stmt.finalize()?;
-        transaction.execute("UPDATE Sources SET has_failed = 0, has_parsed = 1 WHERE id = ?", [self.id])?;
+        transaction.execute("UPDATE Sources SET error_message = NULL, has_parsed = 1 WHERE id = ?", [self.id])?;
 
         transaction.commit()
     }
