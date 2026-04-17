@@ -128,16 +128,20 @@ pub enum Command {
     /// Print translation and provider status information.
     Status {
         /// Print all providers without hiding any.
-        #[arg(short, long)]
+        #[arg(short, long, conflicts_with = "show_errors")]
         all: bool,
 
         /// Print how many sources each provider have.
-        #[arg(short = 's', long, conflicts_with = "show_translations")]
+        #[arg(short = 's', long, conflicts_with = "show_translations", conflicts_with = "show_errors")]
         show_sources: bool,
 
         /// Print how many translations each provider have.
-        #[arg(short = 't', long, conflicts_with = "show_sources")]
+        #[arg(short = 't', long, conflicts_with = "show_sources", conflicts_with = "show_errors")]
         show_translations: bool,
+
+        /// Print the error messages of the providers that have failed.
+        #[arg(short = 'e', long, conflicts_with = "all", conflicts_with = "show_translations", conflicts_with = "show_sources")]
+        show_errors: bool,
     },
 }
 
@@ -435,7 +439,47 @@ pub fn perform_command(
 
             Ok(())
         },
-        Command::Status { all, show_sources, show_translations } => {
+        Command::Status { all, show_sources, show_translations, show_errors } => {
+            if show_errors {
+                // Values are code name, provider error message, and source error message
+                let mut error_msgs = Vec::new();
+                'providers: for provider in db.get_providers()? {
+                    let code = provider.get_code()?;
+                    if let Some(msg) = provider.get_sources_error_message()? {
+                        error_msgs.push((code, Some(msg), None));
+                        continue 'providers;
+                    }
+                    for source in provider.get_sources()? {
+                        if let Some(msg) = source.get_error_message()? {
+                            error_msgs.push((code, None, Some(msg)));
+                            continue 'providers;
+                        }
+                    }
+                }
+                error_msgs.sort_by_key(|(code, sources_msg, source_msg)| {
+                    (sources_msg.is_none(), source_msg.is_none(), code.clone())
+                });
+
+                let stdout = io::stdout();
+                for (code, sources_msg, source_msg) in error_msgs {
+                    let (msg, color) = if let Some(msg) = sources_msg {
+                        (msg, "31")
+                    } else if let Some(msg) = source_msg {
+                        (msg, "33")
+                    } else {
+                        unreachable!("Should have found an error message for '{code}'");
+                    };
+                    wrapped_writeln(
+                        &stdout,
+                        &format!("\x1b[{color};1m{code}:\x1b[0m {msg}"),
+                        term_width,
+                        code.len() + 2,
+                    )?;
+                }
+
+                return Ok(());
+            }
+
             #[derive(Clone)]
             enum Info {
                 None,
