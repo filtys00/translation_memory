@@ -628,7 +628,14 @@ pub fn perform_command(
                 shown_codes
             }
 
-            let titles: &[(bool, &str, Vec<String>)] = if show_sources || show_translations { &[
+            let titles: &[(bool, &str, Vec<String>)] = if show_sources { &[
+                (true,  "Total",                vec![format!("{} sources", db.count_sources()?)]),
+                (false, "Languages",            format(languages, true, None)),
+                (false, "Built-in providers",   format(builtin_providers, all, None)),
+                (true,  "Retired providers",    format(retired_providers, true, None)),
+                (true,  "Added providers",      format(added_providers, true, None)),
+            ] } else if show_translations { &[
+                (true,  "Total",                vec![format!("{} translations", db.count_translations()?)]),
                 (false, "Languages",            format(languages, true, None)),
                 (false, "Built-in providers",   format(builtin_providers, all, None)),
                 (true,  "Retired providers",    format(retired_providers, true, None)),

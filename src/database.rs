@@ -269,6 +269,15 @@ impl TranslationStore {
         transaction.commit()
     }
 
+    /// Get a count of all the sources.
+    pub fn count_sources(&self) -> SqlResult<u32> {
+        let count = self.connection.borrow().query_one(
+            "SELECT count(*) FROM Sources", (),
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
     /// Get a count of all the sources that are of the language `lang_id`.
     pub fn count_sources_by_lang(&self, lang_id: &LanguageIdentifier) -> SqlResult<u32> {
         let count = self.connection.borrow().query_one(
@@ -276,6 +285,15 @@ impl TranslationStore {
             JOIN Languages ON Languages.id = Sources.language_id
             WHERE Languages.code = ?",
             [lang_id.to_string()],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    /// Get a count of all the translations.
+    pub fn count_translations(&self) -> SqlResult<u32> {
+        let count = self.connection.borrow().query_one(
+            "SELECT count(*) FROM Translations", (),
             |row| row.get(0),
         )?;
         Ok(count)
