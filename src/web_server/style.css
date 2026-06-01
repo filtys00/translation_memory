@@ -122,6 +122,10 @@ header.floating {
 
     color: var(--color-text-unfocused);
 }
+#languagesAndScopes.open > #languagesAndScopesButton::after {
+    content: '🞁';
+    bottom: -0.2rem;
+}
 #languagesAndScopesButton:hover {
     background-color: var(--color-background-field-focused);
 }
