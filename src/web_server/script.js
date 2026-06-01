@@ -545,9 +545,9 @@ function pushError(msg, title) {
         }, 100);
     };
 
-    let img = document.createElement("img");
-    img.src = "/icon/remove.svg";
-    button.appendChild(img);
+    let span = document.createElement("span");
+    span.textContent = "🗙";
+    button.appendChild(span);
 
     li.appendChild(button);
     errors.insertBefore(li, errors.firstChild);

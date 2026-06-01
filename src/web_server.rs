@@ -38,7 +38,6 @@ pub async fn web_server(store: Arc<Mutex<TranslationStore>>) -> anyhow::Result<(
         .route("/favicon.ico", get(language_icon))
         .route("/icon/language.svg", get(language_icon))
         .route("/icon/loading.svg", get(loading_icon))
-        .route("/icon/remove.svg", get(remove_icon))
         .route("/icon/search.svg", get(search_icon))
         .route("/metadata", get(metadata_api))
         .route("/query", get(query_api))
@@ -71,7 +70,6 @@ static_page!(style, "style.css", "text/css");
 static_page!(script, "script.js", "text/javascript");
 static_page!(language_icon, "language.svg", "image/svg+xml");
 static_page!(loading_icon, "loading.svg", "image/svg+xml");
-static_page!(remove_icon, "remove.svg", "image/svg+xml");
 static_page!(search_icon, "search.svg", "image/svg+xml");
 
 #[derive(Deserialize, Serialize)]
