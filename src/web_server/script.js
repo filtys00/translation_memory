@@ -151,10 +151,9 @@ allLanguagesCheckbox.oninput = e => {
     refreshTranslations();
 }
 allScopesCheckbox.oninput = e => {
-    scopeList.childNodes.forEach(e => {
-        if (!e.firstChild.firstChild.disabled) {
-            e.firstChild.firstChild.checked = allScopesCheckbox.checked;
-        }
+    scopeList.querySelectorAll("input[type=\"checkbox\"]").forEach(el => {
+        el.checked = allScopesCheckbox.checked;
+        el.indeterminate = false;
     });
     for (scope in scopeFilters) {
         scopeFilters[scope] = allScopesCheckbox.checked;
@@ -181,15 +180,8 @@ function refreshAll() {
             scopeNames = {};
             let newScopeFilters = {};
             for (let scope of metadata.scopes) {
-                if (scope.id) {
-                    scopeNames[scope.id] = { "name": scope.name, "downloaded": scope.downloaded };
-                    newScopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
-                } else {
-                    for (let s of scope.scopes) {
-                        scopeNames[s.id] = { "name": s.name, "downloaded": s.downloaded, "groupName": scope.name };
-                        newScopeFilters[s.id] = scopeFilters[s.id] ?? true;
-                    }
-                }
+                scopeNames[scope.id] = { "name": scope.name, "groupName": scope.groupName };
+                newScopeFilters[scope.id] = scopeFilters[scope.id] ?? true;
             }
             scopeFilters = newScopeFilters;
 
@@ -241,63 +233,132 @@ function populateLanguages(languages) {
 
 /**
  * Replace the contents of `scopeList` with `scopes`.
+ * 
+ * @param {{ id: string, name: string, groupName: string? }[]} scopes
  */
 function populateScopes(scopes) {
     scopeList.replaceChildren();
 
-    updateCheckbox(allScopesCheckbox, scopeFilters);
+    const allScopeIds = scopes.map(s => s.id);
+    updateCheckbox(allScopesCheckbox, scopeFilters, allScopeIds);
 
-    for (let scope of scopes.toSorted((a, b) => a.name > b.name)) {
-        let li = document.createElement("li");
-        let label = document.createElement("label");
+    const groups = Object.entries(Object.groupBy(scopes, s => s.groupName ?? s.name))
+        .toSorted(([groupNameA], [groupNameB]) => groupNameA > groupNameB);
+    for (const [groupName, groupScopes] of groups) {
+        if (groupScopes.every(s => s.name === groupScopes[0].name)) {
+            const nameScopeIds = scopes.filter(s => s.name === groupName).map(s => s.id);
+            
+            // Create single scope entry
+            let li = document.createElement("li");
+            scopeList.appendChild(li);
+            let label = document.createElement("label");
+            li.appendChild(label);
 
-        let input = document.createElement("input");
-        input.type = "checkbox";
-        if (scope.downloaded === false ||
-            (scope.scopes && !scope.scopes.reduce((acc, scope) => acc || scope.downloaded, false)))
-        {
-            input.disabled = true;
-            li.title = `«${scope.name}» er ikkje lasta ned`;
-        } else {
-            input.checked = scope.id ?
-                scopeFilters[scope.id] :
-                scope.scopes.reduce((acc, scope) => acc || scopeFilters[scope.id], false);
-        }
-        input.oninput = e => {
-            if (scope.id) {
-                scopeFilters[scope.id] = input.checked;
-            } else {
-                for (let s of scope.scopes) {
-                    scopeFilters[s.id] = input.checked;
+            let checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            updateCheckbox(checkbox, scopeFilters, nameScopeIds);
+            checkbox.oninput = () => {
+                for (let id of nameScopeIds) {
+                    scopeFilters[id] = checkbox.checked;
                 }
+                updateCheckbox(allScopesCheckbox, scopeFilters, allScopeIds);
+                refreshTranslations();
             }
-            updateCheckbox(allScopesCheckbox, scopeFilters);
-            refreshTranslations();
-        };
-        label.appendChild(input);
+            label.appendChild(checkbox);
 
-        let span = document.createElement("span");
-        span.appendChild(document.createTextNode(scope.name));
-        label.appendChild(span);
+            let span = document.createElement("span");
+            span.appendChild(document.createTextNode(groupName));
+            label.appendChild(span);
+        } else {
+            const groupScopeIds = scopes.filter(s => s.groupName === groupName).map(s => s.id);
 
-        li.appendChild(label)
-        scopeList.appendChild(li);
+            // Create group <li>
+            let groupLi = document.createElement("li");
+            scopeList.appendChild(groupLi);
+            let groupDetails = document.createElement("details");
+            groupLi.appendChild(groupDetails);
+            groupDetails.name = "scopes";
+            let groupSummary = document.createElement("summary");
+            groupDetails.appendChild(groupSummary);
+            let groupLabel = document.createElement("label");
+            groupSummary.appendChild(groupLabel);
+            groupLabel.onclick = e => {
+                if (e.target instanceof HTMLInputElement) { return; }
+                e.preventDefault();
+                groupDetails.toggleAttribute("open");
+            }
+
+            let groupCheckbox = document.createElement("input");
+            groupCheckbox.type = "checkbox";
+            updateCheckbox(groupCheckbox, scopeFilters, groupScopeIds);
+            groupCheckbox.oninput = () => {
+                for (let id of groupScopeIds) {
+                    scopeFilters[id] = groupCheckbox.checked;
+                }
+                groupUl.querySelectorAll("input[type=\"checkbox\"]").forEach(el => {
+                    el.checked = groupCheckbox.checked;
+                });
+                updateCheckbox(allScopesCheckbox, scopeFilters, allScopeIds);
+                refreshTranslations();
+            }
+            groupLabel.appendChild(groupCheckbox);
+
+            let groupSpan = document.createElement("span");
+            groupSpan.appendChild(document.createTextNode(groupName));
+            groupLabel.appendChild(groupSpan);
+
+            // Create group entries
+
+            groupDetails.appendChild(document.createElement("hr"));
+            let groupUl = document.createElement("ul");
+            groupDetails.appendChild(groupUl);
+
+            
+            const names = Object.entries(Object.groupBy(groupScopes, s => s.name))
+                .toSorted(([nameA], [nameB]) => nameA > nameB);
+            for (const [name, scopes] of names) {
+                const nameScopes = scopes.map(s => s.id);
+
+                let li = document.createElement("li");
+                groupUl.appendChild(li);
+                let label = document.createElement("label");
+                li.appendChild(label);
+
+                let checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                updateCheckbox(checkbox, scopeFilters, nameScopes);
+                checkbox.oninput = () => {
+                    for (let id of nameScopes) {
+                        scopeFilters[id] = checkbox.checked;
+                    }
+                    updateCheckbox(allScopesCheckbox, scopeFilters);
+                    updateCheckbox(groupCheckbox, scopeFilters, groupScopeIds);
+                    refreshTranslations();
+                }
+                label.appendChild(checkbox);
+
+                let span = document.createElement("span");
+                span.appendChild(document.createTextNode(name));
+                label.appendChild(span);
+            }
+            groupDetails.appendChild(document.createElement("hr"));
+        }
     }
 }
 
-function updateCheckbox(checkbox, filters) {
-    if (Object.getOwnPropertyNames(filters).length) {
-        let checked = Object.values(filters).reduce((acc, checked) => acc === checked ? acc : null);
-        if (checked === null) {
-            checkbox.checked = true;
-            checkbox.indeterminate = true;
-        } else {
-            checkbox.checked = checked;
-            checkbox.indeterminate = false;
-        }
-    } else {
-        checkbox.checked = true;
-    }
+/**
+ * Update `checkbox` according to weather `ids` in `filters` are true or false.
+ * 
+ * @param {HTMLInputElement} checkbox
+ * @param {{ [id: string]: boolean }} filters
+ * @param {string[]} [ids] will be all the ids in `filters` by default
+ */
+function updateCheckbox(checkbox, filters, ids) {
+    if (!ids) { ids = Object.keys(filters); }
+    let isChecked = ids.length === 0 || ids.some(id => filters[id] ?? true);
+    let isIndeterminate = isChecked && ids.some(id => !(filters[id] ?? true));
+    checkbox.checked = isChecked;
+    checkbox.indeterminate = isIndeterminate;
 }
 
 /**

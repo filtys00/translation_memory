@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{borrow::Cow, collections::HashMap, sync::Arc};
+use std::{borrow::Cow, sync::Arc};
 
 use axum::{
     Json, Router,
@@ -366,44 +366,27 @@ fn split_search(search: &'_ str) -> Vec<Cow<'_, str>> {
 
 async fn metadata_api(
     State(store): State<Arc<Mutex<TranslationStore>>>,
-) -> Result<Json<serde_json::Value>, StatusCode> {
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
     debug!("Request for '/metadata'");
 
     let store = store.lock().await;
 
-    let mut scopes = HashMap::new();
-    for provider in store.get_providers().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)? {
-        let names = provider.get_names().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    #[derive(Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Provider { id: String, name: String, group_name: Option<String> }
 
-        if let Some(group_name) = names.group_name {
-            let scopes = scopes
-                .entry(group_name)
-                .or_insert(json!([]))
-                .as_array_mut()
-                .ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut scopes = Vec::new();
 
-            scopes.push(json!({
-                "id": &names.code,
-                "name": &names.name,
-                "downloaded": true,
-            }));
-        } else {
-            scopes.insert(names.name, json!(names.code));
-        }
+    let providers = store.get_providers()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    for provider in providers {
+        let names = provider.get_names().
+            map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        scopes.push(Provider { id: names.code, name: names.name, group_name: names.group_name });
     }
-    let scopes: Vec<serde_json::Value> = scopes
-        .iter()
-        .map(|(group_name, value)| {
-            if let Some(id) = value.as_str() {
-                json!({ "name": group_name, "id": id, "downloaded": true })
-            } else {
-                json!({ "name": group_name, "scopes": value })
-            }
-        })
-        .collect();
 
-    Ok(Json(json!({
-        "scopes": scopes,
-        "languages": store.get_languages().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
-    })))
+    let languages = store.get_languages()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(json!({ "scopes": scopes, "languages": languages })))
 }

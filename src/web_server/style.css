@@ -253,10 +253,13 @@ body.noResults #translations {
     flex-direction: column;
     gap: 0.5rem;
 }
-#languagesAndScopesDialog > div:first-child {
+#languagesAndScopesDialog > div:nth-child(1) {
     padding: 0 1rem 0 0;
     border-right: var(--color-border-popup) 1px solid;
     margin: 0 1rem 0 0;
+}
+#languagesAndScopesDialog > div:nth-child(2) {
+    width: 25ch;
 }
 #allLanguagesCheckboxContainer, #allScopesCheckboxContainer {
     display: flex;
@@ -275,11 +278,21 @@ body.noResults #translations {
 
     list-style: none;
 }
-#languagesAndScopes li, #languagesAndScopes li > label {
+#languagesAndScopes li, #languagesAndScopes label {
     display: flex;
     flex-direction: row;
     align-items: center;
     gap: 0.5rem;
+}
+#languagesAndScopes label {
+    user-select: none;
+    width: 100%;
+    
+    > span {
+        white-space: nowrap !important;
+        overflow-x: hidden !important;
+        text-overflow: ellipsis !important;
+    }
 }
 #languagesAndScopes li:not(:last-child) {
     margin-bottom: 0.5rem;
@@ -302,6 +315,41 @@ body.noResults #translations {
 }
 #languages, #scopes {
     margin-bottom: auto;
+}
+
+hr {
+    margin-right: 0.5rem;
+    color: var(--color-border-popup);
+}
+hr:last-child {
+    margin-bottom: 0;
+}
+#scopes details {
+    width: 100%;
+}
+#scopes ul {
+    margin: 0;
+    padding-left: 0;
+}
+#scopes summary {
+    position: relative;
+    padding-right: calc(0.3rem * 2 + 1.5ch);
+}
+#scopes summary::marker {
+    content: "";
+}
+#scopes summary::after {
+    content: '🞃';
+
+    position: absolute;
+    right: 0.3rem;
+    bottom: 0.1rem;
+
+    color: var(--color-text-unfocused);
+}
+#scopes details[open] summary::after {
+    content: '🞁';
+    bottom: -0.2rem;
 }
 
 #languagesAndScopes:not(.loading) #loadingSpinner {
