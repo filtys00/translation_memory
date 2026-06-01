@@ -1,7 +1,5 @@
-# Development
 /.vscode
 /target
-
-# Program
-/*.sqlite
 /*.bat
+/*.sqlite
+/TODO.md
