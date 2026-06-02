@@ -265,52 +265,6 @@ pub fn perform_command(
             let gray = "\x1b[30m";
 
             for (i, provider) in providers.iter().enumerate() {
-                let on_progress = |progress| {
-                    let ongoing_base = format_args!(
-                        "{blue}Downloading {clear_highlight}{0}{clear}\t{1}/{2}",
-                        provider.code(), i + 1, providers.len()
-                    );
-
-                    match progress {
-                        Progress::DownloadingSources { lang_ids } => {
-                            let languages = lang_ids.into_iter()
-                                .map(|l| l.to_string())
-                                .collect::<Vec<_>>()
-                                .join(", ");
-                            eprint!("{ongoing_base}, downloading sources for {languages}\r");
-                        },
-                        Progress::StartDownloadingSources { .. } => {
-                            eprint!("{reset}{ongoing_base}\r");
-                        },
-                        Progress::DownloadingSource { current, total } => {
-                            eprint!("{ongoing_base}, downloading source {current}/{total}\r");
-                        },
-                        Progress::StartParsingSources { .. } => {
-                            eprint!("{reset}{ongoing_base}\r");
-                        },
-                        Progress::ParsingSource { current, total } => {
-                            eprint!("{ongoing_base}, parsing source {current}/{total}\r");
-                        },
-                        Progress::Done { downloaded_sources, parsed_sources } => {
-                            let base = format_args!(
-                                "{reset}{green}Downloaded {clear_highlight}{0}{clear}",
-                                provider.code(),
-                            );
-
-                            if downloaded_sources > 0 { // Always print parsed sources when at least one source were downloaded
-                                println!("{base} {gray}(downloaded {downloaded_sources} sources, parsed {parsed_sources} sources){clear}");
-                            } else if parsed_sources > 0 {
-                                println!("{base} {gray}(parsed {parsed_sources} sources){clear}");
-                            } else if !provider_codes.is_empty() { // Only print when nothing changed if explicit
-                                println!("{base}");
-                            }
-                        },
-                    };
-                    // Must flush so that stderr() is not line-buffered, but printed immediately
-                    io::stderr().flush()?;
-                    Ok(())
-                };
-
                 let db_provider = if let Some(db_provider) = db.get_provider(provider.code())? {
                     db_provider
                 } else {
@@ -332,9 +286,57 @@ pub fn perform_command(
                     db_provider.set_names(provider.name(), provider.group_name())?;
                 }
 
-                if let Err(e) = provider.download(&lang_ids, &db_provider, &downloader, &retry_policy, on_progress) {
-                    println!("{reset}{red}Failed to download {clear_highlight}{0}{clear}: {e}", provider.code());
-                }
+                provider.download(&lang_ids, &db_provider, &downloader, &retry_policy, |progress| {
+                    let ongoing_base = format_args!(
+                        "{blue}Downloading {clear_highlight}{0}{clear}\t{1}/{2}",
+                        provider.code(), i + 1, providers.len()
+                    );
+
+                    match progress {
+                        Progress::DownloadingSources { lang_ids } => {
+                            let languages = lang_ids.into_iter()
+                                .map(|l| l.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ");
+                            eprint!("{ongoing_base}, downloading sources for {languages}\r");
+                        },
+                        Progress::StartDownloadingSources { .. } => {
+                            eprint!("{reset}{ongoing_base}\r");
+                        },
+                        Progress::DownloadingSource { current, total } => {
+                            eprint!("{ongoing_base}, downloading source {current}/{total}\r");
+                        },
+                        Progress::FailedAtDownloadingSource { error_msg } => {
+                            eprintln!("{reset}{red}Failed to download {clear_highlight}{0}{clear}: {error_msg}", provider.code());
+                        },
+                        Progress::StartParsingSources { .. } => {
+                            eprint!("{reset}{ongoing_base}\r");
+                        },
+                        Progress::ParsingSource { current, total } => {
+                            eprint!("{ongoing_base}, parsing source {current}/{total}\r");
+                        },
+                        Progress::FailedAtParsingSource { error_msg } => {
+                            eprintln!("{reset}{red}Failed to download {clear_highlight}{0}{clear}: {error_msg}", provider.code());
+                        },
+                        Progress::Done { downloaded_sources, parsed_sources } => {
+                            let base = format_args!(
+                                "{reset}{green}Downloaded {clear_highlight}{0}{clear}",
+                                provider.code(),
+                            );
+
+                            if downloaded_sources > 0 { // Always print parsed sources when at least one source were downloaded
+                                println!("{base} {gray}(downloaded {downloaded_sources} sources, parsed {parsed_sources} sources){clear}");
+                            } else if parsed_sources > 0 {
+                                println!("{base} {gray}(parsed {parsed_sources} sources){clear}");
+                            } else if !provider_codes.is_empty() { // Only print when nothing changed if explicit
+                                println!("{base}");
+                            }
+                        },
+                    };
+                    // Must flush so that stderr() is not line-buffered, but printed immediately
+                    io::stderr().flush()?;
+                    Ok(())
+                })?;
             }
 
             if provider_codes.is_empty() {

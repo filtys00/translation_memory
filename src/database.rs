@@ -115,9 +115,19 @@ pub struct TranslationStore { connection: RefCell<Connection> }
 
 /// A provider of translation sources.
 pub struct Provider<'a> { connection: &'a RefCell<Connection>, id: i64 }
+impl Debug for Provider<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Provider {{ id: {} }}", self.id)
+    }
+}
 
 /// A source of translations.
 pub struct Source<'a> { connection: &'a RefCell<Connection>, id: i64 }
+impl Debug for Source<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Source {{ id: {} }}", self.id)
+    }
+}
 
 /// Why a provider were created.
 #[derive(PartialEq, Eq, Hash)]

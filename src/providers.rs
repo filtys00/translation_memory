@@ -207,7 +207,7 @@ impl Downloader {
 }
 
 /// Weather to retry finished and failed operations.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct RetryPolicy {
     /// Download source lists for languages that already exist.
     pub download_finished_sources: bool,
@@ -249,11 +249,15 @@ pub enum Progress {
     StartDownloadingSources { total: usize },
     /// Sent before downloading source `current` of `total`.
     DownloadingSource { current: usize, total: usize },
+    /// Sent when downloading a source fails due to `error_msg`.
+    FailedAtDownloadingSource { error_msg: String },
     /// Sent before parsing `total` sources.\
     /// May not be sent if `total` is zero.
     StartParsingSources { total: usize },
     /// Sent before parsing source `current` of `total`.
     ParsingSource { current: usize, total: usize },
+    /// Sent when parsing a source fails due to `error_msg`.
+    FailedAtParsingSource { error_msg: String },
     /// Sent after downloading `downloaded` sources and parsing `parsed` sources.\
     /// Will always be sent.
     Done { downloaded_sources: usize, parsed_sources: usize },
@@ -362,7 +366,8 @@ impl<'a> Provider<'a> {
                         urls.translations,
                     );
                     source.set_error_message(&error_msg)?;
-                    bail!("{error_msg}");
+                    on_progress(Progress::FailedAtDownloadingSource { error_msg })?;
+                    continue;
                 }
             };
             if let Some(originals_url) = urls.originals {
@@ -374,7 +379,8 @@ impl<'a> Provider<'a> {
                             originals_url,
                         );
                         source.set_error_message(&error_msg)?;
-                        bail!("{error_msg}");
+                        on_progress(Progress::FailedAtDownloadingSource { error_msg })?;
+                        continue;
                     }
                 };
                 source.set_contents(DbSourceContents {
@@ -409,7 +415,7 @@ impl<'a> Provider<'a> {
             if let Err(e) = (self.parse_source)(&source) {
                 let error_msg = format!("Could not parse source: {e}");
                 source.set_error_message(&error_msg)?;
-                bail!("{error_msg}");
+                on_progress(Progress::FailedAtParsingSource { error_msg })?;
             };
         }
 
