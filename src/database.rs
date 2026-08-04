@@ -675,8 +675,8 @@ pub enum QueryFilter {
     Translation { regex: Regex },
     /// Applies if the provider name, code name or group name is `name`.
     Provider { name: String },
-    /// Applies if the provider name, code name or group name is one of `names`.
-    Providers { names: Vec<String> },
+    /// Applies if the provider code is one of `codes`.
+    Providers { codes: Vec<String> },
     /// Applies if the translated to language is `lang_id`.
     Language { lang_id: String },
     /// Applies if the translated to language is one of `lang_ids`.
@@ -734,13 +734,11 @@ fn filters_to_sql(filters: &[(QueryFilter, QueryFilterMode)]) -> (String, impl P
                 params.push(name);
                 params.push(name);
             },
-            QueryFilter::Providers { names } => {
+            QueryFilter::Providers { codes } => {
                 where_conditions += "(1=0"; // Default is false, if `names` is empty
-                for name in names {
-                    where_conditions += " OR Providers.code = ? OR Providers.name = ? OR Providers.group_name IS ?";
-                    params.push(name);
-                    params.push(name);
-                    params.push(name);
+                for code in codes {
+                    where_conditions += " OR Providers.code = ?";
+                    params.push(code);
                 }
                 where_conditions += ")";
             },

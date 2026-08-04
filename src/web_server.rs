@@ -143,7 +143,7 @@ async fn query_api(
     } else {
         vec![]
     };
-    search_filters.push((DbFilter::Providers { names: params.scopes }, DbMode::Require));
+    search_filters.push((DbFilter::Providers { codes: params.scopes }, DbMode::Require));
     search_filters.push((DbFilter::Languages { lang_ids: params.languages }, DbMode::Require));
 
     trace!("Search filters: {search_filters:?}");
