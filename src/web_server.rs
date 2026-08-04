@@ -87,11 +87,7 @@ struct QueryParams {
 
     count: Option<bool>,
 }
-
-fn deserialize_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+fn deserialize_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error> where D: Deserializer<'de> {
     let value: String = String::deserialize(deserializer)?;
     Ok(value.split(',').map(|v| v.to_string()).collect())
 }
@@ -138,25 +134,25 @@ async fn query_api(
         },
     );
 
-    let mut search_filters = if let Some(search) = &params.search {
+    let mut filters = if let Some(search) = &params.search {
         parse_search(search).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     } else {
         vec![]
     };
-    search_filters.push((DbFilter::Providers { codes: params.scopes }, DbMode::Require));
-    search_filters.push((DbFilter::Languages { lang_ids: params.languages }, DbMode::Require));
+    filters.push((DbFilter::Providers { codes: params.scopes }, DbMode::Require));
+    filters.push((DbFilter::Languages { lang_ids: params.languages }, DbMode::Require));
 
-    trace!("Search filters: {search_filters:?}");
+    trace!("Search filters: {filters:?}");
 
     let store = store.lock().await;
 
     if params.count.unwrap_or(false) {
-        let count = store.query_translation_count(QueryCountOptions { filters: search_filters })
+        let total_count = store.query_translation_count(QueryCountOptions { filters })
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        trace!("Request for '/query': returning {count}",);
+        trace!("Request for '/query': returning {total_count}",);
 
-        return Ok(Json(serde_json::to_value(count).map_err(|e| {
+        return Ok(Json(serde_json::to_value(total_count).map_err(|e| {
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
         })?));
     }
@@ -165,7 +161,7 @@ async fn query_api(
         .query_translations(QueryOptions {
             limit: params.limit.unwrap_or(u32::MAX),
             offset: params.skip.unwrap_or(0),
-            filters: search_filters.clone(),
+            filters: filters.clone(),
         })
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -190,24 +186,18 @@ async fn query_api(
             }
         }
 
-        let original_regex = search_filters
-            .iter()
-            .filter_map(|filter| match filter {
-                (
-                    DbFilter::Original { regex } | DbFilter::All { regex },
-                    DbMode::Require,
-                ) => Some(regex),
-                _ => None,
+        let original_regex = filters.iter()
+            .filter_map(|filter| {
+                if let (DbFilter::Original { regex }, DbMode::Require) = filter { return Some(regex); }
+                if let (DbFilter::All      { regex }, DbMode::Require) = filter { return Some(regex); }
+                None
             })
             .find(|regex| regex.is_match(&translation.original));
-        let translation_regex = search_filters
-            .iter()
-            .filter_map(|filter| match filter {
-                (
-                    DbFilter::Translation { regex } | DbFilter::All { regex },
-                    DbMode::Require,
-                ) => Some(regex),
-                _ => None,
+        let translation_regex = filters.iter()
+            .filter_map(|filter| {
+                if let (DbFilter::Translation { regex }, DbMode::Require) = filter { return Some(regex); }
+                if let (DbFilter::All         { regex }, DbMode::Require) = filter { return Some(regex); }
+                None
             })
             .find(|regex| regex.is_match(&translation.translation));
 
