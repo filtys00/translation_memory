@@ -6,7 +6,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Query, State},
+    extract::{Form, State},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
     routing::get,
@@ -72,75 +72,54 @@ static_page!(language_icon, "language.svg", "image/svg+xml");
 static_page!(loading_icon, "loading.svg", "image/svg+xml");
 static_page!(search_icon, "search.svg", "image/svg+xml");
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct QueryParams {
     search: Option<String>,
 
-    #[serde(deserialize_with = "deserialize_string_vec")]
-    languages: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_str_vec")]
+    require_languages: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_opt_str_vec")]
+    deny_languages: Option<Vec<String>>,
 
-    #[serde(deserialize_with = "deserialize_string_vec")]
-    scopes: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_opt_str_vec")]
+    require_scopes: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "deserialize_opt_str_vec")]
+    deny_scopes: Option<Vec<String>>,
 
     limit: Option<u32>,
     skip: Option<u32>,
 
     count: Option<bool>,
 }
-fn deserialize_string_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error> where D: Deserializer<'de> {
-    let value: String = String::deserialize(deserializer)?;
-    Ok(value.split(',').map(|v| v.to_string()).collect())
+fn deserialize_opt_str_vec<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error> where D: Deserializer<'de> {
+    let Some(value) = Option::<String>::deserialize(deserializer)? else { return Ok(None); };
+    if value.is_empty() { return Ok(None); }
+    Ok(Some(value.split(',').map(|v| v.to_string()).collect()))
 }
 
 async fn query_api(
     State(store): State<Arc<Mutex<TranslationStore>>>,
-    Query(params): Query<QueryParams>,
+    Form(params): Form<QueryParams>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    debug!(
-        "Request for '/query':\
-      \n{{\
-      \n    search: {},\
-      \n    languages: \"{}\", scopes: {},\
-      \n    limit: {}, skip: {}, count: {}\
-      \n}}",
-        params
-            .search
-            .as_ref()
-            .map(|v| Cow::Owned(format!("\"{v}\"")))
-            .unwrap_or(Cow::Borrowed("undefined")),
-        params
-            .languages
-            .iter()
-            .map(|lang_id| lang_id.to_string())
-            .reduce(|acc, lang| acc + "," + &lang)
-            .unwrap_or_default(),
-        if params.scopes.len() > 3 {
-            format!("<{}>", params.scopes.len())
-        } else {
-            format!("\"{}\"", params.scopes.join(","))
-        },
-        params
-            .limit
-            .map(|limit| Cow::Owned(limit.to_string()))
-            .unwrap_or(Cow::Borrowed("undefined")),
-        params
-            .skip
-            .map(|skip| Cow::Owned(skip.to_string()))
-            .unwrap_or(Cow::Borrowed("undefined")),
-        match params.count {
-            Some(true) => "true",
-            Some(false) => "false",
-            None => "undefined",
-        },
-    );
+    debug!("Request for '/query': {params:?}");
 
     let mut filters = if let Some(search) = &params.search {
         parse_search(search).map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?
     } else {
         vec![]
     };
-    filters.push((DbFilter::Providers { codes: params.scopes }, DbMode::Require));
-    filters.push((DbFilter::Languages { lang_ids: params.languages }, DbMode::Require));
+    if let Some(codes) = params.require_scopes {
+        filters.insert(0, (DbFilter::Providers { codes }, DbMode::Require));
+    }
+    if let Some(codes) = params.deny_scopes {
+        filters.insert(0, (DbFilter::Providers { codes }, DbMode::Deny));
+    }
+    if let Some(lang_ids) = params.require_languages {
+        filters.insert(0, (DbFilter::Languages { lang_ids }, DbMode::Require));
+    }
+    if let Some(lang_ids) = params.deny_languages {
+        filters.insert(0, (DbFilter::Languages { lang_ids }, DbMode::Deny));
+    }
 
     trace!("Search filters: {filters:?}");
 

@@ -388,13 +388,44 @@ let translationCount = 0;
 let translationController = null;
 
 /**
+ * Returns a `FormData` containing the query paramteres,
+ * or `null` if the parameters are guaranteed to return no results.
+ * @returns {FormData|null}
+ */
+function assembleQueryFormData() {
+    const data = new FormData();
+
+    if (searchField.value) { data.set('search', searchField.value); }
+    data.set('limit', downloadAtOnce);
+
+    let { true: yes_scopes, false: no_scopes } = Object.groupBy(Object.entries(scopeFilters), ([k, v]) => v);
+    if (!yes_scopes) { return null; }
+    if (!no_scopes) {
+    } else if (yes_scopes.length <= no_scopes.length) {
+        data.set('require_scopes', yes_scopes.map(([k, v]) => k).join());
+    } else {
+        data.set('deny_scopes', no_scopes.map(([k, v]) => k).join());
+    }
+
+    let { true: yes_langs, false: no_langs } = Object.groupBy(Object.entries(languageFilters), ([k, v]) => v);
+    if (!yes_langs) { return null; }
+    if (!no_langs) {
+    } else if (yes_langs.length <= no_langs.length) {
+        data.set('require_languages', yes_langs.map(([k, v]) => k).join());
+    } else {
+        data.set('deny_languages', no_langs.map(([k, v]) => k).join());
+    }
+
+    return data;
+}
+
+/**
  * Replace the translations in `translationList` with new ones.
  */
 function refreshTranslations() {
-    const languages = Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k);
-    const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
+    const data = assembleQueryFormData();
 
-    if (!languages.length || !scopes.length) {
+    if (data === null) {
         populateTranslations([], false);
         setTranslationCountLabel(0, 0);
         return;
@@ -403,10 +434,7 @@ function refreshTranslations() {
     if (translationController) { translationController.abort(); }
     translationController = new AbortController();
 
-    fetch(
-        `http://127.0.0.1:2013/query?search=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&limit=${downloadAtOnce}`,
-        { signal: translationController.signal },
-    ).then(
+    fetch('http://127.0.0.1:2013/query?' + new URLSearchParams(data), { signal: translationController.signal }).then(
         async response => {
             const translations = await response.json();
 
@@ -421,11 +449,10 @@ function refreshTranslations() {
         },
     );
 
+    data.set('count', true);
+
     titles.classList.add("loading");
-    fetch(
-        `http://127.0.0.1:2013/query?search=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&count=true`,
-        { signal: translationController.signal },
-    ).then(
+    fetch('http://127.0.0.1:2013/query?' + new URLSearchParams(data), { signal: translationController.signal }).then(
         async response => {
             const count = await response.json();
 
@@ -451,17 +478,11 @@ function appendTranslations() {
         return;
     }
 
-    const languages = Object.entries(languageFilters).filter(([k, v]) => v).map(([k, v]) => k);
-    const scopes = Object.entries(scopeFilters).filter(([k, v]) => v).map(([k, v]) => k);
+    const form = assembleQueryFormData();
+    if (form === null) { return; }
+    form.set('skip', translationCount);
 
-    if (!languages.length || !scopes.length) {
-        return;
-    }
-
-    fetch(
-        `http://127.0.0.1:2013/query?search=${encodeURIComponent(searchField.value)}&scopes=${scopes.join()}&languages=${languages.join()}&skip=${translationCount}&limit=${downloadAtOnce}`,
-        { signal: translationController.signal },
-    ).then(
+    fetch('http://127.0.0.1:2013/query?' + new URLSearchParams(form), { signal: translationController.signal }).then(
         async response => {
             const translations = await response.json();
 
