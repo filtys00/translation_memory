@@ -227,7 +227,7 @@ pub fn providers() -> Vec<Provider<'static>> {
         Provider::new("minecraft", "Minecraft",          None,                parse_minecraft, get_minecraft_sources),
         Provider::new("xfce",      "XFCE",               Some("Desktop OSs"), Provider::mono_text_parser(parse_po_remove_underscore), get_xfce_sources),
 
-        Provider::new_duo_many_per_langs("android",     "Android",     Some("Android"),     parse_android_base64,              android_urls),
+        Provider::new_duo_many_per_langs("android",     "Android",     None,                parse_android_base64,              android_urls),
         Provider::new_duo_many_per_langs("chrome",      "Chromium",    None,                parse_xtb_base64,                  chromium_urls),
         Provider::new_mono_many_per_lang("gnome",       "GNOME",       Some("Desktop OSs"), parse_po_remove_underscore,        graphql_gnome),
         Provider::new_mono_many_per_lang("kde",         "KDE",         Some("Desktop OSs"), parse_po_remove_ampersand,         graphql_kde),
