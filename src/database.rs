@@ -108,6 +108,20 @@ const INIT_SQL: &[(fn(&Connection) -> SqlResult<bool>, &str)] = &[
     UPDATE Sources SET error_message = "Error message were not saved" WHERE has_failed = 1;
     ALTER TABLE Sources DROP COLUMN has_failed;
     "#),
+    // Remove useless indicies
+    (|connection| {
+        let index_sql: Option<String> = connection
+            .query_one(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' AND sql IS NOT NULL AND name = 'Translations_SourceId'", (),
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(index_sql.is_none())
+    },
+    r#"
+    DROP INDEX Translations_SourceId;
+    DROP INDEX Sources_ProviderId;
+    "#),
 ];
 
 /// A connection to a translation database.
