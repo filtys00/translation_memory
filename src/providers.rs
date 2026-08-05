@@ -437,8 +437,10 @@ impl<'a> Provider<'a> {
     /// Returns a closure that parses a mono source using `parse_text`.
     fn mono_text_parser(parse_text: impl Fn(String) -> anyhow::Result<Vec<DbTranslation>>) -> impl Fn(&DbSource) -> anyhow::Result<()> {
         move |source: &DbSource| {
-            let DbSourceContent::Text(text) = source.get_contents()?.translations else {
-                bail!("No translation text");
+            let text = match source.get_contents()?.translations {
+                DbSourceContent::Text(text) => text,
+                DbSourceContent::None => bail!("No translation text"),
+                DbSourceContent::Bytes(_) => bail!("No translation text, only bytes"),
             };
             let translations = parse_text(text)?;
             source.set_translations(&translations)?;
@@ -449,10 +451,17 @@ impl<'a> Provider<'a> {
     /// Returns a closure that parses a duo source using `parse_text`.
     fn duo_text_parser(parse_text: impl Fn(String) -> anyhow::Result<TranslationMessages>) -> impl Fn(&DbSource) -> anyhow::Result<()> {
         move |source| {
-            let DbSourceContents {
-                originals: DbSourceContent::Text(originals),
-                translations: DbSourceContent::Text(translations),
-            } = source.get_contents()? else { bail!("No texts"); };
+            let content = source.get_contents()?;
+            let originals = match content.originals {
+                DbSourceContent::Text(text) => text,
+                DbSourceContent::None => bail!("No original text"),
+                DbSourceContent::Bytes(_) => bail!("No original text, only bytes"),
+            };
+            let translations = match content.translations {
+                DbSourceContent::Text(text) => text,
+                DbSourceContent::None => bail!("No translation text"),
+                DbSourceContent::Bytes(_) => bail!("No translation text, only bytes"),
+            };
 
             let default_messages = parse_text(originals)?;
             let messages = parse_text(translations)?;
