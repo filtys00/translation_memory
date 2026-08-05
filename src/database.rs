@@ -122,6 +122,18 @@ const INIT_SQL: &[(fn(&Connection) -> SqlResult<bool>, &str)] = &[
     DROP INDEX Translations_SourceId;
     DROP INDEX Sources_ProviderId;
     "#),
+    // Allow for sorted translation queries
+    (|connection| connection.column_exists(None, "Translations", "_provider_name"),
+    r#"
+    ALTER TABLE Translations ADD COLUMN _provider_name TEXT;
+    UPDATE Translations SET _provider_name = (
+        SELECT name FROM Providers
+        JOIN Sources ON Sources.provider_id = Providers.id
+        JOIN Translations t ON Translations.source_id = Sources.id
+        WHERE t.id = Translations.id
+    );
+    CREATE INDEX idx_translations_sort ON Translations(_provider_name, original, translation);
+    "#),
 ];
 
 /// A connection to a translation database.
@@ -639,9 +651,15 @@ impl Source<'_> {
         let mut connection = self.connection.borrow_mut();
         let transaction = connection.transaction()?;
 
+        let provider_name: String = transaction.query_one(
+            "SELECT name FROM Providers JOIN Sources ON Sources.provider_id = Providers.id WHERE Sources.id = ?",
+            [self.id],
+            |row| row.get(0),
+        )?;
+
         transaction.execute("DELETE FROM Translations WHERE source_id = ?", [self.id])?;
         let mut stmt = transaction.prepare(
-            "INSERT INTO Translations (source_id, key, original, translation, comment) VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO Translations (source_id, key, original, translation, comment, _provider_name) VALUES (?, ?, ?, ?, ?, ?)"
         )?;
         for translation in translations {
             stmt.execute((
@@ -650,6 +668,7 @@ impl Source<'_> {
                 &translation.original,
                 &translation.translation,
                 &translation.comment,
+                &provider_name,
             ))?;
         }
         stmt.finalize()?;
@@ -785,7 +804,9 @@ impl TranslationStore {
             JOIN Sources ON Translations.source_id = Sources.id
             JOIN Providers ON Sources.provider_id = Providers.id
             JOIN Languages ON Sources.language_id = Languages.id
-            WHERE {where_conditions} LIMIT {} OFFSET {}
+            WHERE {where_conditions}
+            ORDER BY _provider_name, original, translation
+            LIMIT {} OFFSET {}
         ", options.limit, options.offset); // Inline numeric args to avoid fighting the type system
         trace!("SQL Query: {sql}\nParameters: {params:?}");
 
