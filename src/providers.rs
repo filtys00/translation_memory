@@ -442,7 +442,8 @@ impl<'a> Provider<'a> {
                 DbSourceContent::None => bail!("No translation text"),
                 DbSourceContent::Bytes(_) => bail!("No translation text, only bytes"),
             };
-            let translations = parse_text(text)?;
+            let mut translations = parse_text(text)?;
+            translations.retain(|t| !t.original.is_empty() && !t.translation.is_empty());
             source.set_translations(&translations)?;
             Ok(())
         }
@@ -465,7 +466,8 @@ impl<'a> Provider<'a> {
 
             let default_messages = parse_text(originals)?;
             let messages = parse_text(translations)?;
-            let translations = merge_messages(messages, default_messages);
+            let mut translations = merge_messages(messages, default_messages);
+            translations.retain(|t| !t.original.is_empty() && !t.translation.is_empty());
             source.set_translations(&translations)?;
             Ok(())
         }
