@@ -531,22 +531,15 @@ function populateTranslations(translations, append) {
 
         let originalText = document.createElement("p");
         originalText.classList.add("originalText");
+        embolden(originalText, translation.original);
 
         let translationText = document.createElement("p");
         translationText.classList.add("translationText");
-
-        embolden(originalText, translation.original);
         embolden(translationText, translation.translation);
 
         let scopeText = document.createElement("p");
         scopeText.classList.add("scopeText");
-        if (scope.groupName) {
-            scopeText.innerText = `${scope.groupName} • ${translation.language}`;
-        } else if (scope?.name) {
-            scopeText.innerText = `${scope.name} • ${translation.language}`;
-        } else {
-            scopeText.innerText = `${translation.language}`;
-        }
+        scopeText.innerText = `${scope?.name ?? translation.scope} • ${translation.language}`;
 
         li.appendChild(originalText);
         li.appendChild(translationText);
