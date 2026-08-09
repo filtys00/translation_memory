@@ -400,13 +400,17 @@ pub fn perform_command(
             };
 
             let originals_url = if let Some(originals_file) = originals_file {
-                let url = Url::from_file_path(originals_file)
+                let path = originals_file.canonicalize()
+                    .map_err(|_| anyhow!("Could not resolve originals path"))?;
+                let url = Url::from_file_path(path)
                     .map_err(|_| anyhow!("Could not resolve originals path to an URL"))?;
                 Some(url)
             } else {
                 None
             };
-            let translations_url = Url::from_file_path(translations_file)
+            let translations_path = translations_file.canonicalize()
+                .map_err(|_| anyhow!("Could not resolve translations path"))?;
+            let translations_url = Url::from_file_path(translations_path)
                 .map_err(|_| anyhow!("Could not resolve translations path to an URL"))?;
             let source = provider.set_source(&lang_id, SourceUrls {
                 originals: originals_url,
