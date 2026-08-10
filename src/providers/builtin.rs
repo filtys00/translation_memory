@@ -26,7 +26,7 @@ use super::{
     minecraft::{get_minecraft_sources, parse_minecraft},
     mozilla::{parse_mozilla_tbx, parse_mozilla_tmx},
     po::{parse_po_base64_remove_underscore, parse_po_remove_ampersand, parse_po_remove_underscore},
-    properties::parse_obs_studio_ini,
+    properties::{parse_obs_studio_ini, parse_obsidian_ini},
     srt::parse_srt,
     ts::parse_qbittorrent_ts,
     xfce::get_xfce_sources,
@@ -300,10 +300,13 @@ pub fn providers() -> Vec<Provider<'static>> {
                     url: "obsproject/obs-studio/master/UI/data/locale/{}.ini",
             lang_id: "-", true, "-", false,
         }),
-        duo!( "obsidian",    "Obsidian",    Some("Desktop Programs"), parse_json,           github => {
-            default_url: "obsidianmd/obsidian-translations/master/en.json",
-                    url: "obsidianmd/obsidian-translations/master/{}.json",
-            lang_id: "-", true, "-", false,
+        mono!("obsidian",    "Obsidian",    Some("Desktop Programs"), parse_obsidian_ini,   github => {
+            url: "obsidianmd/obsidian-translations/master/translations/{}.txt",
+            lang_id: "-", true, "-", true,
+        }),
+        mono!("obsidian-website", "Obsidian", Some("Desktop Programs"), parse_obsidian_ini, github => {
+            url: "obsidianmd/obsidian-translations/master/website/{}.txt",
+            lang_id: "-", true, "-", true,
         }),
         mono!("pacman",      "Pacman",      Some("Desktop OSs"),      parse_po,             gitlab => {
             base_url: "gitlab.archlinux.org/pacman/pacman",

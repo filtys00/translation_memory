@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use anyhow::{anyhow, bail};
 
-use super::{unescape, TranslationMessages};
+use super::{unescape, DbTranslation, TranslationMessages};
 
 pub fn parse_properties(text: String) -> anyhow::Result<TranslationMessages> {
     let mut messages = HashMap::new();
@@ -63,6 +63,33 @@ pub fn parse_obs_studio_ini(text: String) -> anyhow::Result<TranslationMessages>
         let message = unescape(message, &['n', '"']);
 
         messages.insert(key.to_string(), (message, None));
+    }
+
+    Ok(messages)
+}
+
+pub fn parse_obsidian_ini(text: String) -> anyhow::Result<Vec<DbTranslation>> {
+    let mut messages = Vec::new();
+
+    for chunk in text.split("\n\n") {
+        let mut lines = chunk.split('\n');
+
+        let Some(key) = lines.next() else { continue; };
+        let Some(key) = key.strip_prefix('[') else { continue; };
+        let Some(key) = key.strip_suffix(']') else { continue; };
+
+        let Some(original) = lines.next() else { continue; };
+        let Some(original) = original.strip_prefix("original=") else { continue; };
+
+        let Some(translation) = lines.next() else { continue; };
+        let Some(translation) = translation.strip_prefix("translation=") else { continue; };
+
+        messages.push(DbTranslation {
+            key: Some(key.to_string()),
+            original: original.to_string(),
+            translation: translation.to_string(),
+            comment: None,
+        });
     }
 
     Ok(messages)
