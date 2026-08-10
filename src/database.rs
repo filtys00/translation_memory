@@ -134,6 +134,11 @@ const INIT_SQL: &[(fn(&Connection) -> SqlResult<bool>, &str)] = &[
     );
     CREATE INDEX idx_translations_sort ON Translations(_provider_name, original, translation);
     "#),
+    // Remove unused column
+    (|connection| Ok(!connection.column_exists(None, "Providers", "sources_download_time")?),
+    r#"
+    ALTER TABLE Providers DROP COLUMN sources_download_time;
+    "#),
 ];
 
 /// A connection to a translation database.
