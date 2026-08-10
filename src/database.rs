@@ -806,9 +806,9 @@ impl TranslationStore {
         let sql = format!("
             SELECT Sources.translations_url, Providers.code, Languages.code, key, original, translation, comment
             FROM Translations
-            JOIN Sources ON Translations.source_id = Sources.id
-            JOIN Providers ON Sources.provider_id = Providers.id
-            JOIN Languages ON Sources.language_id = Languages.id
+            JOIN Sources   ON Sources.id   = Translations.source_id
+            JOIN Providers ON Providers.id = Sources.provider_id
+            JOIN Languages ON Languages.id = Sources.language_id
             WHERE {where_conditions}
             ORDER BY _provider_name, original, translation
             LIMIT {} OFFSET {}
@@ -846,9 +846,9 @@ impl TranslationStore {
         let total_count = connection.query_one(
             &format!("
                 SELECT COUNT(*) FROM Translations
-                JOIN Sources ON Translations.source_id = Sources.id
-                JOIN Providers ON Sources.provider_id = Providers.id
-                JOIN Languages ON Sources.language_id = Languages.id
+                JOIN Sources   ON Sources.id   = Translations.source_id
+                JOIN Providers ON Providers.id = Sources.provider_id
+                JOIN Languages ON Languages.id = Sources.language_id
                 WHERE {where_conditions}
             "),
             params,
